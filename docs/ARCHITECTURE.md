@@ -183,6 +183,28 @@ director for the camera each frame and hands it to `CameraRig` only in cinematic
 mode. Adding a controller means writing one class and pushing it into `MODES`;
 no input code changes.
 
+## 8c. The loop (`loop.js`)
+
+The film is a pure function of loop time. `Timeline` exposes `t` (wrapped at
+20 s) and `u` (0..1); everything else derives from it.
+
+- `loopFrac(t, period, phase)` — the only way an element advances.
+- `loopPeriod(base)` — snaps a period to `20 / integer` so it closes exactly.
+- `loopNoise(seed, t)` — seamless noise built from integer-cycle sines; used for
+  idle sway and lamp flicker.
+- `boundaryAlpha(x, z, box, buffer, mode)` — the boundary buffer (`wrap`, `fade`
+  or `clip`), driven by `params.loopBuffer` in metres.
+- `seeded(seed, salt, a, b)` — stable per-element constants.
+
+Rules: no `Math.random` at runtime, no `dt`-integrated state, no oscillator whose
+frequency does not complete whole cycles per loop. `tools/determinism.mjs` (part
+of `npm run verify`) renders t and t + 20 and fails on a single differing pixel.
+
+`Scene._ensureStatic` caches the set in its own canvas; it repaints when the
+camera drifts more than 2.5 px, when the LoD or `caseFrame` changes, and at the
+loop point. The cached layer is blitted with the sub-pixel delta, which is why
+the frame time dropped by more than half.
+
 ## 9. Runtime surfaces
 
 - `?finish=raw` / `?raw=1` — raw plate.

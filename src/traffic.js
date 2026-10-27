@@ -7,10 +7,11 @@
 // traffic beat, and a short train passes on the elevated line behind the block.
 
 import { PALETTE } from './draw.js';
-import { v3, clamp, lerp, easeInOut, quadLerp, smoothstep } from './math.js';
+import { v3, clamp, lerp, easeInOut, quadLerp, smoothstep, smootherstep } from './math.js';
 import { separate } from './collision.js';
 import { TILE } from './tile.js';
-import { ROAD, PARKING, LANES, sanitizePark } from './world.js';
+import { LOOP, loopFrac, wrapRange, boundaryAlpha } from './loop.js';
+import { ROAD, PARKING, LANES, CROSSWALKS, sanitizePark } from './world.js';
 
 const BONE = (a) => `rgba(239,233,216,${a})`;
 
@@ -344,24 +345,23 @@ export class Traffic {
     const tr = timeline.train();
     this.trainX = lerp(-22, 22, tr);
     this.trainAlpha = smoothstep(0.01, 0.08, tr) * (1 - smoothstep(0.92, 0.99, tr));
-    const parkedA = timeline.parkedAlpha();
-    const movingA = timeline.traffic();
+    // Parked cars stay parked for the whole loop; nothing fades, nothing pops.
     this.parkedItems = [];
     this.movingItems = [];
+    const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
+    const span = 21;
     for (const spec of this.specs) {
       if (spec.park) {
         this.parkedItems.push({
-          spec, world: { x: spec.park.x, z: spec.park.z }, alpha: parkedA * 0.95,
+          spec, world: { x: spec.park.x, z: spec.park.z }, alpha: 0.95,
           radius: 2.4, group: 'vehicle', fixed: true, depth: 0, moving: false,
         });
       } else {
-        const v = clamp((timeline.u - 0.895) / 0.105 - spec.offset, 0, 1);
-        const e = easeInOut(v);
-        const span = 21;
-        const world = { x: spec.dir > 0 ? lerp(-span, span, e) : lerp(span, -span, e), z: spec.lane };
-        const inside = smoothstep(-15.2, -12.4, world.x) * (1 - smoothstep(12.4, 15.2, world.x));
+        const world = { x: movingCarX(spec, timeline.u), z: spec.lane };
+        // Vehicles fade only as they cross the case boundary on their way out.
+        const alpha = boundaryAlpha(world.x, world.z, TILE, buffer, 'fade');
         this.movingItems.push({
-          spec, world, alpha: movingA * inside * (1 - smoothstep(0.95, 1, v)),
+          spec, world, alpha,
           radius: 2.6, group: 'vehicle', fixed: false, moving: true, depth: 0,
         });
       }
@@ -474,6 +474,26 @@ export class Traffic {
   }
 }
 
+// Where a moving vehicle is, as a pure function of the loop phase.
+//
+//   0.00 – 0.16  approach from off-set and pull up at the stop line
+//   0.16 – 0.72  wait at the line (pedestrians have the green)
+//   0.72 – 0.95  drive through the crossing and off the far end
+//   0.95 – 1.00  out of frame (the wrap happens where it cannot be seen)
+function movingCarX(spec, u) {
+  const cw = CROSSWALKS.main;
+  const span = 21;
+  const stop = spec.dir > 0 ? cw.x0 - 2.9 : cw.x1 + 2.9;
+  const from = spec.dir > 0 ? -span : span;
+  const to = spec.dir > 0 ? span : -span;
+  const d = spec.delay || 0;
+  const a0 = 0.02 + d, a1 = 0.17 + d, b = 0.72, c = 0.95;
+  if (u < a1) return lerp(from, stop, smootherstep(a0, a1, u));
+  if (u < b) return stop;
+  if (u < c) return lerp(stop, to, smootherstep(b + d, c + d, u));
+  return to;
+}
+
 function VEHICLE_SPECS() {
   return [
     {
@@ -484,13 +504,20 @@ function VEHICLE_SPECS() {
       id: 'park_back', type: 'car', axis: 'x',
       dir: PARKING[1].dir, park: { x: PARKING[1].x, z: PARKING[1].z }, color: PALETTE.ink,
     },
+    // Moving vehicles loop the block like a film set: one continuous lap of the
+    // road per loop (the taxi takes two), wrapping far outside the case where
+    // nobody can see it. `offset` staggers them against each other.
+    // Moving vehicles are choreographed against the signal, as a film set would
+    // be: they pull up to the stop line, wait out the pedestrian window, then
+    // drive through and off the far end. Everything is a pure function of the
+    // loop phase, so the manoeuvre repeats exactly every 20 s.
     {
       id: 'move_bus', type: 'bus', axis: 'x',
-      lane: LANES[0].offset, dir: LANES[0].dir, offset: 0.0, color: PALETTE.ink,
+      lane: LANES[0].offset, dir: LANES[0].dir, color: PALETTE.ink, delay: 0.0,
     },
     {
       id: 'move_taxi', type: 'taxi', axis: 'x',
-      lane: LANES[1].offset, dir: LANES[1].dir, offset: 0.16, color: PALETTE.red,
+      lane: LANES[1].offset, dir: LANES[1].dir, color: PALETTE.red, delay: 0.055,
     },
   ];
 }

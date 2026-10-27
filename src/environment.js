@@ -16,6 +16,7 @@ import {
   v3, clamp, lerp, hash11, hash21, makeRng, quadLerp, smoothstep, TAU,
 } from './math.js';
 import { TILE, SIDEWALK_Y, TILE_COLORS as C } from './tile.js';
+import { LOOP, loopNoise } from './loop.js';
 import {
   ROAD, SIDEWALKS, CROSSWALKS, LANES, SIGNAL_POSITIONS, BUILDING_LOTS,
   LIGHT_SOURCES, PUDDLES,
@@ -1606,19 +1607,19 @@ export function collectFrame(p, camera, params = {}) {
   // --- back: rails on the closed walls + the two far posts -----------------
   add((x0 + x1) / 2, y1, z0, (pp) => {
     line3(pp, camera, [x0, y1, z0], [x1, y1, z0], {
-      color: BONE(0.16), width: 1.2, alpha: 0.8, jitter: 0.2, seed: 4200, double: false,
+      color: BONE(0.14), width: 1.0, alpha: 0.7, jitter: 0.08, seed: 4200, double: false,
     });
   }, 1.5, 'far');
   add(x0, y1, (z0 + z1) / 2, (pp) => {
     line3(pp, camera, [x0, y1, z0], [x0, y1, z1], {
-      color: BONE(0.12), width: 1.0, alpha: 0.7, jitter: 0.2, seed: 4201, double: false,
+      color: BONE(0.10), width: 0.9, alpha: 0.6, jitter: 0.08, seed: 4201, double: false,
     });
   }, 1.5, 'far');
   for (const [px, pz] of [[x0, z0], [x1, z0]]) {
     add(px, (y0 + y1) / 2, pz, (pp) => {
       pp.box(camera, [px, (y0 + y1 + 0.2) / 2, pz], [TILE.post * 1.5, y1 - y0 + 0.2, TILE.post * 1.5], {
-        fill: C.shell, stroke: BONE(0.34), width: 0.8, alpha: 0.95,
-        seed: 4210 + px, jitter: 0.14, edgeAlpha: 0.6,
+        fill: C.shell, stroke: BONE(0.30), width: 0.75, alpha: 0.95,
+        seed: 4210 + px, jitter: 0.06, edgeAlpha: 0.55,
       });
     }, 0, 'far');
   }
@@ -1672,15 +1673,15 @@ export function collectFrame(p, camera, params = {}) {
       v3(px0, plinthTop, pz1), v3(px1, plinthTop, pz1),
       v3(px1, plinthBottom, pz1), v3(px0, plinthBottom, pz1),
     ], {
-      fill: '#0b0f0c', stroke: BONE(0.52), width: 1.1, alpha: 1,
-      jitter: 0.22, seed: 4400,
+      fill: '#0b0f0c', stroke: BONE(0.46), width: 1.0, alpha: 1,
+      jitter: 0.08, seed: 4400,
     });
     pp.projectPoly(camera, [
       v3(px1, plinthTop, z0 - s), v3(px1, plinthTop, pz1),
       v3(px1, plinthBottom, pz1), v3(px1, plinthBottom, z0 - s),
     ], {
-      fill: '#080c09', stroke: BONE(0.42), width: 1.0, alpha: 1,
-      jitter: 0.22, seed: 4401,
+      fill: '#080c09', stroke: BONE(0.36), width: 0.9, alpha: 1,
+      jitter: 0.08, seed: 4401,
     });
     // Reflected plinth on the table surface: the model sits on something.
     const reflectBottom = y0 - 0.9;
@@ -1688,15 +1689,15 @@ export function collectFrame(p, camera, params = {}) {
       v3(px0, y0, pz1), v3(px1, y0, pz1),
       v3(px1, reflectBottom, pz1 + 0.1), v3(px0, reflectBottom, pz1 + 0.1),
     ], {
-      fill: 'rgba(18,26,21,0.30)', stroke: null, jitter: 0.3, seed: 4480,
+      fill: 'rgba(18,26,21,0.30)', stroke: null, jitter: 0.12, seed: 4480,
     });
     line3(pp, camera, [px0, plinthTop, pz1], [px1, plinthTop, pz1], {
-      color: BONE(0.55), width: 1.2, alpha: 0.9,
-      jitter: 0.16, seed: 4402, double: false,
+      color: BONE(0.52), width: 1.0, alpha: 0.9,
+      jitter: 0.05, seed: 4402, double: false,
     });
     line3(pp, camera, [px0, plinthBottom, pz1], [px1, plinthBottom, pz1], {
-      color: BONE(0.30), width: 0.8, alpha: 0.8,
-      jitter: 0.2, seed: 4403, double: false,
+      color: BONE(0.24), width: 0.7, alpha: 0.75,
+      jitter: 0.05, seed: 4403, double: false,
     });
   }, 0.2);
 
@@ -1708,8 +1709,8 @@ export function collectFrame(p, camera, params = {}) {
       v3(cx - plateW / 2, cy + plateH / 2, cz), v3(cx + plateW / 2, cy + plateH / 2, cz),
       v3(cx + plateW / 2, cy - plateH / 2, cz), v3(cx - plateW / 2, cy - plateH / 2, cz),
     ], {
-      fill: 'rgba(14,19,15,0.98)', stroke: BONE(0.30), width: 0.7, alpha: 1,
-      jitter: 0.08, seed: 4410,
+      fill: 'rgba(14,19,15,0.98)', stroke: BONE(0.26), width: 0.65, alpha: 1,
+      jitter: 0.04, seed: 4410,
     });
     if (!pq) return;
     pp.line([quadLerp(pq, 0.04, 0.24), quadLerp(pq, 0.96, 0.24)], {
@@ -1737,48 +1738,44 @@ export function collectFrame(p, camera, params = {}) {
   }, 0.05);
 
   // --- corner posts and top rails on the open faces ------------------------
-  const postW = TILE.post * 2.3;
+  const postW = TILE.post * 1.7;
   for (const [px, pz] of [[x0, z1], [x1, z1], [x1, z0]]) {
     add(px, (y0 + y1) / 2, pz, (pp) => {
       pp.box(camera, [px, (y0 + y1 + 0.25) / 2, pz], [postW, y1 - y0 + 0.25, postW], {
-        fill: C.shell, stroke: BONE(0.62), width: 0.95, alpha: 0.98,
-        seed: 4500 + px + pz, jitter: 0.14, edgeAlpha: 0.8,
+        fill: C.shell, stroke: BONE(0.58), width: 0.85, alpha: 0.98,
+        seed: 4500 + px + pz, jitter: 0.06, edgeAlpha: 0.72,
       });
-      for (let k = 0; k < 4; k++) {
-        const ry = 1.2 + k * 4.2;
-        const q = camera.project(v3(px, ry, pz + postW * 0.55));
-        if (!q) continue;
-        pp.ellipse(q.x, q.y, clamp(q.scale * 0.028, 0.5, 2.2), clamp(q.scale * 0.028, 0.5, 2.2), {
-          fill: BONE(0.32), stroke: false, alpha: 0.9,
-        });
-      }
     }, -0.2);
   }
 
   const railH = TILE.rail;
   add((x0 + x1) / 2, y1 - railH / 2, z1, (pp) => {
     pp.box(camera, [(x0 + x1) / 2, y1 - railH / 2, z1], [x1 - x0, railH, railH], {
-      fill: '#16161a', stroke: BONE(0.60), width: 0.95, alpha: 0.98,
-      seed: 4600, jitter: 0.12, edgeAlpha: 0.8,
+      fill: '#16161a', stroke: BONE(0.52), width: 0.85, alpha: 0.98,
+      seed: 4600, jitter: 0.05, edgeAlpha: 0.72,
     });
   });
   add(x1, y1 - railH / 2, (z0 + z1) / 2, (pp) => {
     pp.box(camera, [x1, y1 - railH / 2, (z0 + z1) / 2], [railH, railH, z1 - z0], {
-      fill: '#0e0e12', stroke: BONE(0.52), width: 0.9, alpha: 0.98,
-      seed: 4601, jitter: 0.12, edgeAlpha: 0.75,
+      fill: '#0e0e12', stroke: BONE(0.46), width: 0.85, alpha: 0.98,
+      seed: 4601, jitter: 0.05, edgeAlpha: 0.7,
     });
   });
-  // Corner ticks: little brass marks on the near top corners.
-  for (const [tx, tz] of [[x0, z1], [x1, z1]]) {
-    add(tx, y1, tz, (pp) => {
-      const q = camera.project(v3(tx, y1, tz));
-      if (!q) return;
-      const r = clamp(q.scale * 0.10, 1.2, 5.0);
-      pp.ellipse(q.x, q.y, r, r, { fill: BONE(0.22), stroke: BONE(0.5), width: 0.6, alpha: 0.9 });
-    }, -0.4);
-  }
-
   return items;
+}
+
+// Lamp flicker is the one thing in the set that keeps moving, so it is drawn
+// over the cached layer instead of being baked into it. `loopNoise` is seamless
+// over the loop, so the flicker repeats exactly every 20 s.
+export function drawFlicker(p, camera, t) {
+  for (let i = 0; i < LIGHT_SOURCES.length; i++) {
+    const l = LIGHT_SOURCES[i];
+    const q = camera.project(v3(l.x, 2.0, l.z));
+    if (!q) continue;
+    const n = loopNoise(100 + i, t, LOOP, 3);
+    const a = 0.05 + 0.045 * (n * 0.5 + 0.5);
+    glow(p, q.x, q.y, q.scale * l.w * 1.15, RGB[l.color] || RGB.bone, a);
+  }
 }
 
 // Backwards-compatible single-pass draw (used by drawEnvironment and tools).

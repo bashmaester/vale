@@ -1,18 +1,22 @@
 // Real raindrop particles and puddle ripples, drawn into the plate.
 // There is no full-screen wet-glass shader and no per-frame random overlay.
 //
-// Drops live inside the tile volume and are culled at its walls. Puddles are
-// seeded ground shapes with a tinted reflection that matches the nearest sign.
-// Ripples expand in 3D on the puddle plane and splash spikes only in the first
-// third of their life.
+// Everything here is a *pure function of loop time*. A drop is a seeded spec
+// (x, z, fall period, drift, colour); its height at time t comes from
+// `loopFrac(t, period)` and its period is quantised so an integer number of
+// falls fits inside the 20 s loop. Change the frame rate, scrub the timeline or
+// jump to t = 20 and the drop is exactly where it belongs. Ripples are derived
+// from the moment a drop lands, so they cannot drift out of phase either.
 
 import { PALETTE } from './draw.js';
 import { v3, clamp, lerp, makeRng, hash11, TAU, smoothstep } from './math.js';
 import { groundYAt, TILE } from './tile.js';
 import { PUDDLES, SIGNAL_POSITIONS, LIGHT_SOURCES } from './world.js';
+import { LOOP, loopFrac, loopCycles, wrapRange, boundaryAlpha } from './loop.js';
 
 const MAX_DROPS = 240;
 const MAX_RIPPLES = 56;
+const RIPPLE_LIFE = 1.45;
 
 function tintRGB(tint) {
   if (tint === 'red') return '212,59,48';
@@ -26,28 +30,29 @@ function tintRGBA(tint, a) {
 export class Weather {
   constructor(W, H) {
     this.W = W; this.H = H;
-    this.rng = makeRng(4711);
+    this.loopT = 0;
     this.puddles = PUDDLES.map((p) => ({ ...p, y: groundYAt(p.x, p.z) + 0.012 }));
+    // Drop specs are made once from a fixed seed; nothing is drawn randomly.
+    const r = makeRng(4711);
     this.drops = [];
-    for (let i = 0; i < MAX_DROPS; i++) this.drops.push(this._newDrop(true));
+    for (let i = 0; i < MAX_DROPS; i++) {
+      this.drops.push({
+        x0: r.range(TILE.x0 + 1, TILE.x1 - 1),
+        z: r.range(TILE.z0 + 1, TILE.z1 - 1),
+        phase: r.next(),
+        // 10..20 falls per 20 s loop → 1..2 s each.
+        cycles: r.int(10, 20),
+        drift: r.range(0.35, 1.1),
+        len: r.range(0.9, 2.3),
+        alpha: r.range(0.22, 0.55),
+        color: r.chance(0.035) ? PALETTE.teal : PALETTE.ink,
+        seed: r.range(1, 100000),
+        // Only a minority of drops splash: otherwise the puddles boil.
+        splash: r.chance(0.11),
+      });
+    }
+    this.live = [];
     this.ripples = [];
-    this.rippleTimer = 0.3;
-    this.time = 0;
-  }
-
-  _newDrop(initial = false) {
-    const r = this.rng;
-    return {
-      x: r.range(TILE.x0 + 1, TILE.x1 - 1),
-      z: r.range(TILE.z0 + 1, TILE.z1 - 1),
-      y: initial ? r.range(0.4, TILE.y1) : r.range(11, TILE.y1 + 1),
-      len: r.range(0.9, 2.3),
-      speed: r.range(6.0, 12.0),
-      drift: r.range(0.55, 1.3),
-      alpha: r.range(0.22, 0.55),
-      color: r.chance(0.035) ? PALETTE.teal : PALETTE.ink,
-      seed: r.range(1, 100000),
-    };
   }
 
   _nearestPuddle(x, z) {
@@ -61,54 +66,57 @@ export class Weather {
     return { puddle: best, dist: bestD };
   }
 
-  _spawnRipple(x, z, strength = 1) {
-    const { puddle, dist } = this._nearestPuddle(x, z);
-    if (!puddle || dist > 3.2) return;
-    const r = this.rng;
-    this.ripples.push({
-      x: lerp(x, puddle.x, 0.6),
-      z: lerp(z, puddle.z, 0.6),
-      y: puddle.y + 0.006,
-      age: 0,
-      life: r.range(1.1, 2.0),
-      r0: 0.12,
-      r1: Math.max(puddle.rx, puddle.rz) * r.range(0.40, 0.8),
-      spikes: r.int(3, 5),
-      seed: r.range(1, 100000),
-      strength,
-    });
-    if (this.ripples.length > MAX_RIPPLES) this.ripples.shift();
-  }
-
-  update(dt, timeline, params) {
-    const step = clamp(dt, 0, 0.05) * (timeline.motionScale || 0.62);
-    const rainSpeed = clamp(params.rainSpeed == null ? 1 : params.rainSpeed, 0.2, 2);
+  /**
+   * Advance to loop time t. No integration: every position is recomputed from
+   * `t`, so the frame at t and t + 20 are identical by construction.
+   */
+  update(t, params = {}) {
+    const lt = ((t % LOOP) + LOOP) % LOOP;
+    this.loopT = lt;
     const wind = params.wind == null ? 0.6 : params.wind;
+    const rainSpeed = clamp(params.rainSpeed == null ? 1 : params.rainSpeed, 0.2, 2);
     const puddleAmt = clamp(params.puddleAmount == null ? 1 : params.puddleAmount, 0, 2);
-    this.time += step;
+    const amount = clamp(params.rainAmount == null ? 1 : params.rainAmount, 0, 2);
 
-    for (const d of this.drops) {
-      d.y -= d.speed * rainSpeed * step;
-      d.x += wind * 0.55 * d.drift * rainSpeed * step;
-      d.z += wind * 0.18 * d.drift * rainSpeed * step;
-      if (d.y <= 0.02 || d.x < TILE.x0 + 0.6 || d.x > TILE.x1 - 0.6 ||
-          d.z < TILE.z0 + 0.6 || d.z > TILE.z1 - 0.6) {
-        if (this.rng.chance(0.34 * puddleAmt)) this._spawnRipple(d.x, d.z);
-        Object.assign(d, this._newDrop(false));
-      }
+    const visible = Math.min(this.drops.length, Math.round(this.drops.length * Math.min(1, amount)));
+    this.live.length = 0;
+    this.ripples.length = 0;
+    const spanX0 = TILE.x0 + 1, spanX1 = TILE.x1 - 1;
+    const fall = TILE.y1 + 0.35;
+
+    for (let i = 0; i < visible; i++) {
+      const d = this.drops[i];
+      // Quantising the cycle count keeps `rainSpeed` loop-safe: the period is
+      // always LOOP / (integer).
+      const cycles = Math.max(2, Math.round(d.cycles * rainSpeed));
+      const period = LOOP / cycles;
+      const p = loopFrac(lt, period, d.phase);
+      const y = TILE.y1 - p * fall;
+      const x = wrapRange(d.x0 + d.drift * wind * p * period * 4.2, spanX0, spanX1);
+      this.live.push({ x, y, z: d.z, len: d.len, alpha: d.alpha, color: d.color, seed: d.seed, y01: y / TILE.y1 });
+
+      if (!d.splash || puddleAmt <= 0.05) continue;
+      const age = p * period;
+      if (age > RIPPLE_LIFE) continue;
+      const landingX = wrapRange(d.x0, spanX0, spanX1);
+      const { puddle, dist } = this._nearestPuddle(landingX, d.z);
+      if (!puddle || dist > 3.0) continue;
+      const k = hash11(d.seed);
+      this.ripples.push({
+        x: lerp(landingX, puddle.x, 0.6),
+        z: lerp(d.z, puddle.z, 0.6),
+        y: puddle.y + 0.006,
+        age,
+        life: RIPPLE_LIFE,
+        r0: 0.12,
+        r1: Math.max(puddle.rx, puddle.rz) * (0.40 + k * 0.4),
+        spikes: 3 + Math.floor(k * 3),
+        seed: d.seed,
+        strength: puddleAmt,
+      });
+      if (this.ripples.length > MAX_RIPPLES) break;
     }
-
-    for (const r of this.ripples) r.age += step;
-    this.ripples = this.ripples.filter((r) => r.age < r.life);
-
-    // Ambient drips keep puddles alive even when few drops land on them.
-    this.rippleTimer -= step;
-    if (this.rippleTimer <= 0 && puddleAmt > 0.05) {
-      const visible = Math.min(this.puddles.length, Math.max(1, Math.round(this.puddles.length * puddleAmt)));
-      const p = this.puddles[Math.floor(this.rng.next() * visible)];
-      this._spawnRipple(p.x, p.z, 0.7);
-      this.rippleTimer = this.rng.range(0.24, 0.7) / clamp(puddleAmt, 0.35, 2);
-    }
+    this.time = lt;
   }
 
   _puddlePolygon(p, scale = 1, segments = 16) {
@@ -194,16 +202,16 @@ export class Weather {
     const amount = clamp(params.rainAmount == null ? 1 : params.rainAmount, 0, 2);
     const wind = params.wind == null ? 0.6 : params.wind;
     const budget = detail.rain == null ? 1 : detail.rain;
-    const count = Math.min(this.drops.length, Math.round(this.drops.length * amount * budget));
+    const count = Math.min(this.live.length, Math.round(this.live.length * budget));
     for (let i = 0; i < count; i++) {
-      const d = this.drops[i];
-      if (d.y <= 0.05) continue;
+      const d = this.live[i];
+      if (d.y <= 0.05 || d.y > TILE.y1 + 0.3) continue;
       const a = v3(d.x, d.y, d.z);
       const b = v3(d.x + wind * 0.22 * d.len, d.y - d.len, d.z + wind * 0.06 * d.len);
       const qa = camera.project(a);
       if (!qa) continue;
       const width = clamp(qa.scale * 0.016, 0.6, 1.9);
-      const alpha = d.alpha * (0.55 + 0.45 * clamp(1 - d.y / TILE.y1, 0, 1)) * clamp(amount, 0, 1.5);
+      const alpha = d.alpha * (0.55 + 0.45 * clamp(1 - d.y01, 0, 1)) * clamp(amount, 0, 1.5);
       p.projectLine(camera, [a, b], {
         color: d.color,
         width,

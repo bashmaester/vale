@@ -105,7 +105,13 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Libe
 .sb-heading { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; color: #eef3e8; text-transform: uppercase; }
 .sb-note { margin: 0 0 14px; color: #6f8377; }
 .sb-section { padding: 10px 0 4px; border-top: 1px solid #1d2a23; }
-.sb-title { margin: 0 0 2px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #56c7b7; }
+.sb-title { display: flex; align-items: center; justify-content: space-between; width: 100%;
+  margin: 0 0 2px; padding: 3px 0; border: 0; background: none; cursor: pointer;
+  font: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #56c7b7; }
+.sb-title:hover { color: #9fe4d6; }
+.sb-chev { color: #4a5f54; font-size: 12px; line-height: 1; letter-spacing: 0; }
+.sb-title:hover .sb-chev { color: #56c7b7; }
+.sb-section.is-collapsed { padding-bottom: 0; }
 .sb-sub { margin: 0 0 6px; color: #6f8377; }
 .sb-row { display: block; margin: 8px 0; }
 .sb-row-head { display: flex; justify-content: space-between; gap: 8px; color: #9fb2a5; }

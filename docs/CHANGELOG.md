@@ -2,6 +2,57 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 10: perfect loop, faster frames, cleaner case
+
+Tagged `v0.1.1` at the start of the turn (the state the user had just reviewed).
+
+**User feedback:** “better, let’s tag this with v0.1.1 and continue”, plus:
+cleaner/off-by-default case, collapsible menu sections, a thorough performance
+pass, “S does weird things and start stuttering”, and a demand that every
+random element use looped noise with predictable seeds so the whole scene is a
+perfect deterministic loop, with looping rather than fading.
+
+### Added
+
+- `src/loop.js`: the loop rulebook — `loopFrac`, `loopCycles`/`loopPeriod`
+  (periods quantised to `20 / integer`), `loopNoise` (seamless, integer-cycle),
+  `loopTri`, `wrapRange`, `boundaryAlpha` (wrap / fade / clip buffer) and
+  `seeded`.
+- `tools/determinism.mjs` + `npm run determinism`, wired into `npm run verify`:
+  asserts the plate at t and t + 20 is byte-identical, from a cold scene and
+  after a full playback.
+- `params.loopBuffer`: metres of boundary band where crowd and vehicles fade.
+- Scene parameters: `caseFrame` is now **0 by default**.
+- Sidebar: collapsible sections (click the header), a `boundary buffer` slider
+  and a `render scale` row.
+
+### Changed
+
+- `weather.js` rewritten: no `dt` integration, no respawn RNG. Drops are seeded
+  specs with quantised periods; ripples are derived from landing times.
+- `timeline.motionT` is now the loop clock itself (`motionScale = 1`); crowd
+  idle sway uses integer cycles per loop, so t = 0 and t = 20 match exactly.
+- Crowd walks in from the tile edge, crosses on the green and walks off the far
+  side; alpha comes from the boundary buffer, not from a global fade.
+- Vehicles are choreographed against the signal (approach → wait at the stop
+  line → drive through → wrap off-screen) instead of fading in during a surge.
+- The case is cleaner: no bolts or corner ticks, thinner posts, one crisp rail
+  weight, less jitter.
+- `lab.js`: `S` only saves a frame with `Ctrl/Cmd+S` and only while the lab is
+  open — walking backwards no longer triggers a full-resolution PNG export
+  (that was the stutter).
+
+### Performance
+
+- `Scene._ensureStatic`: the static set is cached and blitted with a sub-pixel
+  offset, repainted only when the camera drifts > 2.5 px, the LoD level changes
+  or the loop wraps.
+- The plate follows the viewport (≤ 1.25× DPR, 640–1440 px) instead of always
+  rendering 1440×810; `?scale=` and the sidebar’s render-scale row shrink the
+  shader too.
+- Measured in the Node canvas benchmark: **54.7 → 21.9 ms** per frame at
+  1440×810 (2.5×), 15.7 ms at 1280×720, 11.6 ms at 900×506.
+
 ## 2026-10-27 — Turn 9: game-style cameras, sorted case, sidebar
 
 **User feedback:** “the render is coming along… still things to solve but I'm

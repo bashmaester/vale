@@ -10,8 +10,8 @@ drives the sample, not the deliverable.
 
 ## 1. What the build is
 
-One self-contained `index.html` (141.5 KiB / 144,903 B), silent, autoplaying,
-no external assets. It renders one tile of a rainy street corner inside a physical-looking
+One self-contained `index.html` (~145 KiB), silent, autoplaying, no external
+assets. v0.1.1 was tagged mid-turn; this build is v0.1.2. It renders one tile of a rainy street corner inside a physical-looking
 case: plinth, four corner posts, wall-thickness caps on the cut faces, engraved
 label. Everything inside the case is generated from code every frame.
 
@@ -29,6 +29,7 @@ Runtime switches:
 | `?cam=cinematic\|fps\|third\|drone` | starts in a camera mode (`orbit`/`fly`/`auto`/`user` are aliases) |
 | `?shot=rig\|tripod\|crane\|orbit\|detail` | picks a cinematic shot |
 | `?hud=0` | hides the camera help line |
+| `?scale=0.7` | renders the plate + shader at 70 % (slow machines) |
 
 `window.VALE = { graph, scene, renderer, lab, sidebar, state, W, H, DURATION }`.
 
@@ -161,6 +162,35 @@ built `index.html` bundle in Node with a DOM shim, drives six frames and fails o
 any startup error, so a corrupted or non-parsing bundle can no longer ship (the
 2026-10-27 blank deploy was a `$&` substitution bug in the build plus a TDZ error
 in `main.js`; both fixed, both now covered).
+
+## 4b. Determinism and performance (Turn 10)
+
+**The film is a perfect 20 s loop.** Nothing integrates over `dt`; every drop,
+person and vehicle is `f(seed, t)` with `f(seed, t+20) === f(seed, t)`.
+`npm run determinism` (part of `npm run verify`) renders t and t+20 from a cold
+scene and after a full playback and compares PNG bytes; it is bit-exact at
+three sample times. `src/loop.js` holds the primitives (periods quantised to
+`20 / integer`, seamless `loopNoise`, `boundaryAlpha`).
+
+**Loop over fade.** Crowd walkers enter from the tile edge, wait at the kerb,
+cross on the green and walk off the far side; alpha comes from
+`params.loopBuffer` (metres), so nothing dissolves mid-frame. Vehicles pull up
+to the stop line, wait out the pedestrian window, drive through and wrap
+off-screen. Rain drops fall on quantised periods and their ripples are derived
+from landing times.
+
+**Frame time** (Node canvas benchmark, same machine): 1440×810 **54.7 → 21.9
+ms**, 1280×720 15.7 ms, 900×506 11.6 ms. Two changes did most of it:
+
+1. `Scene._ensureStatic` paints the set once into a cached canvas and blits it
+   with a sub-pixel offset (repaint when the camera drifts > 2.5 px, when the
+   LoD changes, or at the loop point).
+2. The plate follows the viewport (≤ 1.25× DPR) instead of a fixed 1440×810;
+   `?scale=` / the sidebar render-scale row shrink the shader too.
+
+**`S` was the stutter.** `lab.js` bound a bare `S` to `saveFrame()`, so walking
+backwards in first person exported a full-resolution PNG every step. It now
+needs `Ctrl/Cmd+S` and only fires while the lab is open.
 
 ## 4c. What this turn added
 

@@ -7,15 +7,18 @@ export class Timeline {
     this.duration = duration;
     this.t = 0;
     this.u = 0;
-    // Secondary animation clock. The signal cycle still lasts exactly 20s,
-    // but rain boil, idle sway, line flicker and grain run at a calmer tempo.
-    this.motionScale = 0.62;
+    // Secondary animation clock, used for idle sway, line boil and grain.
+    // It must be a pure function of t that repeats every `duration`: any
+    // per-frame integration or non-integer frequency would break the loop and
+    // make t = 0 and t = 20 different frames. Slow motion is achieved by using
+    // few cycles per loop inside the oscillators, not by scaling the clock.
+    this.motionScale = 1;
     this.motionT = 0;
   }
   update(t) {
     this.t = mod(t, this.duration);
     this.u = this.t / this.duration;
-    this.motionT = mod(t * this.motionScale, this.duration);
+    this.motionT = this.t;
     return this.u;
   }
 

@@ -12,9 +12,15 @@
 // level) and strips accessories before it strips silhouettes.
 
 import { PALETTE } from './draw.js';
-import { v3, clamp, norm3, makeRng, hash11, TAU } from './math.js';
+import { v3, clamp, lerp, norm3, makeRng, hash11, TAU, smoothstep, smootherstep } from './math.js';
 import { separate, separateGroups, poissonDisk } from './collision.js';
 import { groundYAt, TILE } from './tile.js';
+import { LOOP, boundaryAlpha } from './loop.js';
+
+// The crowd fades at the back and side edges only. The front (+z) edge is the
+// open face of the diorama and the near sidewalk runs along it — fading there
+// would dim the whole foreground row.
+const CROWD_BOX = { x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: TILE.z1 + 3.0 };
 import {
   FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone,
 } from './world.js';
@@ -158,8 +164,13 @@ export class Crowd {
         x: (start.x + end.x) / 2 + side.x * bend,
         z: (start.z + end.z) / 2 + side.z * bend,
       };
+      // Where this person comes from: along the sidewalk, at the edge of the
+      // tile. They walk in from there, so nobody ever pops into mid-frame.
+      const approachSign = rng.chance(0.5) ? 1 : -1;
+      const edgeX = approachSign > 0 ? TILE.x1 - 0.35 : TILE.x0 + 0.35;
       this.crossers.push(makePerson(rng, i, {
         start, end, ctrl, dir, side, kind: flow.kind, flow: flow.id,
+        approach: { x: edgeX, z: start.z + side.z * 0.0 },
         pathLength: Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
         delay: clamp((Math.abs(start.x) - 7) / 12, 0, 1) * 0.16 + rng.range(0, 0.30),
       }));
@@ -186,7 +197,11 @@ export class Crowd {
 
   update(camera, timeline, params, obstacles = [], detail = { crowd: 1, windows: 1, props: 1 }) {
     const u = timeline.u;
+    const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
     const motionT = timeline.motionT;
+    // Integer cycles per loop: a sine that does not complete whole cycles inside
+    // the 20 s loop would make t=0 and t=20 different frames.
+    const osc = (cycles, phase) => Math.sin((TAU * cycles * motionT) / LOOP + phase);
     const crowdA = timeline.crowdAlpha();
     const waiterA = timeline.waiterAlpha();
     const wind = params.wind == null ? 0.6 : params.wind;
@@ -195,14 +210,34 @@ export class Crowd {
 
     for (const ped of this.crossers) {
       let world, moving = false, distance = 0;
+      // Alpha is driven by where the person is, not by the clock: they fade in
+      // at the edge of the tile, walk in, wait at the kerb, cross on the green
+      // and walk off the far side. The loop point therefore happens while they
+      // are already invisible, so there is no pop.
+      let alpha = 1;
       if (u > 0.80 || u < 0.18) {
-        const idle = Math.sin(motionT * 0.72 + ped.phase) * 0.07;
-        world = { x: ped.start.x + idle, z: ped.start.z + Math.cos(motionT * 0.60 + ped.phase) * 0.055 };
+        const idle = osc(2, ped.phase) * 0.07;
+        if (u < 0.18) {
+          // Approach leg: from the tile edge to the kerb.
+          const k = smootherstep(0.0, 0.17, u);
+          world = {
+            x: lerp(ped.approach.x, ped.start.x + idle, k),
+            z: lerp(ped.approach.z, ped.start.z, k) + Math.sin((TAU * 2 * motionT) / LOOP + ped.phase + 1.57) * 0.055 * k,
+          };
+          moving = k > 0.01 && k < 0.99;
+          alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
+        } else {
+          world = {
+            x: ped.start.x + idle,
+            z: ped.start.z + Math.sin((TAU * 2 * motionT) / LOOP + ped.phase + 1.57) * 0.055,
+          };
+          alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
+        }
       } else {
         const s = timeline.crossWithDelay(ped.delay * ped.pace);
         if (s < 1) {
           world = bezier2(ped.start, ped.ctrl, ped.end, s);
-          const sway = Math.sin(motionT * 1.35 + ped.phase) * 0.04;
+          const sway = osc(4, ped.phase) * 0.04;
           world.x += ped.side.x * sway;
           world.z += ped.side.z * sway;
         } else {
@@ -211,26 +246,30 @@ export class Crowd {
         }
         distance = (s < 1 ? s * ped.pathLength : ped.pathLength + timeline.drain() * (ped.kind === 'stroll' ? 4.5 : 8));
         moving = true;
+        // Walk into the far edge and dissolve there, not in the middle.
+        alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade') *
+          (1 - smoothstep(0.74, 0.9, u));
       }
       const stridePhase = ped.phase + (moving
         ? distance / (ped.strideLen * ped.scale * ped.gait) * TAU * tempo
-        : Math.sin(motionT * 0.62 + ped.phase) * 0.10);
+        : osc(2, ped.phase) * 0.10);
       raw.push({
-        ped, world, alpha: crowdA, dir: ped.dir, side: ped.side, scale: ped.scale,
+        ped, world, alpha, dir: ped.dir, side: ped.side, scale: ped.scale,
         stridePhase, moving, waiter: false, radius: 0.44 * ped.scale,
         group: 'crowd', fixed: false,
       });
     }
 
     for (const w of this.waiters) {
-      const idle = Math.sin(motionT * 0.66 + w.phase) * 0.08;
+      const idle = osc(2, w.phase) * 0.08;
       const world = {
         x: w.base.x + idle + wind * 0.08,
-        z: w.base.z + Math.cos(motionT * 0.52 + w.phase) * 0.065,
+        z: w.base.z + Math.sin((TAU * 2 * motionT) / LOOP + w.phase + 1.57) * 0.065,
       };
       raw.push({
-        ped: w, world, alpha: waiterA * 0.9, dir: w.dir, side: w.side, scale: w.scale,
-        stridePhase: w.phase + Math.sin(motionT * 0.52 + w.phase) * 0.08,
+        ped: w, world, alpha: 0.92 * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade'),
+        dir: w.dir, side: w.side, scale: w.scale,
+        stridePhase: w.phase + osc(2, w.phase) * 0.08,
         moving: false, waiter: true, radius: 0.44 * w.scale,
         group: 'crowd', fixed: false,
       });

@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 9), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 10, v0.1.2), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -71,6 +71,25 @@ Recent fixes that matter (all verified with stills):
 Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
 luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
+
+### Turn 10 — perfect loop, performance, cleaner case
+
+1. **The loop is now a hard invariant.** `src/loop.js` forbids integrating
+   state over `dt`; rain, crowd idle sway, vehicles and the shader grain are all
+   pure functions of loop time with integer-cycle periods. `npm run determinism`
+   (in `verify` and CI) fails the build if t and t+20 differ by a single pixel.
+   If you add animation, use `loopFrac` / `loopNoise` / `loopPeriod` — never
+   `Math.random` and never an accumulator.
+2. **Loop instead of fade.** Walkers enter from the tile edge and leave at the
+   far edge; cars pull up to the stop line, wait, then drive through and wrap
+   off-screen. `params.loopBuffer` is the fade band. Nothing dissolves mid-shot.
+3. **Performance.** The set is cached (`Scene._ensureStatic`) and blitted with a
+   sub-pixel offset; the plate follows the viewport and `?scale=` shrinks the
+   shader. 1440×810 went from 54.7 ms to 21.9 ms in the Node benchmark.
+4. **`S` key.** A bare `S` used to save a PNG frame from anywhere (so walking
+   backwards stuttered). It is now `Ctrl/Cmd+S`, lab-only.
+5. **Case** is off by default, cleaner when on (no bolts/ticks, thinner posts,
+   one rail weight), and the sidebar sections collapse.
 
 ### Turn 9 — cameras, case sorting, sidebar
 
@@ -189,6 +208,7 @@ node -e "const {createCanvas,loadImage}=require('@napi-rs/canvas');(async()=>{
 
 LoD sheet: `node tools/lod.mjs [time] [width]` → `.shots/lod.png`.
 Luminance sweep: `node tools/smoke.mjs` (guard rail against an all-dark film).
+Determinism: `node tools/determinism.mjs` (must stay bit-exact; it is in `verify`).
 
 ---
 
@@ -216,7 +236,8 @@ Still open from the same list: vehicle glazing at L0, and a CI screenshot job
 | `src/crowd.js` | procedural people: archetypes, LoD thinning, umbrellas |
 | `src/traffic.js` | vehicles (extruded profiles) + overhead train |
 | `src/weather.js` | raindrops, ripples, puddles |
-| `src/scene.js` | orchestration, params, depth sorting, `render(t, dt)` |
+| `src/scene.js` | orchestration, params, depth sorting, cached set, `render(t, dt)` |
+| `src/loop.js` | loop primitives: quantised periods, seamless noise, boundary alpha |
 | `src/camera.js` | `CameraRig`: fitted keyframes, roll, fov (cinematic mode) |
 | `src/camera-modes.js` | modular controllers + `SHOTS` |
 | `src/camera-director.js` | mode switching, input, HUD |

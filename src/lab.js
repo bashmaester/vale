@@ -66,9 +66,18 @@ export class Lab {
         if (e.key === 'Escape') e.target.blur();
         return;
       }
-      if (e.key === 'l' || e.key === 'L') { this.toggle(); e.preventDefault(); }
-      else if (e.key === ' ') { this.state.paused = !this.state.paused; e.preventDefault(); }
-      else if (e.key === 's' || e.key === 'S') { this.saveFrame(); e.preventDefault(); }
+      // `L` is the only global key: the lab is a tool, not a mode. Everything
+      // else only applies while the lab is open, so walking backwards (`S`) or
+      // climbing (`Space`) in a camera mode never saves a PNG or pauses the
+      // film. That conflict was the "S does weird things / stutters" report:
+      // every step backwards ran a full-resolution toDataURL + download.
+      if (e.key === 'l' || e.key === 'L') { this.toggle(); e.preventDefault(); return; }
+      if (!this.isOpen) return;
+      if (e.key === ' ') { this.state.paused = !this.state.paused; e.preventDefault(); }
+      else if (e.key === 's' || e.key === 'S') {
+        // Ctrl/Cmd+S is the familiar save shortcut; a bare S no longer fires.
+        if (e.metaKey || e.ctrlKey) { this.saveFrame(); e.preventDefault(); }
+      }
       else if (e.key === 'r' || e.key === 'R') { this.resetAll(); e.preventDefault(); }
     });
   }

@@ -16,11 +16,31 @@ const el = (tag, className, text) => {
   return n;
 };
 
-function section(title, subtitle) {
+// A collapsible section. The header is the toggle; the body holds the rows.
+function section(title, subtitle, open = true) {
   const s = el('section', 'sb-section');
-  const h = el('h3', 'sb-title', title);
+  const h = el('button', 'sb-title', title);
+  h.type = 'button';
+  const chev = el('span', 'sb-chev', open ? '−' : '+');
+  h.appendChild(chev);
+  const body = el('div', 'sb-body');
+  body.hidden = !open;
+  if (subtitle) body.appendChild(el('p', 'sb-sub', subtitle));
   s.appendChild(h);
-  if (subtitle) s.appendChild(el('p', 'sb-sub', subtitle));
+  s.appendChild(body);
+  s.classList.toggle('is-collapsed', !open);
+  h.addEventListener('click', () => {
+    const next = body.hidden;
+    body.hidden = !next;
+    chev.textContent = next ? '−' : '+';
+    s.classList.toggle('is-collapsed', !next);
+  });
+  s._body = body;
+  // Callers append rows straight onto the section; redirect them into the body
+  // so collapsing is a single `hidden` flag.
+  const rawAppend = s.appendChild.bind(s);
+  s.appendChild = (child) => body.appendChild(child);
+  s._rawAppend = rawAppend;
   return s;
 }
 
@@ -236,6 +256,15 @@ export class Sidebar {
     addScene('rainSpeed');
     addScene('puddleAmount');
     addScene('wind');
+    addScene('loopBuffer', 'boundary buffer');
+    // Render scale: the cheapest frame-rate knob (the print shader is per-pixel).
+    sc.appendChild(this.select({
+      label: 'render scale',
+      value: '1',
+      options: [['1', '100 %'], ['0.85', '85 %'], ['0.7', '70 %'], ['0.55', '55 %']],
+      onChange: (v) => { if (window.VALE && window.VALE.setQuality) window.VALE.setQuality(Number(v)); },
+      get: () => String((window.VALE && window.VALE.quality) || 1),
+    }));
     root.appendChild(sc);
 
     // Texture --------------------------------------------------------------
