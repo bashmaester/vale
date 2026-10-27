@@ -72,22 +72,22 @@ export const SHOTS = [
   },
   {
     id: 'tripod', label: 'Tripod · street level',
-    eye: v3(-13.2, 3.1, 26.5), target: v3(-1.6, 4.2, -3.0), fov: 33,
+    eye: v3(-13.4, 6.6, 24.5), target: v3(-1.6, 3.2, -3.0), fov: 33,
     drift: 0.14,
   },
   {
     id: 'crane', label: 'Crane · rise',
-    eye: v3(4.0, 4.2, 33.0), target: v3(0.4, 5.6, -4.0), fov: 36,
-    rise: 7.5, drift: 0.10,
+    eye: v3(4.0, 5.4, 31.0), target: v3(0.4, 4.4, -4.0), fov: 36,
+    rise: 8.5, drift: 0.10,
   },
   {
     id: 'orbit', label: 'Slow orbit',
-    radius: 34, height: 13.5, target: v3(-0.4, 4.0, -3.6), fov: 35,
+    radius: 34, height: 17.5, target: v3(-0.4, 2.6, -3.6), fov: 35,
     speed: 0.035, drift: 0.12,
   },
   {
     id: 'detail', label: 'Detail · crossing',
-    eye: v3(-5.6, 2.2, 12.6), target: v3(-2.4, 2.0, -0.4), fov: 30,
+    eye: v3(-5.6, 3.9, 11.4), target: v3(-2.4, 1.8, -0.6), fov: 30,
     drift: 0.10,
   },
 ];
@@ -284,8 +284,8 @@ export class DroneMode extends CameraMode {
     const d = this.dir;
     d.fov = 38.5;
     if (this.touched) return;
-    d.eye = v3(10.2, 17.4, 35.6);
-    d.target = v3(-1.0, 2.4, -2.6);
+    d.eye = v3(10.2, 19.0, 35.6);
+    d.target = v3(-1.0, 2.2, -2.6);
     const yp = yawPitchFromDir(norm3(sub3(d.target, d.eye)));
     d.yaw = yp.yaw;
     d.pitch = yp.pitch;

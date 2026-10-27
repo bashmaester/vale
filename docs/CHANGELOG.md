@@ -42,6 +42,14 @@ avoidance still looks "funny and unnatural".
 
 ### Fixed
 
+- **Proportions.** Figures were 1.3 m tall with the head resting on the
+  shoulders; they are now built as a 1.72 m adult — head clear of the collar, a
+  coat hem with two legs below it instead of one triangle down to the ankles —
+  and the pale coats are opaque.
+- The camera framings were recomposed for the module: the drone opens on
+  `(10.2, 19.0, 35.6) → (−1, 2.2, −2.6)`, the tripod shot is now axial down the
+  street where both frontages read, and the crane, orbit and detail shots were
+  raised above the near row.
 - The south row and the forecourt now sit on the raised slab, so the near block
   reads as a pavement rather than a floating shelf.
 - Crowd walk-on no longer starts 20 m away at sprint speed; the drain no longer

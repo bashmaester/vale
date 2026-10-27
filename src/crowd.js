@@ -44,8 +44,8 @@ const UMBRELLAS = [
 // floating head and a pair of white trouser lines.
 const COATS = [
   '#1b201e', '#20261f', '#252b26', '#171b19', '#2b312d', '#12160f',
-  'rgba(239,233,216,0.82)', 'rgba(239,233,216,0.55)', 'rgba(222,214,196,0.66)',
-  'rgba(93,105,97,0.78)', 'rgba(58,66,62,0.9)',
+  'rgba(239,233,216,0.92)', 'rgba(239,233,216,0.88)', 'rgba(222,214,196,0.9)',
+  'rgba(93,105,97,0.92)', 'rgba(58,66,62,0.95)',
   'rgba(43,184,174,0.80)', 'rgba(212,59,48,0.82)',
 ];
 
@@ -446,20 +446,23 @@ export class Crowd {
     );
     const q = (w) => camera.project(w);
 
-    const hipY = (shape === 'long' ? 0.54 : shape === 'short' ? 0.76 : 0.66) * sc + bob;
-    const shoulderY = 1.12 * sc + bob;
-    const headY = 1.30 * sc + bob;
+    // Proportions of a 1.72 m adult, times the person's scale. The head sits
+    // clear above the shoulders; if it rests on them the figure reads as a
+    // lollipop no matter how well it is drawn.
+    const hipY = (shape === 'long' ? 0.86 : shape === 'short' ? 1.02 : 0.94) * sc + bob;
+    const shoulderY = 1.42 * sc + bob;
+    const headY = 1.58 * sc + bob;
     const footY = 0.015;
-    const shoulderHalf = (shape === 'hood' ? 0.20 : shape === 'A' ? 0.16 : 0.175) * sc;
-    const hipHalf = (shape === 'A' ? 0.23 : shape === 'short' ? 0.125 : 0.145) * sc;
-    const strideWide = moving ? gait * 0.11 * sc : 0.025 * sc;
+    const shoulderHalf = (shape === 'hood' ? 0.24 : shape === 'A' ? 0.18 : 0.21) * sc;
+    const hipHalf = (shape === 'A' ? 0.26 : shape === 'short' ? 0.15 : 0.17) * sc;
+    const strideWide = moving ? gait * 0.13 * sc : 0.03 * sc;
 
     const shL3 = local(-shoulderHalf + lean, shoulderY, 0);
     const shR3 = local(shoulderHalf + lean, shoulderY, 0);
     const hipL3 = local(-hipHalf + lean * 0.4, hipY, 0);
     const hipR3 = local(hipHalf + lean * 0.4, hipY, 0);
-    const footL3 = local(-0.075 * sc + lean * 0.3, footY, strideWide);
-    const footR3 = local(0.075 * sc + lean * 0.3, footY, -strideWide);
+    const footL3 = local(-0.09 * sc + lean * 0.3, footY, strideWide);
+    const footR3 = local(0.09 * sc + lean * 0.3, footY, -strideWide);
     const head3 = local(lean * 0.75, headY, 0);
 
     const qShL = q(shL3), qShR = q(shR3);
@@ -495,21 +498,36 @@ export class Crowd {
       });
     });
 
-    // One solid silhouette with a leg split: shoulders → hips → outer ankles →
-    // crotch → other ankle. At this size that is all a body needs to read.
-    const crotch3 = local(lean * 0.4, footY + (hipY - footY) * 0.38, 0);
-    const qCrotch = q(crotch3);
-    if (!qCrotch) return null;
-    const silhouette = [qShL, qShR, qHipR, qFootR, qCrotch, qFootL, qHipL];
+    // Coat silhouette: shoulders → hem, then two legs below it. A single
+    // triangle down to the ankles reads as a wizard's robe; the hem line and
+    // the separate legs are what make it read as a person.
+    const hemY = (shape === 'long' ? hipY - 0.26 * sc : hipY - 0.08 * sc) + bob * 0.2;
+    const hemL3 = local(-hipHalf * 0.94 + lean * 0.4, hemY, 0);
+    const hemR3 = local(hipHalf * 0.94 + lean * 0.4, hemY, 0);
+    const qHemL = q(hemL3);
+    const qHemR = q(hemR3);
+    if (!qHemL || !qHemR) return null;
+    // Legs first, so the coat sits over the top of them.
+    if (fine) {
+      push((p) => p.line([qHemL, qFootL], {
+        color: r.ped.coat, width: Math.max(1.2, bodyPx * 0.055), alpha: A,
+        jitter: 0.1, seed: seed + 31, double: false,
+      }));
+      push((p) => p.line([qHemR, qFootR], {
+        color: r.ped.coat, width: Math.max(1.2, bodyPx * 0.055), alpha: A,
+        jitter: 0.1, seed: seed + 33, double: false,
+      }));
+    }
+    const silhouette = [qShL, qShR, qHemR, qFootR, qFootL, qHemL];
     push((p) => p.poly(silhouette, {
       fill: r.ped.coat,
       stroke: darkCoat ? 'rgba(239,233,216,0.34)' : 'rgba(239,233,216,0.72)',
       width: lineW * (darkCoat ? 0.5 : 0.72), alpha: A, jitter: 0.14, seed: seed + 7,
     }));
-    // A single vertical value break reads as the two legs.
+    // The hem: one line across the coat, so the legs read as legs.
     if (rich) {
-      push((p) => p.line([qHipL, qHipR], {
-        color: 'rgba(239,233,216,0.22)', width: lineW * 0.6, alpha: A * 0.5,
+      push((p) => p.line([qHemL, qHemR], {
+        color: 'rgba(239,233,216,0.20)', width: lineW * 0.55, alpha: A * 0.55,
         jitter: 0.12, seed: seed + 11, double: false,
       }));
     }
