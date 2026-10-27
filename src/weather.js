@@ -1,46 +1,49 @@
 import { PALETTE } from './draw.js';
-import { v3, clamp, lerp, makeRng, hash11, smoothstep } from './math.js';
+import { v3, clamp, lerp, makeRng, hash11 } from './math.js';
 
 export class Weather {
   constructor(W, H) {
     this.W = W; this.H = H;
   }
 
+  // Reflections are a quiet glaze now. The old random wet-noise overlay was
+  // removed; rain and puddle outlines on the ink plate carry the atmosphere.
   drawReflections(wp, timeline, params) {
     const W = this.W, H = this.H;
-    const wet = params.wetness == null ? 1 : params.wetness;
-    const reflect = params.reflectionStrength == null ? 1 : params.reflectionStrength;
+    const wet = clamp(params.wetness == null ? 0.65 : params.wetness, 0, 1.6);
+    const reflect = clamp(params.reflectionStrength == null ? 0.6 : params.reflectionStrength, 0, 2);
     const reform = timeline.reflectionReform();
-    const base = (0.42 + 0.42 * reform) * wet * reflect;
-    const rng = makeRng(7000 + Math.floor(timeline.t * 8));
-    const count = Math.round(150 * clamp(wet, 0.2, 1.6));
+    const base = (0.10 + 0.10 * reform) * wet * reflect;
+    const frame = Math.floor(timeline.motionT * 3.2);
+    const rng = makeRng(7000 + frame);
+    const count = Math.round(28 * clamp(wet, 0.2, 1.6));
     for (let i = 0; i < count; i++) {
       const x = rng.range(-20, W + 20);
-      const y = rng.range(H * 0.42, H * 0.98);
-      const len = rng.range(8, 46) * (0.5 + (y / H));
-      const wob = rng.range(-3, 3);
-      const col = rng.chance(0.10) ? PALETTE.red : (rng.chance(0.28) ? PALETTE.teal : PALETTE.ink);
-      wp.line([[x, y], [x + wob, y + len], [x + wob * 1.6, y + len * 1.5]], {
+      const y = rng.range(H * 0.46, H * 0.98);
+      const len = rng.range(10, 34) * (0.6 + (y / H));
+      const wob = rng.range(-2, 2);
+      const col = rng.chance(0.08) ? PALETTE.red : (rng.chance(0.22) ? PALETTE.teal : PALETTE.ink);
+      wp.line([[x, y], [x + wob, y + len]], {
         color: col,
-        width: rng.range(0.5, 1.5),
-        alpha: base * rng.range(0.10, 0.42),
+        width: rng.range(0.5, 1.1),
+        alpha: base * rng.range(0.10, 0.30),
         composite: 'lighter',
-        jitter: 0.55,
-        seed: i + Math.floor(timeline.t * 8) * 13,
+        jitter: 0.35,
+        seed: i + frame * 13,
         double: false,
       });
     }
-    // Long horizontal gouges from signage / signals.
-    for (let i = 0; i < 16; i++) {
-      const y = H * (0.47 + i * 0.028) + Math.sin(timeline.t * 0.7 + i) * 2;
-      const x0 = rng.range(-40, W * 0.4);
-      const x1 = x0 + rng.range(W * 0.25, W * 0.7);
-      wp.line([[x0, y], [x1, y + rng.range(-2, 2)]], {
-        color: i % 4 === 0 ? PALETTE.red : (i % 3 === 0 ? PALETTE.teal : PALETTE.ink),
-        width: rng.range(0.6, 1.8),
-        alpha: base * rng.range(0.08, 0.28),
+    // A few long, faint signage gouges.
+    for (let i = 0; i < 5; i++) {
+      const y = H * (0.50 + i * 0.065) + Math.sin(timeline.motionT * 0.28 + i) * 1.5;
+      const x0 = rng.range(-30, W * 0.35);
+      const x1 = x0 + rng.range(W * 0.18, W * 0.45);
+      wp.line([[x0, y], [x1, y + rng.range(-1.5, 1.5)]], {
+        color: i % 3 === 0 ? PALETTE.red : (i % 2 === 0 ? PALETTE.teal : PALETTE.ink),
+        width: rng.range(0.6, 1.2),
+        alpha: base * rng.range(0.06, 0.16),
         composite: 'lighter',
-        jitter: 0.8,
+        jitter: 0.5,
         seed: 300 + i,
         double: false,
       });
@@ -49,10 +52,11 @@ export class Weather {
 
   drawRain(p, timeline, params) {
     const W = this.W, H = this.H;
-    const amount = params.rainAmount == null ? 1 : params.rainAmount;
+    const amount = clamp(params.rainAmount == null ? 1 : params.rainAmount, 0, 2);
     const wind = params.wind == null ? 0.6 : params.wind;
-    const rng = makeRng(31000 + Math.floor(timeline.t * 12));
-    const count = Math.round(250 * clamp(amount, 0, 2));
+    const frame = Math.floor(timeline.motionT * 5);
+    const rng = makeRng(31000 + frame);
+    const count = Math.round(250 * amount);
     for (let i = 0; i < count; i++) {
       const x = rng.range(-40, W + 40);
       const y = rng.range(-40, H + 40);
@@ -64,12 +68,12 @@ export class Weather {
         width: rng.range(0.45, 1.15),
         alpha: rng.range(0.06, 0.20) * clamp(amount, 0, 1.5),
         jitter: 0.25,
-        seed: i + Math.floor(timeline.t * 12) * 7,
+        seed: i + frame * 7,
         double: false,
       });
     }
-    // A few close, fast streaks.
-    for (let i = 0; i < 22; i++) {
+    // A few close streaks.
+    for (let i = 0; i < 14; i++) {
       const x = rng.range(0, W);
       const y = rng.range(H * 0.1, H);
       const len = rng.range(30, 80);
@@ -81,7 +85,7 @@ export class Weather {
       });
     }
     // Splashes on the wet plate.
-    for (let i = 0; i < 42; i++) {
+    for (let i = 0; i < 30; i++) {
       const x = rng.range(0, W);
       const y = rng.range(H * 0.55, H * 0.98);
       const r = rng.range(2, 7) * (y / H);
@@ -103,11 +107,11 @@ export class Weather {
     ctx.globalCompositeOperation = 'lighter';
 
     // R = wetness / reflection zone.
-    const wet = clamp(params.wetness == null ? 1 : params.wetness, 0, 1.6);
+    const wet = clamp(params.wetness == null ? 0.65 : params.wetness, 0, 1.6);
     const g = ctx.createLinearGradient(0, H * 0.34, 0, H);
     g.addColorStop(0, 'rgba(255,0,0,0)');
-    g.addColorStop(0.55, `rgba(255,0,0,${0.22 * wet})`);
-    g.addColorStop(1, `rgba(255,0,0,${0.82 * wet})`);
+    g.addColorStop(0.55, `rgba(255,0,0,${0.14 * wet})`);
+    g.addColorStop(1, `rgba(255,0,0,${0.55 * wet})`);
     ctx.fillStyle = g;
     ctx.fillRect(0, H * 0.34, W, H * 0.66);
 

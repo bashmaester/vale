@@ -1,22 +1,26 @@
 import { PALETTE } from './draw.js';
 import { v3, clamp, lerp, easeInOut, makeRng, hash11, quadLerp } from './math.js';
 import { separate } from './collision.js';
-import { sanitizePark } from './world.js';
+import { LANES, ROAD, sanitizePark } from './world.js';
 
+// Six vehicles, one per legal lane. dir comes from the lane definition so
+// opposing streams never share the same strip of asphalt.
 const VEHICLE_SPECS = [
-  { type: 'bus', w: 5.8, h: 2.8, d: 2.3, lane: -7.5, dir: 1, offset: 0.00, park: [-22.8, -7.5], color: PALETTE.ink },
-  { type: 'car', w: 3.8, h: 1.7, d: 1.9, lane: -5.0, dir: -1, offset: 0.10, park: [22.8, -5.0], color: PALETTE.ink },
-  { type: 'taxi', w: 4.0, h: 1.8, d: 1.9, lane: -2.5, dir: 1, offset: 0.22, park: [-22.8, -2.5], color: PALETTE.red },
-  { type: 'truck', w: 6.4, h: 3.0, d: 2.4, lane: 0, dir: -1, offset: 0.34, park: [22.8, 0], color: PALETTE.ink },
-  { type: 'van', w: 4.8, h: 2.4, d: 2.1, lane: 2.5, dir: 1, offset: 0.46, park: [-22.8, 2.5], color: PALETTE.teal },
-  { type: 'car', w: 3.6, h: 1.6, d: 1.8, lane: 5.0, dir: -1, offset: 0.58, park: [22.8, 5.0], color: PALETTE.ink },
+  { type: 'bus', w: 5.8, h: 2.8, d: 2.3, lane: LANES[0].z, dir: LANES[0].dir, offset: 0.00, park: [-22.8, LANES[0].z], color: PALETTE.ink },
+  { type: 'car', w: 3.8, h: 1.7, d: 1.9, lane: LANES[1].z, dir: LANES[1].dir, offset: 0.10, park: [-24.5, LANES[1].z], color: PALETTE.ink },
+  { type: 'taxi', w: 4.0, h: 1.8, d: 1.9, lane: LANES[2].z, dir: LANES[2].dir, offset: 0.22, park: [-22.8, LANES[2].z], color: PALETTE.red },
+  { type: 'truck', w: 6.4, h: 3.0, d: 2.4, lane: LANES[3].z, dir: LANES[3].dir, offset: 0.34, park: [22.8, LANES[3].z], color: PALETTE.ink },
+  { type: 'van', w: 4.8, h: 2.4, d: 2.1, lane: LANES[4].z, dir: LANES[4].dir, offset: 0.46, park: [24.5, LANES[4].z], color: PALETTE.teal },
+  { type: 'car', w: 3.6, h: 1.6, d: 1.8, lane: LANES[5].z, dir: LANES[5].dir, offset: 0.58, park: [22.8, LANES[5].z], color: PALETTE.ink },
 ];
 
 function vehicleWorld(spec, v, parked) {
   if (parked) return { x: spec.park[0], z: spec.park[1] };
-  const span = 36;
-  const x = spec.dir > 0 ? lerp(-span, span, v) : lerp(span, -span, v);
-  return { x, z: spec.lane + Math.sin(v * Math.PI * 2 + spec.offset * 9) * 0.12 };
+  const span = 30;
+  // Slower return: vehicles only traverse part of the span in the final phase.
+  const drive = v * 0.72;
+  const x = spec.dir > 0 ? lerp(-span, span, drive) : lerp(span, -span, drive);
+  return { x, z: spec.lane + Math.sin(v * Math.PI * 2 + spec.offset * 9) * 0.06 };
 }
 
 function drawWheels(p, camera, world, spec, alpha, seed) {
@@ -191,7 +195,7 @@ export class Traffic {
         spec, world: pw, alpha: parkedA * 0.9,
         radius: Math.max(spec.w, spec.d) * 0.5, group: 'vehicle', fixed: true,
       });
-      const v = clamp((timeline.u - 0.88) / 0.11 - spec.offset, 0, 1);
+      const v = clamp((timeline.u - 0.90) / 0.10 - spec.offset * 0.20, 0, 1);
       const e = easeInOut(v);
       const mw = vehicleWorld(spec, e, false);
       this.movingItems.push({
@@ -199,7 +203,15 @@ export class Traffic {
         radius: Math.max(spec.w, spec.d) * 0.5, group: 'vehicle', fixed: false,
       });
     }
-    separate([...this.parkedItems, ...this.movingItems], { iterations: 2, padding: 0.25 });
+    separate([...this.parkedItems, ...this.movingItems], {
+      iterations: 2, padding: 0.25,
+      bounds: { x0: ROAD.x0 + 2, x1: ROAD.x1 - 2, z0: ROAD.z0 + 2, z1: ROAD.z1 - 2 },
+    });
+    // Keep parked hulls legal after separation.
+    for (const it of this.parkedItems) {
+      const s = sanitizePark(it.world.x, it.world.z, 0.35);
+      it.world.x = s.x; it.world.z = s.z;
+    }
   }
 
   activeItems() {
@@ -263,12 +275,12 @@ export class Traffic {
       const q = camera.project(v3(this.trainX, 8.5, -8.5));
       if (q) {
         const y = Math.min(wp.H * 0.82, q.y + wp.H * 0.30);
-        for (let k = 0; k < 7; k++) {
-          const x0 = q.x - 150 + k * 42;
-          wp.line([[x0, y + k], [x0 + 90 + k * 7, y + k + 2]], {
-            color: k % 3 === 1 ? 'rgba(212,59,48,0.30)' : 'rgba(43,184,174,0.30)',
-            width: 1.1, alpha: A * 0.55, composite: 'lighter',
-            jitter: 0.6, seed: 900 + k, double: false,
+        for (let k = 0; k < 4; k++) {
+          const x0 = q.x - 120 + k * 55;
+          wp.line([[x0, y + k], [x0 + 70 + k * 7, y + k + 2]], {
+            color: k % 3 === 1 ? 'rgba(212,59,48,0.24)' : 'rgba(43,184,174,0.24)',
+            width: 0.9, alpha: A * 0.32, composite: 'lighter',
+            jitter: 0.4, seed: 900 + k, double: false,
           });
         }
       }
@@ -279,11 +291,11 @@ export class Traffic {
       if (it.alpha < 0.05) continue;
       const q = camera.project(v3(it.world.x, 0.02, it.world.z));
       if (!q) continue;
-      const len = (26 + it.spec.h * 10) * (params.reflectionStrength || 1);
-      wp.line([[q.x, q.y], [q.x + (hash11(it.spec.offset * 71) - 0.5) * 8, q.y + len]], {
-        color: it.spec.dir > 0 ? 'rgba(212,59,48,0.28)' : 'rgba(43,184,174,0.28)',
-        width: 1.4, alpha: it.alpha * 0.55, composite: 'lighter',
-        jitter: 0.7, seed: it.spec.offset * 100, double: false,
+      const len = (20 + it.spec.h * 8) * (params.reflectionStrength || 0.6);
+      wp.line([[q.x, q.y], [q.x + (hash11(it.spec.offset * 71) - 0.5) * 6, q.y + len]], {
+        color: it.spec.dir > 0 ? 'rgba(212,59,48,0.22)' : 'rgba(43,184,174,0.22)',
+        width: 1.0, alpha: it.alpha * 0.28, composite: 'lighter',
+        jitter: 0.45, seed: it.spec.offset * 100, double: false,
       });
     }
   }

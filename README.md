@@ -56,12 +56,13 @@ signal-cycle timeline ─┘                                   │
 
 `src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe the crossing in world space (`x` right, `y` up, `z` toward the viewer):
 
-- shared sidewalks, crosswalks, waiting zones, diagonal flows and legal parking slots;
-- buildings with windows/balconies/drainpipes, signage, wires, elevated track, signals, zebra markings, curbs, stop lines and puddles;
-- ~132 crossing pedestrians plus ~34 waiting umbrellas, each a **procedural 3D skeleton** with a distance-driven walk cycle and a faceted 3D umbrella dome — not a sliding billboard;
-- vehicles with wheels, hubs, wheel arches, cabins, sloped windshields, truck cab/cargo splits, bus signs, taxi roof lights, bumpers and lamps;
+- two crossing roads, four raised sidewalk blocks, straight zebra crossings on every approach, faint diagonal scramble guides, stop lines, curbs, lane dividers and direction arrows;
+- low buildings with windows, awnings, wires, elevated track and signals; signs are oriented 3D quads that foreshorten instead of billboarding;
+- about 158 crossers plus 42 waiters drawn as tiny architectural-sketch people: head dots, solid coats, short legs, ground shadows, varied umbrellas, hats, bags, dogs, strollers and children — all projected from 3D world points;
+- eight walking routes (four straight crossings plus four diagonal scrambles) and a slower secondary motion clock so the crowd walks instead of sprints;
+- six vehicles with wheels, cabins, windshields, truck/van/bus/taxi silhouettes, split into legal left/right lanes so opposing streams never share asphalt;
 - a six-car train passing overhead;
-- rain, wet-road reflections and gouged footprints;
+- rain, puddles, quiet wet reflections and gouged footprints;
 - grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
 
 `src/camera.js` is a small keyframed rig. It pushes in during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the figures change perspective — but the output is still a flat plate.
@@ -74,7 +75,7 @@ signal-cycle timeline ─┘                                   │
 - **`wet`** — reflections built with additive strokes, then broken by dark footprint shapes (`destination-out`) before being screened onto the plate.
 - **`field`** — a data texture: `R` = wetness/reflection zone, `G` = crowd/motion density, `B` = train/signal accent bloom.
 
-`src/draw.js` is the hand-drawn rasterizer: rough polylines with line boil, jittered polygons, projected 3D boxes, screen-space signboards, abstract glyphs and splashes. Static geometry is still projected every frame so the camera can move.
+`src/draw.js` is the hand-drawn rasterizer: rough polylines with line boil, jittered polygons, projected 3D boxes, oriented `sign3D()` quads, abstract glyphs and splashes. Static geometry is still projected every frame so the camera can move.
 
 ### 3. Node-based look graph
 
@@ -86,7 +87,7 @@ signal-cycle timeline ─┘                                   │
 | `02 · Carve / gouge` | edge-aware lino cuts, boiling tool marks, white scratches |
 | `03 · Edge detail` | tangent-following contour cuts, micro scratches, edge sparks |
 | `04 · Broken hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
-| `05 · Rain / reflections` | stretched rain noise and gouged wet-streak reflections |
+| `05 · Rain / reflections` | subtle stretched rain noise and faint wet-streak reflections |
 | `06 · Ink separation` | bleed, dither, four-color posterization, accent bloom |
 | `07 · Paper / grain` | grain, fiber, speckle, vignette, projector flicker |
 | `08 · Output` | exposure and contrast |
@@ -113,12 +114,12 @@ This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to on
 | --- | --- | --- |
 | 0.0–3.2s | `WAIT` | dense umbrellas at four corners, red signals, parked vehicles |
 | 3.2–4.4s | `SIGNAL` | teal lamps rise, umbrellas lean into the crossing |
-| 4.4–11.7s | `CROSS` | four diagonal streams surge; train passes; footsteps break reflections |
-| 11.7–15.8s | `DRAIN` | crowd thins toward the far sidewalks, reflections begin to reform |
-| 15.8–17.6s | `EMPTY` | road almost clear; zebra, rain and wet reflections dominate |
-| 17.6–20.0s | `TRAFFIC` | vehicles cross, headlights smear, umbrellas gather again for the loop |
+| 4.4–13.6s | `CROSS` | eight routes (straight + diagonal) surge slowly; train passes; footsteps break reflections |
+| 13.6–16.4s | `DRAIN` | crowd thins toward the far sidewalks, reflections begin to reform |
+| 16.4–18.0s | `EMPTY` | road almost clear; zebra, rain and quiet wet reflections dominate |
+| 18.0–20.0s | `TRAFFIC` | vehicles cross in legal lanes, headlights smear, umbrellas gather again for the loop |
 
-The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps.
+The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps. Secondary animation (rain boil, grain, line flicker, idle sway and gait cadence) uses `timeline.motionT = 0.62 × t`; the signal cycle itself remains exactly 20 seconds.
 
 ---
 
@@ -137,8 +138,8 @@ docs/BUILD.md, DEPLOY_STATUS.md, manifest.json, index.html   generated on deploy
 src/template.html                HTML shell
 src/style.css                    fullscreen film + hidden lab + camera HUD
 src/math.js                      noise, easing, RNG, perspective camera
-src/draw.js                      rough-stroke painter + 3D box/quad helpers
-src/world.js                     sidewalks, crosswalks, flows, parking rules
+src/draw.js                      rough-stroke painter, 3D boxes, sign3D()
+src/world.js                     sidewalks, crosswalks, 8 flows, lanes, parking rules
 src/collision.js                 separation + Poisson-disk blue noise
 src/shaders.js                   GLSL node definitions + presets
 src/graph.js                     node graph compiler / uniforms / serialization
@@ -146,8 +147,8 @@ src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
 src/camera.js                    keyframed camera rig
 src/camera-control.js            user orbit / fly camera
 src/timeline.js                  one signal cycle
-src/environment.js               road, zebra, sidewalks, buildings, signs, wires
-src/crowd.js                     procedural 3D humanoids, walk cycle, footprints
+src/environment.js               street set, sidewalks, buildings, oriented signs
+src/crowd.js                     tiny 3D people, walk cycle, footprints
 src/traffic.js                   detailed vehicles + train + light reflections
 src/weather.js                   rain, wet reflections, field data texture
 src/scene.js                     orchestrates plates, camera, modules, separation
@@ -176,4 +177,4 @@ issues and next steps. See `docs/CI.md` for troubleshooting.
 
 ## Design intent
 
-The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are architectural-sketch marks with umbrellas — but they are built from 3D joints and a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. Rain and grain are atmosphere, not physics. Shared world rules keep cars off crosswalks and objects apart. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.
+The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are tiny architectural-sketch marks with umbrellas — still projected from 3D world points and a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. Rain and puddles are atmosphere; wet reflection noise is deliberately quiet. Shared world rules keep cars in legal lanes, off crosswalks and apart from people. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.

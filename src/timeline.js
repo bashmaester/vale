@@ -1,4 +1,4 @@
-import { clamp, smoothstep, smootherstep } from './math.js';
+import { clamp, smoothstep, smootherstep, mod } from './math.js';
 
 export const DURATION = 20;
 
@@ -7,54 +7,58 @@ export class Timeline {
     this.duration = duration;
     this.t = 0;
     this.u = 0;
-    this.speed = 1;
+    // Secondary animation clock. The signal cycle still lasts exactly 20s,
+    // but rain boil, idle sway, line flicker and grain run at a calmer tempo.
+    this.motionScale = 0.62;
+    this.motionT = 0;
   }
   update(t) {
-    this.t = ((t % this.duration) + this.duration) % this.duration;
+    this.t = mod(t, this.duration);
     this.u = this.t / this.duration;
+    this.motionT = mod(t * this.motionScale, this.duration);
     return this.u;
   }
 
-  // One signal cycle. All modules read these curves so waiting, crossing,
-  // drainage, emptiness and returning traffic stay legible.
+  // One signal cycle. The crossing window is deliberately long: tiny people
+  // should read as walking with weight, not sprinting across the plate.
   wait() { return 1 - smoothstep(0.14, 0.21, this.u); }
   walkSignal() {
-    return smoothstep(0.155, 0.20, this.u) * (1 - smoothstep(0.565, 0.625, this.u));
+    return smoothstep(0.155, 0.20, this.u) * (1 - smoothstep(0.655, 0.715, this.u));
   }
   stopSignal() { return 1 - this.walkSignal(); }
-  cross() { return smootherstep(0.18, 0.585, this.u); }
+  cross() { return smootherstep(0.18, 0.68, this.u); }
   crossWithDelay(delay) {
-    const a = 0.18 + delay * 0.10;
-    const b = 0.585 + delay * 0.06;
+    const a = 0.18 + delay * 0.075;
+    const b = 0.66 + delay * 0.055;
     return smootherstep(a, b, this.u);
   }
-  drain() { return smoothstep(0.585, 0.79, this.u); }
+  drain() { return smoothstep(0.68, 0.82, this.u); }
   empty() {
-    return smoothstep(0.735, 0.815, this.u) * (1 - smoothstep(0.895, 0.955, this.u));
+    return smoothstep(0.805, 0.855, this.u) * (1 - smoothstep(0.925, 0.975, this.u));
   }
-  gather() { return smoothstep(0.91, 1.0, this.u); }
+  gather() { return smoothstep(0.93, 1.0, this.u); }
   crowdAlpha() {
-    return clamp(1 - smoothstep(0.67, 0.80, this.u) + this.gather());
+    return clamp(1 - smoothstep(0.755, 0.865, this.u) + this.gather());
   }
   waiterAlpha() {
-    return 0.20 + 0.80 * (1 - this.empty());
+    return 0.18 + 0.82 * (1 - this.empty());
   }
   traffic() {
-    return smoothstep(0.88, 0.95, this.u);
+    return smoothstep(0.90, 0.965, this.u);
   }
-  parkedAlpha() { return 1 - smoothstep(0.86, 0.92, this.u); }
-  train() { return smootherstep(0.31, 0.73, this.u); }
-  reflectionReform() { return smoothstep(0.74, 0.92, this.u); }
+  parkedAlpha() { return 1 - smoothstep(0.885, 0.945, this.u); }
+  train() { return smootherstep(0.30, 0.76, this.u); }
+  reflectionReform() { return smoothstep(0.78, 0.94, this.u); }
   rainPulse() {
-    return 0.85 + 0.15 * Math.sin(this.u * Math.PI * 2 * 2) + 0.12 * this.walkSignal();
+    return 0.9 + 0.08 * Math.sin(this.u * Math.PI * 2) + 0.08 * this.walkSignal();
   }
   label() {
     const u = this.u;
     if (u < 0.16) return 'WAIT';
     if (u < 0.22) return 'SIGNAL';
-    if (u < 0.585) return 'CROSS';
-    if (u < 0.79) return 'DRAIN';
-    if (u < 0.88) return 'EMPTY';
+    if (u < 0.68) return 'CROSS';
+    if (u < 0.82) return 'DRAIN';
+    if (u < 0.90) return 'EMPTY';
     return 'TRAFFIC';
   }
 }
@@ -62,8 +66,8 @@ export class Timeline {
 export const PHASES = [
   { id: 'WAIT', a: 0, b: 0.16, color: '#d43b30' },
   { id: 'SIGNAL', a: 0.16, b: 0.22, color: '#d8a03a' },
-  { id: 'CROSS', a: 0.22, b: 0.585, color: '#2bb8ae' },
-  { id: 'DRAIN', a: 0.585, b: 0.79, color: '#6c8f7f' },
-  { id: 'EMPTY', a: 0.79, b: 0.88, color: '#5d6961' },
-  { id: 'TRAFFIC', a: 0.88, b: 1, color: '#d43b30' },
+  { id: 'CROSS', a: 0.22, b: 0.68, color: '#2bb8ae' },
+  { id: 'DRAIN', a: 0.68, b: 0.82, color: '#6c8f7f' },
+  { id: 'EMPTY', a: 0.82, b: 0.90, color: '#5d6961' },
+  { id: 'TRAFFIC', a: 0.90, b: 1, color: '#d43b30' },
 ];

@@ -12,9 +12,9 @@ export const SCENE_PARAM_DEFS = {
   walkSpeed: { value: 1.0, min: 0.3, max: 2.0, step: 0.01, label: 'walk tempo' },
   rainAmount: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'rain amount' },
   wind: { value: 0.6, min: -1.0, max: 2.0, step: 0.01, label: 'wind / tilt' },
-  wetness: { value: 1.0, min: 0.0, max: 1.6, step: 0.01, label: 'wetness' },
-  reflectionStrength: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'reflection depth' },
-  footstepStrength: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'footstep gouge' },
+  wetness: { value: 0.65, min: 0.0, max: 1.6, step: 0.01, label: 'wetness' },
+  reflectionStrength: { value: 0.6, min: 0.0, max: 2.0, step: 0.01, label: 'reflection depth' },
+  footstepStrength: { value: 0.75, min: 0.0, max: 2.0, step: 0.01, label: 'footstep gouge' },
   cameraShake: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'gate weave' },
   flySpeed: { value: 1.0, min: 0.2, max: 3.0, step: 0.01, label: 'fly speed' },
   cameraEase: { value: 8.0, min: 2.0, max: 20.0, step: 0.1, label: 'camera ease' },
@@ -103,7 +103,8 @@ export class Scene {
     const ctx = this.pp.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'screen';
-    ctx.globalAlpha = 0.92;
+    // Wet reflections are a quiet glaze now, not a noisy overlay.
+    ctx.globalAlpha = 0.26;
     ctx.drawImage(this.wet, 0, 0);
     ctx.restore();
   }
@@ -111,9 +112,13 @@ export class Scene {
   render(t, dt = 0.016) {
     const timeline = this.timeline;
     timeline.update(t);
+    // The signal cycle stays 20s; secondary motion uses the calmer clock.
+    this.params.motionT = timeline.motionT;
+    this.params.motionScale = timeline.motionScale;
+
     const autoCamera = this.cameraRig.update(timeline.u, this.params);
     const camera = this.cameraController.apply(autoCamera, dt, this.params);
-    const boil = Math.floor(timeline.t * 12);
+    const boil = Math.floor(timeline.motionT * 7.5);
     this.pp.setBoil(boil); this.wp.setBoil(boil); this.fp.setBoil(boil);
 
     this._clearPlate();

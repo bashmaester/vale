@@ -2,6 +2,66 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 3: tiny people, slower motion, street set, quiet wet
+
+**Direction kept:** hybrid 3D→2D print. The user asked to retrace from the
+architectural-sketch references rather than add more rigged detail.
+
+### Added
+
+- `Painter.sign3D()` in `src/draw.js`: world-space oriented sign quads with a
+  fixed normal, projected glyphs, bar and mounting bracket. Signs now
+  foreshorten and can turn away from the camera.
+- `LANES` in `src/world.js`: three west→east lanes on the north half and three
+  east→west lanes on the south half. Vehicle direction is inherited from the
+  lane, so opposing traffic no longer passes through itself.
+- Four straight crossing routes plus four diagonal scramble routes, with
+  synchronized sidewalk waiting zones and expanded crosswalk predicates.
+- `motionScale = 0.62` and `motionT` in `src/timeline.js`: a secondary calmer
+  clock for rain boil, grain, line flicker, idle sway, gait cadence and shader
+  `uTime`. The signal cycle remains exactly 20 seconds.
+- New street furniture: sidewalk slab joints, curbs, tactile paving, stop lines,
+  lane dividers, direction arrows, manhole covers, awnings, lamp posts and
+  benches.
+- Tiny-people accessories: hats, scarves, bags, dogs, strollers, children,
+  ground shadows and varied umbrella canopy shapes.
+
+### Changed
+
+- `src/crowd.js` rewritten around “tiny people”: head dots, solid coats, short
+  filled legs, minimal arms, faceted umbrellas and hand-varied gait. Removed the
+  dense joint skeleton. Crosser count 132→158; waiter count 34→42.
+- `src/environment.js` rewritten: two-street intersection, four real sidewalk
+  blocks, four straight zebra crossings, faint diagonal guides, low buildings,
+  oriented signs and a coherent road/sidewalk hierarchy.
+- `src/traffic.js`: six vehicles mapped to `LANES`, slower return phase, legal
+  parked positions, quieter reflections and bounded separation.
+- `src/scene.js`: wet composite alpha 0.92→0.26, lower default wetness /
+  reflection / footstep strength, slower line boil, and propagation of
+  `params.motionT` to all secondary animation.
+- `src/weather.js`: procedural wet reflection strokes 150→28, long gouges
+  16→5, much lower alpha; rain streaks and puddle splashes retained but slowed
+  to `motionT`.
+- `src/shaders.js`: shader rain/reflection node defaults and all presets made
+  quieter; grain, scratch, spark, dither and flicker time multipliers reduced.
+- `src/main.js`: `renderer.render()` now receives `scene.timeline.motionT`
+  instead of raw 0–20s time.
+- `docs/HANDOFF.md`, `docs/ARCHITECTURE.md`, `README.md`, `docs/CI.md`: updated
+  for the retrace, slower clock, oriented signs, lanes and quieter wet look.
+
+### Known / unverified
+
+- No browser screenshot available in the sandbox; a DOM smoke test passed across
+  all phases, presets and camera modes, but visual tuning still needs a human
+  pass. Use `?lab=1` and the timeline scrubber.
+- Performance at 1440×810 with ~200 projected tiny figures should be checked;
+  `?w=1280&h=720` or the `crowdDensity` slider are the quick mitigation.
+- Extreme low camera angles may expose approximate depth ordering.
+- Wet reflections are intentionally subtle now; raise `reflectionStrength` in
+  the lab if the empty street reads too dry.
+
+---
+
 ## 2026-10-27 — Turn 2: camera, 3D figures, world rules, CI
 
 **Direction kept:** hybrid 3D→2D print. The user explicitly disagreed with the

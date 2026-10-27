@@ -6,21 +6,21 @@ illustration. It has four layers: a shared world model, a parametric 3D scene,
 
 ```
         ┌──────────────────────────────────────────────┐
-        │ world.js — sidewalks / crosswalks / flows /   │
-        │ parkable() / collision separation rules      │
+        │ world.js — sidewalks / crosswalks / 8 flows / │
+        │ lanes / parkable() / collision rules          │
         └───────────────────┬──────────────────────────┘
                             ▼
  timeline.js ─▶ camera.js ─▶ camera-control.js ─▶ 3D modules
- (signal cycle)  (auto rig)   (user orbit/fly)      │
-                                                    ▼
-                            crowd.js / traffic.js / environment.js
+ (20s cycle +    (auto rig)   (user orbit/fly)      │
+  motionT)                                         ▼
+                          crowd.js / traffic.js / environment.js
                                                     │
                                                     ▼
                          Camera.project() → 2D screen points
                                                     ▼
         ┌──────────────────────────────────────────────┐
-        │ scene.js — plate (ink), wet (reflections +   │
-        │ footprints), field (R wet / G crowd / B accent)│
+        │ scene.js — plate (ink), wet (quiet reflections│
+        │ + footprints), field (R wet / G crowd / B accent)│
         └───────────────────┬──────────────────────────┘
                             ▼
         ┌──────────────────────────────────────────────┐
@@ -39,17 +39,20 @@ illustration. It has four layers: a shared world model, a parametric 3D scene,
 
 A single source of truth for spatial sense:
 
-- `SIDEWALKS`: four corner blocks. Waiting crowds live here.
-- `WAIT_ZONES`: blue-noise sampling bounds for waiting umbrellas.
-- `FLOWS`: four diagonal pedestrian streams, each starting and ending on
-  opposite sidewalks. Two diagonals × two directions.
-- `CROSSWALKS`: foreground band, two side bands, diagonal band, central diamond.
+- `SIDEWALKS`: four corner blocks around a cross intersection.
+- `WAIT_ZONES`: blue-noise sampling bounds for waiting crowds on those blocks.
+- `FLOWS`: eight routes — four straight crossings (E/W/S/N) and four diagonal
+  scrambles. Each starts and ends on a sidewalk.
+- `CROSSWALKS`: four straight zebra bands, diagonal scramble guides and a
+  central diamond predicate.
+- `LANES`: three west→east lanes on the north half and three east→west lanes on
+  the south half. Vehicles inherit `dir` from their lane.
 - `isOnCrosswalk()`, `isOnSidewalk()`, `isParkable()`, `sanitizePark()`,
   `clampToWorld()`.
 
 `traffic.js` runs every parked slot through `sanitizePark()`, so vehicles cannot
-be committed on a crosswalk. `crowd.js` uses `isOnSidewalk()` while generating
-start points and waiting points.
+be committed on a crosswalk or sidewalk. `crowd.js` uses `isOnSidewalk()` while
+generating start and waiting points.
 
 ## 2. Collision / scatter (`collision.js`)
 
@@ -61,15 +64,16 @@ start points and waiting points.
 
 Used in three places:
 
-1. `Crowd.update()` separates all pedestrians from each other.
-2. `Traffic.update()` separates vehicles from each other; parked vehicles are
-   fixed.
+1. `Crowd.update()` separates all pedestrians from each other with 3 iterations.
+2. `Traffic.update()` separates vehicles from each other and bounds them to the
+   road; parked vehicles are fixed and re-sanitized after separation.
 3. `Scene.render()` passes `traffic.activeItems()` as obstacles into
    `crowd.update()`, so walkers are pushed away from real vehicle hulls.
 
-Traffic is also delayed until `u > 0.88`, after the empty-street beat, so vehicles never share the crossing with the crowd.
+Traffic is delayed until the empty-street beat, so vehicles never share the
+crossing with the crowd.
 
-## 3. Camera
+## 3. Camera and time
 
 `camera.js` is a keyframed auto rig: high overhead, slight push-in during the
 surge, drift during the train, pull-back for the empty street. It returns a
@@ -83,38 +87,44 @@ surge, drift during the train, pull-back for the empty street. It returns a
 - `fly` — WASD/QE translation of both eye and target; drag still looks.
 
 `Scene.render(t, dt)` calls `cameraController.apply(autoCamera, dt, params)`.
-Because every figure/vehicle point is projected through the returned camera,
-flying changes perspective naturally.
+Because every figure/vehicle/sign point is projected through the returned
+camera, flying changes perspective naturally.
 
-## 4. Procedural 3D humanoids (`crowd.js`)
+`timeline.js` owns the 20-second signal cycle. It also exposes `motionT = t *
+0.62` (mod 20): a slower secondary clock for rain boil, grain, line flicker,
+idle sway, gait cadence and shader `uTime`. The film duration does not change.
+
+## 4. Tiny people (`crowd.js`)
 
 Each pedestrian has a world position, heading `dir`, perpendicular `side`,
-scale, umbrella color, phase and precomputed start/control/end points.
+scale, coat, umbrella style, accessory, gait phase and precomputed
+start/control/end points.
 
 Per frame:
 
 1. Position comes from the signal cycle (waiting / bezier crossing / drain /
    gather). Distance travelled drives `stridePhase`, so feet step in sync with
-   translation instead of skating.
+   translation instead of skating. The cadence uses `motionT`, not raw time.
 2. Separation resolves overlaps before projection.
-3. `_makeItem()` builds a 3D skeleton: pelvis, chest, neck, head, shoulders,
-   hips, elbows, hands, knees, feet, toes, buttons, umbrella apex/rim/handle/drips.
-4. Every joint is projected to a screen point with depth.
-5. Draw commands (polylines, polygons, ellipses, canopy triangles) are stored
-   with an average depth, sorted far→near, then executed by `Painter`.
+3. `_makeItem()` builds a small 3D silhouette: shoulders, hips, feet, head,
+   hands, coat quad, two filled leg blocks and an optional umbrella canopy.
+4. Every point is projected to a screen point with depth.
+5. Draw commands are stored in fixed painter order and executed per person,
+   sorted far→near by foot depth.
 
-The umbrella is a faceted 3D dome: rim points around a horizontal circle, apex
-slightly tilted by wind, triangles filled as canopy, ribs from apex to rim, a
-3D handle down to the right hand. From a new camera angle the dome ellipse,
-ribs and body silhouette change.
+The umbrella is a faceted 3D canopy: rim points around a horizontal circle,
+apex tilted by wind, triangles filled as canopy, two ribs and a 3D handle. From
+a new camera angle the canopy ellipse and body silhouette change. Accessories
+include hats, scarves, bags, dogs, strollers and children. Ground shadows sit
+under the projected feet.
 
-Footprints use the projected foot joints, not a guessed billboard center. They
-erase additive wet reflections (`destination-out`) and leave a faint shoe rim.
+Footprints use the projected foot joints. They erase additive wet reflections
+(`destination-out`) and leave a faint shoe rim.
 
 ## 5. Vehicles (`traffic.js`)
 
-Vehicle specs include type, width/height/depth, lane, direction, phase offset
-and a sanitized park slot. `drawVehicle()` composes 3D primitives:
+Vehicle specs include type, width/height/depth, lane, direction (from `LANES`),
+phase offset and a sanitized park slot. `drawVehicle()` composes 3D primitives:
 
 - four projected wheels with hubs and arch ellipses;
 - body box (bus / car / taxi / van) or cab + cargo split (truck);
@@ -123,30 +133,40 @@ and a sanitized park slot. `drawVehicle()` composes 3D primitives:
 - bus destination sign, taxi roof light, truck cargo divider;
 - roof identity line, bumpers, head/tail lamps.
 
-The train remains a sequence of 3D boxes with projected window grids and
-teal/red identity stripes, plus motion cuts and wet reflections.
+The return phase is slower: vehicles traverse only part of the span in the final
+beat. The train remains a sequence of 3D boxes with projected window grids and
+teal/red identity stripes, plus motion cuts and quiet wet reflections.
 
 ## 6. Environment (`environment.js`)
 
-Road plane, zebra stripes, central diamond, four raised sidewalks with curb
-lines and scoring, stop lines, chevrons, puddles, manholes, buildings with
-window grids + balconies + drainpipes + AC boxes, hanging wires, signboards,
-elevated track and four signal posts. All of it is projected 3D geometry drawn
+Two crossing asphalt strips, four raised sidewalks with slab joints and curbs,
+tactile paving, four straight zebra crossings, faint diagonal scramble guides,
+stop lines, lane dividers, direction arrows, manhole covers, puddles, low
+buildings with window grids and awnings, lamp posts, benches, hanging wires,
+elevated track and six signal posts. All of it is projected 3D geometry drawn
 with the rough-stroke `Painter`.
+
+Signs use `Painter.sign3D()`: a world-space oriented quad with a fixed normal,
+projected glyphs, color bar and mounting bracket. They foreshorten and can turn
+away from the camera; they are not billboards.
 
 ## 7. Printing plates (`scene.js`, `draw.js`, `weather.js`)
 
 Three offscreen canvases:
 
 - `plate` — main ink image on a dark gradient.
-- `wet` — additive reflections, train/vehicle light smears, then footprint
-  erasures; composited onto the plate with `screen`.
+- `wet` — quiet additive reflections, train/vehicle light smears, then footprint
+  erasures; composited onto the plate with `screen` at low alpha.
 - `field` — data texture: `R` wetness, `G` crowd/motion density, `B` accent
   bloom from train and signals.
 
 `Painter` provides rough polylines with line boil, jittered polygons, projected
-3D boxes, grid-on-quad, billboard signs, glyphs, ellipses and splashes. Static
-geometry is still projected each frame so the camera can move.
+3D boxes, grid-on-quad, oriented `sign3D()` quads, glyphs, ellipses and
+splashes. Static geometry is still projected each frame so the camera can move.
+
+`weather.js` keeps rain streaks, close drops, splashes and puddle outlines but
+reduces procedural wet reflection strokes to a faint glaze. Rain and grain now
+animate on `motionT`.
 
 ## 8. Node shader graph (`shaders.js`, `graph.js`)
 
@@ -159,7 +179,7 @@ functions + a `main()` chain, and feeds live values to `Renderer`.
 | 02 | `carve` | edge-aware lino gouges, boiling tool marks, scratches |
 | 03 | `detail` | tangent-following contour cuts, micro scratches, edge sparks |
 | 04 | `hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
-| 05 | `rain` | stretched rain noise, gouged wet reflections, splash specks |
+| 05 | `rain` | subtle stretched rain noise, faint wet reflections, splash specks |
 | 06 | `palette` | bleed, dither, four-color posterization, accent bloom |
 | 07 | `paper` | grain, fiber, speckle, vignette, projector flicker |
 | 08 | `output` | exposure / contrast |
@@ -167,7 +187,8 @@ functions + a `main()` chain, and feeds live values to `Renderer`.
 `hatch` intentionally avoids uniform parallel lines: low-frequency `fbm` warps
 angle and spacing, a second noise field breaks lines, and a secondary rotated
 pass adds cross-hatching only in the darkest areas. `field.r` suppresses hatch
-on wet road; `field.g` adds crowd-driven variation.
+on wet road; `field.g` adds crowd-driven variation. All time-based noise now
+uses the slower `motionT` clock and the rain/reflection node is much quieter.
 
 This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to one
 file with zero runtime dependencies. `ShaderGraph.compile()` is the seam where a
@@ -183,3 +204,5 @@ TSL/WebGPU adapter could be added without touching the scene modules.
   runs `npm run docs`, assembles `_site/`, and deploys via GitHub Pages actions.
 - `scripts/update-docs.mjs` writes generated deploy metadata while keeping
   human-authored handoff/architecture/changelog/CI docs intact.
+
+Live site: **https://bashmaester.github.io/vale/**.

@@ -88,7 +88,7 @@ export const NODE_DEFS = [
     params: params({
       strength: { value: 0.72, min: 0, max: 1.5, label: 'gouge strength' },
       scale: { value: 13, min: 3, max: 40, label: 'tool size px', step: 0.5 },
-      boil: { value: 0.55, min: 0, max: 2, label: 'line boil' },
+      boil: { value: 0.30, min: 0, max: 2, label: 'line boil' },
     }),
     code: (g, n) => `vec4 n_carve(vec4 c, vec2 uv, vec4 field){
   if(${g.u(n, 'enabled')} < 0.5) return c;
@@ -103,7 +103,7 @@ export const NODE_DEFS = [
   float crowd = 0.35 + field.g*0.65;
   c.rgb = mix(c.rgb, PAL_INK, gouge*${g.u(n, 'strength')}*0.30*crowd);
   c.rgb -= (1.0-gouge)*${g.u(n, 'strength')}*0.085*edge;
-  float scratch = step(0.986, hash21(floor(uv*uRes/3.0)+floor(uTime*8.0))) * edge;
+  float scratch = step(0.986, hash21(floor(uv*uRes/3.0)+floor(uTime*3.0))) * edge;
   c.rgb += scratch*${g.u(n, 'strength')}*0.55;
   return c;
 }`,
@@ -133,9 +133,9 @@ export const NODE_DEFS = [
   float cc = dot(hp, tang)/max(${g.u(n, 'scale')},2.0) + fbm(hp/55.0 + uTime*0.02)*${g.u(n, 'warp')};
   float contour = 1.0 - smoothstep(0.30, 0.50, abs(fract(cc)-0.5)*2.0);
   c.rgb += PAL_INK * contour * edge * ${g.u(n, 'contour')} * 0.20;
-  float micro = step(0.995, hash21(floor(hp/2.0)+floor(uTime*10.0)));
+  float micro = step(0.995, hash21(floor(hp/2.0)+floor(uTime*4.0)));
   c.rgb += micro * ${g.u(n, 'micro')} * (0.25 + field.g*0.35) * 0.25;
-  float spark = step(0.9985, hash21(floor(hp/3.0)+floor(uTime*6.0))) * edge;
+  float spark = step(0.9985, hash21(floor(hp/3.0)+floor(uTime*2.5))) * edge;
   c.rgb += spark * ${g.u(n, 'spark')} * 0.5;
   return c;
 }`,
@@ -158,14 +158,14 @@ export const NODE_DEFS = [
   if(${g.u(n, 'enabled')} < 0.5) return c;
   float l = luma(c.rgb);
   vec2 hp = uv*uRes;
-  float n1 = fbm(hp/90.0 + vec2(uTime*0.015,0.0));
+  float n1 = fbm(hp/90.0 + vec2(uTime*0.006,0.0));
   float angle = ${g.u(n, 'angle')} + (n1-0.5)*${g.u(n, 'warp')} + field.g*0.25;
   float spacing = max(${g.u(n, 'spacing')} * (0.72 + 0.55*fbm(hp/140.0+3.7)), 2.0);
   vec2 p = rot(angle)*hp;
   p.x += (fbm(hp/38.0+7.1)-0.5)*${g.u(n, 'jitter')}*10.0;
   float f = abs(fract(p.x/spacing)-0.5)*2.0;
   float line = 1.0 - smoothstep(0.28, 0.50, f);
-  float breakN = fbm(vec2(p.x/14.0, p.y/9.0)+uTime*0.05);
+  float breakN = fbm(vec2(p.x/14.0, p.y/9.0)+uTime*0.02);
   line *= smoothstep(0.18, 0.55, breakN - ${g.u(n, 'breakup')}*0.25);
   float dark = 1.0 - smoothstep(0.07, 0.62, l);
   float dry = 1.0 - field.r*0.75;
@@ -187,23 +187,23 @@ export const NODE_DEFS = [
     inputs: ['hatch'],
     ui: { x: 24, y: 190, w: 162, h: 60 },
     params: params({
-      intensity: { value: 0.58, min: 0, max: 1.5, label: 'rain intensity' },
-      speed: { value: 1.0, min: 0, max: 3, label: 'rain speed' },
-      reflect: { value: 0.72, min: 0, max: 2, label: 'reflection gouges' },
-      splash: { value: 0.38, min: 0, max: 1.5, label: 'splash specks' },
+      intensity: { value: 0.30, min: 0, max: 1.5, label: 'rain intensity' },
+      speed: { value: 0.62, min: 0, max: 3, label: 'rain speed' },
+      reflect: { value: 0.22, min: 0, max: 2, label: 'reflection gouges' },
+      splash: { value: 0.14, min: 0, max: 1.5, label: 'splash specks' },
     }),
     code: (g, n) => `vec4 n_rain(vec4 c, vec2 uv, vec4 field){
   if(${g.u(n, 'enabled')} < 0.5) return c;
   float t = uTime*${g.u(n, 'speed')};
   vec2 p = vec2(uv.x*uRes.x/9.0 + uv.y*uRes.y/22.0, uv.y*uRes.y/3.0 - t*92.0);
   float streak = smoothstep(0.72, 0.93, fbm(p*0.34)) * ${g.u(n, 'intensity')};
-  c.rgb += PAL_INK*streak*0.15;
+  c.rgb += PAL_INK*streak*0.07;
   float rc = uv.y*uRes.y*0.22 + sin(uv.x*18.0 + t*1.7)*1.2 + fbm(vec2(uv.x*7.0, t*0.3))*2.2;
   float refl = pow(0.5+0.5*sin(rc), 10.0);
   refl *= field.r*${g.u(n, 'reflect')};
-  c.rgb = mix(c.rgb, PAL_TEAL*0.72 + PAL_INK*0.28, refl*0.20);
-  float splash = step(0.9965, hash21(floor(uv*uRes/5.0)+floor(t*14.0))) * field.r;
-  c.rgb += splash*${g.u(n, 'splash')}*0.48;
+  c.rgb = mix(c.rgb, PAL_TEAL*0.72 + PAL_INK*0.28, refl*0.09);
+  float splash = step(0.9978, hash21(floor(uv*uRes/5.0)+floor(t*5.0))) * field.r;
+  c.rgb += splash*${g.u(n, 'splash')}*0.28;
   return c;
 }`,
   },
@@ -228,7 +228,7 @@ export const NODE_DEFS = [
     texture(uInk, uv-vec2(0.0,tx.y*2.0)).rgb
   )*0.25;
   c.rgb = mix(c.rgb, blur, ${g.u(n, 'bleed')});
-  c.rgb += (hash21(gl_FragCoord.xy + floor(uTime*10.0))-0.5)*${g.u(n, 'dither')};
+  c.rgb += (hash21(gl_FragCoord.xy + floor(uTime*3.5))-0.5)*${g.u(n, 'dither')};
   vec3 q = c.rgb;
   float best = distance(q, PAL_BG); vec3 col = PAL_BG;
   float d = distance(q, PAL_INK);  if(d<best){best=d; col=PAL_INK;}
@@ -253,14 +253,14 @@ export const NODE_DEFS = [
     }),
     code: (g, n) => `vec4 n_paper(vec4 c, vec2 uv, vec4 field){
   if(${g.u(n, 'enabled')} < 0.5) return c;
-  float g = (hash21(gl_FragCoord.xy + vec2(floor(uTime*24.0)))-0.5)*${g.u(n, 'grain')};
-  float fib = (fbm(uv*uRes/80.0 + uTime*0.02)-0.5)*${g.u(n, 'fiber')};
+  float g = (hash21(gl_FragCoord.xy + vec2(floor(uTime*6.0)))-0.5)*${g.u(n, 'grain')};
+  float fib = (fbm(uv*uRes/80.0 + uTime*0.01)-0.5)*${g.u(n, 'fiber')};
   c.rgb += g + fib;
-  float speck = step(0.9976, hash21(floor(gl_FragCoord.xy/2.0)+floor(uTime*9.0)));
+  float speck = step(0.9982, hash21(floor(gl_FragCoord.xy/2.0)+floor(uTime*3.5)));
   c.rgb = mix(c.rgb, PAL_INK, speck*${g.u(n, 'speckle')}*0.7);
   float vig = 1.0 - smoothstep(0.24, 1.06, length((uv-0.5)*vec2(1.0,1.12)));
   c.rgb *= mix(1.0, vig, ${g.u(n, 'vignette')});
-  float flick = 0.986 + 0.012*sin(uTime*37.0) + 0.008*sin(uTime*11.0);
+  float flick = 0.992 + 0.006*sin(uTime*12.0) + 0.004*sin(uTime*4.0);
   c.rgb *= flick;
   return c;
 }`,
@@ -288,56 +288,56 @@ export const PRESETS = {
     label: 'Linocut',
     graph: {
       source: { misreg: 0.85, warp: 0.45 },
-      carve: { strength: 0.72, scale: 13, boil: 0.55 },
+      carve: { strength: 0.72, scale: 13, boil: 0.30 },
       detail: { contour: 0.58, scale: 9, warp: 0.7, micro: 0.42, spark: 0.3 },
       hatch: { angle: -0.62, spacing: 7.5, strength: 0.34, warp: 0.55, jitter: 0.45, breakup: 0.38, cross: 0.22 },
-      rain: { intensity: 0.58, speed: 1.0, reflect: 0.72, splash: 0.38 },
+      rain: { intensity: 0.30, speed: 0.62, reflect: 0.22, splash: 0.14 },
       palette: { posterize: 0.88, bleed: 0.18, dither: 0.055, accent: 0.7 },
       paper: { grain: 0.085, fiber: 0.055, speckle: 0.5, vignette: 0.42 },
       output: { exposure: 1.02, contrast: 1.12 },
     },
-    scene: { wetness: 1.0, rainAmount: 1.0, reflectionStrength: 1.0 },
+    scene: { wetness: 0.65, rainAmount: 1.0, reflectionStrength: 0.6 },
   },
   riso: {
     label: 'Risograph',
     graph: {
       source: { misreg: 2.3, warp: 0.8 },
-      carve: { strength: 0.38, scale: 20, boil: 0.35 },
+      carve: { strength: 0.38, scale: 20, boil: 0.22 },
       detail: { contour: 0.32, scale: 14, warp: 1.0, micro: 0.22, spark: 0.18 },
       hatch: { angle: -0.3, spacing: 11, strength: 0.2, warp: 0.35, jitter: 0.25, breakup: 0.2, cross: 0.08 },
-      rain: { intensity: 0.45, speed: 0.8, reflect: 0.9, splash: 0.25 },
+      rain: { intensity: 0.24, speed: 0.55, reflect: 0.28, splash: 0.10 },
       palette: { posterize: 0.7, bleed: 0.42, dither: 0.09, accent: 1.1 },
       paper: { grain: 0.14, fiber: 0.08, speckle: 0.8, vignette: 0.3 },
       output: { exposure: 1.05, contrast: 1.02 },
     },
-    scene: { wetness: 1.15, rainAmount: 0.8, reflectionStrength: 1.2 },
+    scene: { wetness: 0.8, rainAmount: 0.8, reflectionStrength: 0.75 },
   },
   newsprint: {
     label: 'Newsprint',
     graph: {
       source: { misreg: 0.4, warp: 0.25 },
-      carve: { strength: 0.5, scale: 9, boil: 0.25 },
+      carve: { strength: 0.5, scale: 9, boil: 0.18 },
       detail: { contour: 0.75, scale: 6, warp: 0.4, micro: 0.65, spark: 0.45 },
       hatch: { angle: 0.6, spacing: 5.5, strength: 0.48, warp: 0.25, jitter: 0.2, breakup: 0.5, cross: 0.35 },
-      rain: { intensity: 0.35, speed: 0.7, reflect: 0.45, splash: 0.2 },
+      rain: { intensity: 0.20, speed: 0.48, reflect: 0.16, splash: 0.08 },
       palette: { posterize: 0.94, bleed: 0.3, dither: 0.12, accent: 0.35 },
       paper: { grain: 0.19, fiber: 0.13, speckle: 1.1, vignette: 0.55 },
       output: { exposure: 0.98, contrast: 1.25 },
     },
-    scene: { wetness: 0.85, rainAmount: 0.7, reflectionStrength: 0.8 },
+    scene: { wetness: 0.6, rainAmount: 0.7, reflectionStrength: 0.5 },
   },
   blueprint: {
     label: 'Blueprint',
     graph: {
       source: { misreg: 1.4, warp: 0.55 },
-      carve: { strength: 0.6, scale: 16, boil: 0.4 },
+      carve: { strength: 0.6, scale: 16, boil: 0.26 },
       detail: { contour: 0.65, scale: 11, warp: 0.8, micro: 0.5, spark: 0.35 },
       hatch: { angle: 0.15, spacing: 8.5, strength: 0.28, warp: 0.7, jitter: 0.6, breakup: 0.3, cross: 0.28 },
-      rain: { intensity: 0.7, speed: 1.1, reflect: 1.0, splash: 0.45 },
+      rain: { intensity: 0.34, speed: 0.68, reflect: 0.26, splash: 0.16 },
       palette: { posterize: 0.82, bleed: 0.22, dither: 0.06, accent: 1.2 },
       paper: { grain: 0.1, fiber: 0.06, speckle: 0.5, vignette: 0.38 },
       output: { exposure: 1.04, contrast: 1.08 },
     },
-    scene: { wetness: 1.1, rainAmount: 1.15, reflectionStrength: 1.1 },
+    scene: { wetness: 0.72, rainAmount: 1.15, reflectionStrength: 0.65 },
   },
 };

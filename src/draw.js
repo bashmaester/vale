@@ -1,6 +1,6 @@
 import {
   clamp, lerp, hash11, hash21, valueNoise2, fbm2,
-  v3, add3, sub3, dot3, norm3, quadLerp,
+  v3, add3, sub3, scale3, dot3, norm3, cross3, quadLerp,
 } from './math.js';
 
 export const PALETTE = {
@@ -343,6 +343,84 @@ export class Painter {
     }
     c.restore();
     return { x, y, w: pw, h: ph, scale: q.scale };
+  }
+
+  // World-space oriented sign. u is the sign's full horizontal axis, v its
+  // full vertical axis. The face is projected like any other 3D quad, so it
+  // foreshortens and turns away instead of billboarding toward the camera.
+  sign3D(camera, center, u, v, opts = {}) {
+    const hu = scale3(u, 0.5), hv = scale3(v, 0.5);
+    // Explicit TL, TR, BR, BL order for quadLerp().
+    const TL = add3(sub3(center, hu), hv);
+    const TR = add3(add3(center, hu), hv);
+    const BR = sub3(add3(center, hu), hv);
+    const BL = sub3(sub3(center, hu), hv);
+    const pts3 = [TL, TR, BR, BL];
+    const proj = pts3.map((p) => camera.project(p));
+    if (proj.some((p) => !p)) return null;
+    const quad = proj.map((p) => [p.x, p.y]);
+    const normal = norm3(cross3(u, v));
+    const toEye = sub3(camera.eye, center);
+    const back = dot3(normal, toEye) < 0;
+    const alpha = (opts.alpha == null ? 1 : opts.alpha) * (back ? 0.42 : 1);
+    const seed = opts.seed || 1;
+    const width = Math.max(0.6, (opts.width || 1.2) * clamp(proj[0].scale / 20, 0.45, 1.6));
+    this.poly(quad, {
+      fill: opts.fill || PALETTE.black,
+      stroke: opts.stroke || PALETTE.ink,
+      width, alpha, seed, jitter: 0.55,
+    });
+    if (opts.bar) {
+      const bar = [
+        quadLerp(quad, 0.06, 0.78), quadLerp(quad, 0.94, 0.78),
+        quadLerp(quad, 0.94, 0.92), quadLerp(quad, 0.06, 0.92),
+      ];
+      this.poly(bar, { fill: opts.bar, stroke: null, alpha: alpha * 0.9 });
+    }
+    const templates = [
+      [[0.12, 0.16], [0.88, 0.16]],
+      [[0.12, 0.5], [0.88, 0.5]],
+      [[0.12, 0.84], [0.88, 0.84]],
+      [[0.5, 0.08], [0.5, 0.92]],
+      [[0.2, 0.22], [0.8, 0.78]],
+      [[0.2, 0.78], [0.8, 0.22]],
+      [[0.2, 0.2], [0.2, 0.8], [0.8, 0.8]],
+      [[0.18, 0.34], [0.82, 0.34], [0.5, 0.34], [0.5, 0.86]],
+    ];
+    const n = opts.glyphs || 3;
+    for (let i = 0; i < n; i++) {
+      const u0 = 0.06 + i * (0.88 / n);
+      const u1 = u0 + (0.88 / n) * 0.82;
+      const v0 = 0.10, v1 = 0.72;
+      const count = 2 + Math.floor(hash11(seed * 3.1 + i * 7.7) * 2);
+      for (let j = 0; j < count; j++) {
+        const t = templates[Math.floor(hash11(seed * 9.3 + i * 17.1 + j * 31.7) * templates.length)];
+        const pts = t.map((p, k) => quadLerp(
+          quad,
+          u0 + (u1 - u0) * (p[0] + (hash11(seed + j * 5 + k) - 0.5) * 0.05),
+          v0 + (v1 - v0) * p[1],
+        ));
+        this.line(pts, {
+          color: opts.glyphColor || PALETTE.ink,
+          width: Math.max(0.55, width * 0.72),
+          alpha: alpha * 0.92,
+          seed: seed + i * 13 + j * 5,
+          jitter: 0.35,
+          double: false,
+        });
+      }
+    }
+    // Small mounting bracket back toward the wall.
+    if (opts.bracket) {
+      const nrm = scale3(normal, -opts.bracket);
+      const a = add3(center, nrm);
+      const b = add3(add3(center, scale3(u, 0.3)), nrm);
+      this.projectLine(camera, [center, a, b], {
+        color: opts.stroke || PALETTE.ink, width: 0.8, alpha: alpha * 0.7,
+        jitter: 0.2, seed: seed + 91, double: false,
+      });
+    }
+    return { quad, alpha, back, scale: proj[0].scale };
   }
 
   splash(x, y, r, opts = {}) {

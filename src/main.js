@@ -47,7 +47,8 @@ function frame(now) {
   if (!state.paused) state.time += dt * state.speed;
   const t = state.time;
   const { plate, field } = scene.render(t, dt);
-  const shaderTime = ((t % DURATION) + DURATION) % DURATION;
+  // Secondary shader noise uses the same calmer clock as rain and grain boil.
+  const shaderTime = scene.timeline.motionT;
   renderer.render(plate, field, shaderTime);
   lab.render(t, scene.timeline);
   requestAnimationFrame(frame);
