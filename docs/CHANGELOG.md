@@ -2,6 +2,51 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 13: a module with two frontages, and crowds that steer
+
+**User feedback:** every module must have buildings on **both** sides of its
+street — an east–west street with buildings N and S, joined by north–south half
+streets at the cell edges — so modules connect and tile; and the obstacle
+avoidance still looks "funny and unnatural".
+
+### Changed
+
+- **The cell is an intersection, not a street with a backdrop.** `world.js` now
+  carries `SIDE_STREET` (a 3.6 m half street at each x edge, so two cells meet in
+  a 7.2 m north–south street), `NORTH_BLOCK` (−14…−9.6) and `SOUTH_BLOCK`
+  (8.3…10.5). Both pavements are clipped to the block between the half streets,
+  the lots moved back onto the north frontage and a second row — `SOUTH_LOTS`,
+  two single-storey shop blocks with a gap on the centre line — faces the street
+  from the near side.
+- **Both rows are real, drawn geometry.** The south row is drawn per lot
+  (`drawSouthLot`), with a solid mass, a glazed shopfront, a lettered sign band,
+  an awning and a blade sign. It sorts with the people and the cars
+  (`southRowItems`), so it occludes the crowd correctly instead of being pasted
+  behind it; the buildings were also sorted far-to-near so a block can no longer
+  print its windows through its neighbour.
+- **Neighbour cells are the same module.** `cells.js` now draws the south row
+  and the half streets, clips the pavements and the kerbs to the block, and runs
+  the lane dashes at the neighbour's own z (they used to land on the hero cell).
+  The near row of buffer cells is drawn *after* the hero and sorts with it.
+- **The crowd steers instead of being shoved.** `collision.js` gained `relax()`:
+  a damped, softly-saturated solver with a `lateral` bias, so a body pushed
+  backwards along its own heading slides sideways instead of reversing. Bodies
+  are weighted by opacity rather than switched in and out, and each solver pass
+  is single-group (people vs furniture, then people vs people). Pedestrians get a
+  lane offset along their flow, street furniture is an explicit obstacle list
+  (`STREET_PROPS`), placement keeps clear of the furniture, and the walk-in is a
+  short 1.6–4.6 m at walking pace instead of a sprint from the cell edge. Average
+  step is 0.045 m per frame at 20 fps (≈0.9 m/s) with no teleports.
+- **The side streets carry their own markings:** asphalt through the full cell
+  depth, kerbs along the inner edge with stone ticks, and a wet band.
+
+### Fixed
+
+- The south row and the forecourt now sit on the raised slab, so the near block
+  reads as a pavement rather than a floating shelf.
+- Crowd walk-on no longer starts 20 m away at sprint speed; the drain no longer
+  jumps its own offset when the crossing ends.
+
 ## 2026-10-27 — Turn 12: glass planes, a wider street, tileable cells, palettes
 
 **User feedback:** “let the glass box just [be] planes without frames along the

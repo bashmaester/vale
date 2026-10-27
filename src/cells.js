@@ -13,7 +13,10 @@
 
 import { v3, lerp, hash11, quadLerp } from './math.js';
 import { TILE, SIDEWALK_Y, TILE_COLORS as C, ROAD_EDGE } from './tile.js';
-import { ROAD, SIDEWALKS, CROSSWALKS, BUILDING_LOTS } from './world.js';
+import {
+  ROAD, SIDEWALKS, CROSSWALKS, BUILDING_LOTS, SOUTH_LOTS,
+  SOUTH_BLOCK, SIDE_STREET,
+} from './world.js';
 
 const BONE = (a = 1) => `rgba(239,233,216,${a})`;
 const TEAL = (a = 1) => `rgba(43,184,174,${a})`;
@@ -64,23 +67,40 @@ export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   // The volume's floor slab, then the two raised pavements, then the road:
   // drawn in that order so a seam has no cracks of background showing through.
   slab(p, camera, X0, X1, Z0, Z1, 0, C.floor, { seed, stroke: BONE(0.06) });
-  slab(p, camera, X0, X1, rz1, Z1, SIDEWALK_Y, C.sidewalk, { seed: seed + 1 });
-  slab(p, camera, X0, X1, Z0, rz0, SIDEWALK_Y, C.sidewalkBack, { seed: seed + 2 });
-  slab(p, camera, X0, X1, rz0, rz1, 0.006, C.road, { seed: seed + 3 });
+  // The pavements belong to the block between the two half streets; outside
+  // that the north–south street runs straight through the cell, which is what
+  // joins this module to the one north or south of it.
+  const bx0 = X0 + SIDE_STREET.x0 - TILE.x0;
+  const bx1 = X0 + SIDE_STREET.x1 - TILE.x0;
+  slab(p, camera, X0, X1, Z0, Z1, 0.004, C.road, { seed: seed + 3 });
+  slab(p, camera, bx0, bx1, rz1, Z1, SIDEWALK_Y, C.sidewalk, { seed: seed + 1 });
+  slab(p, camera, bx0, bx1, Z0, rz0, SIDEWALK_Y, C.sidewalkBack, { seed: seed + 2 });
+  // The near block's forecourt, at the same level as the pavement.
+  const fz0 = SOUTH_BLOCK.z0 + oz, fz1 = SOUTH_BLOCK.z1 + oz;
+  slab(p, camera, bx0, bx1, fz0, fz1, SIDEWALK_Y, C.sidewalk, { seed: seed + 4 });
 
   // Kerb faces: a lit edge is what reads as a height difference at this size.
   p.projectPoly(camera, [
-    v3(X0, SIDEWALK_Y, rz1), v3(X1, SIDEWALK_Y, rz1),
-    v3(X1, 0, rz1), v3(X0, 0, rz1),
+    v3(bx0, SIDEWALK_Y, rz1), v3(bx1, SIDEWALK_Y, rz1),
+    v3(bx1, 0, rz1), v3(bx0, 0, rz1),
   ], { fill: 'rgba(46,46,52,0.95)', stroke: null, jitter: 0.12, seed: seed + 4 });
   p.projectPoly(camera, [
-    v3(X0, SIDEWALK_Y, rz0), v3(X1, SIDEWALK_Y, rz0),
-    v3(X1, 0, rz0), v3(X0, 0, rz0),
+    v3(bx0, SIDEWALK_Y, rz0), v3(bx1, SIDEWALK_Y, rz0),
+    v3(bx1, 0, rz0), v3(bx0, 0, rz0),
   ], { fill: 'rgba(34,34,40,0.95)', stroke: null, jitter: 0.12, seed: seed + 5 });
+  // Inner kerbs of the north–south street, each side of the main road.
+  for (const kx of [bx0, bx1]) {
+    for (const [za, zb] of [[Z0, rz0], [rz1, Z1]]) {
+      p.projectPoly(camera, [
+        v3(kx, SIDEWALK_Y, za), v3(kx, SIDEWALK_Y, zb),
+        v3(kx, 0, zb), v3(kx, 0, za),
+      ], { fill: 'rgba(40,40,46,0.92)', stroke: null, jitter: 0.12, seed: seed + 6 + kx + za });
+    }
+  }
 
   // Paving joints: coarse on a far cell, one line every 2 m up close.
   const pav = d > 0.55 ? 2.2 : d > 0.3 ? 3.4 : 5.0;
-  for (let x = X0 + pav; x < X1 - 0.2; x += pav) {
+  for (let x = bx0 + pav; x < bx1 - 0.2; x += pav) {
     p.projectLine(camera, [v3(x, SIDEWALK_Y + 0.004, rz1 + 0.3), v3(x, SIDEWALK_Y + 0.004, Z1 - 0.2)],
       { color: BONE(0.045), width: 0.55, alpha: 0.8, jitter: 0.14, seed: seed + x * 1.7, double: false });
     p.projectLine(camera, [v3(x, SIDEWALK_Y + 0.004, Z0 + 0.2), v3(x, SIDEWALK_Y + 0.004, rz0 - 0.3)],
@@ -88,10 +108,12 @@ export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   }
 
   // Centre line and lane dividers, world-periodic so they cross the seam.
-  laneDashes(p, camera, { ox, oz: 0, z: 0, color: BONE(d > 0.3 ? 0.32 : 0.2), width: 1.0, seed: seed + 11 });
+  laneDashes(p, camera, {
+    ox, oz, z: 0, color: BONE(d > 0.3 ? 0.32 : 0.2), width: 1.0, seed: seed + 11,
+  });
   for (const zz of [-ROAD_EDGE.back * 0.44, ROAD_EDGE.back * 0.44]) {
     laneDashes(p, camera, {
-      ox, z: zz, color: BONE(d > 0.3 ? 0.26 : 0.16), width: 0.85, seed: seed + 20 + zz,
+      ox, oz, z: zz, color: BONE(d > 0.3 ? 0.26 : 0.16), width: 0.85, seed: seed + 20 + zz,
       dash: DASH_LEN * 1.35,
     });
   }
@@ -146,13 +168,62 @@ export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   }
 }
 
+// The near side of the module: the low shop row, drawn the same way in every
+// cell so a tiled set has buildings on both sides of every street.
+function cellShops(p, camera, d, ox, oz, seed) {
+  for (let i = 0; i < SOUTH_LOTS.length; i++) {
+    const b = SOUTH_LOTS[i];
+    const h1 = hash11(seed + i * 4.1), h2 = hash11(seed + i * 8.7);
+    const h = b.h * (0.85 + h1 * 0.35);
+    const x = b.x + ox + (h2 - 0.5) * 0.8;
+    const z = b.z + oz;
+    const faces = p.box(camera, [x, SIDEWALK_Y + h / 2, z], [b.w, h, b.d], {
+      fill: C.floor, stroke: BONE(0.38), width: 0.8, alpha: 0.98,
+      seed: seed + i * 19, jitter: 0.16, edgeAlpha: 0.6, edges: false,
+    });
+    const front = faces.find((f) => f.name === 'front' && f.visible);
+    if (!front) continue;
+    p.poly(front.quad, {
+      fill: 'rgba(30,30,36,0.97)', stroke: null, jitter: 0.5, seed: seed + i * 5,
+    });
+    // Sign band facing the street, lit glazing under it.
+    p.poly([
+      quadLerp(front.quad, 0.03, 0.66), quadLerp(front.quad, 0.97, 0.66),
+      quadLerp(front.quad, 0.97, 0.88), quadLerp(front.quad, 0.03, 0.88),
+    ], {
+      fill: b.accent === 'red' ? RED(0.20) : TEAL(0.16), stroke: null,
+      jitter: 0.16, seed: seed + i * 7,
+    });
+    if (d > 0.35) {
+      p.poly([
+        quadLerp(front.quad, 0.05, 0.16), quadLerp(front.quad, 0.95, 0.16),
+        quadLerp(front.quad, 0.95, 0.60), quadLerp(front.quad, 0.05, 0.60),
+      ], {
+        fill: b.accent === 'red' ? 'rgba(216,160,58,0.26)' : TEAL(0.20),
+        stroke: null, jitter: 0.2, seed: seed + i * 11,
+      });
+    }
+    const top = faces.find((f) => f.name === 'top' && f.visible);
+    if (top) p.poly(top.quad, { fill: 'rgba(20,20,24,0.95)', stroke: BONE(0.3), width: 0.7, jitter: 0.14, seed: seed + i * 13 });
+  }
+}
+
 /**
  * The block on the far pavement: four lots, each jittered per cell so the
  * neighbours are siblings rather than clones.
  */
 export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   const detail = d;
-  for (let i = 0; i < BUILDING_LOTS.length; i++) {
+  // Painter's algorithm: the lots are drawn far to near, so a tall block never
+  // paints its windows through the wall of the one in front of it.
+  const order = BUILDING_LOTS.map((b, i) => {
+    const h4 = hash11(seed + i * 11.3);
+    const z = b.z + oz + (h4 - 0.5) * 0.8;
+    const q = camera.project(v3(b.x + ox, b.h * 0.5, z));
+    return { i, depth: q && Number.isFinite(q.depth) ? q.depth : 1e6 };
+  }).sort((a, b2) => b2.depth - a.depth);
+  for (const ord of order) {
+    const i = ord.i;
     const b = BUILDING_LOTS[i];
     const h1 = hash11(seed + i * 3.1), h2 = hash11(seed + i * 7.7);
     const h3 = hash11(seed + i * 5.9), h4 = hash11(seed + i * 11.3);
@@ -170,6 +241,16 @@ export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
     });
     const front = faces.find((f) => f.name === 'front' && f.visible);
     if (!front) continue;
+
+    // Solid mass: the cell is the same city as the hero, so its walls have to
+    // hold the same tone. A cell drawn as an outline only reads as glass.
+    for (const f of faces) {
+      if (f.name === 'top' || f.name === 'bottom') continue;
+      p.poly(f.quad, {
+        fill: f.name === 'front' ? 'rgba(30,30,36,0.96)' : 'rgba(15,15,19,0.95)',
+        stroke: null, jitter: 0.5, seed: seed + i * 23 + (f.name === 'front' ? 1 : 2),
+      });
+    }
 
     // Shopfront band at street level, then the window grid above it.
     const band = [quadLerp(front.quad, 0.06, 0.74), quadLerp(front.quad, 0.94, 0.74),
@@ -217,6 +298,8 @@ export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
       }
     }
   }
+  // The near row goes last: it stands between the camera and everything above.
+  cellShops(p, camera, d, ox, oz, seed + 300);
 }
 
 /** Street furniture, cut down to what survives at a distance. */

@@ -1,6 +1,6 @@
 # VALE — current state
 
-**Last updated:** 2026-10-27 (Turn 12 — tileable cells and palettes, branch `arena/bab4bc10-vale`)
+**Last updated:** 2026-10-27 (Turn 13 — a module with two frontages, branch `arena/bab4bc10-vale`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
@@ -10,11 +10,14 @@ drives the sample, not the deliverable.
 
 ## 1. What the build is
 
-One self-contained `index.html` (~177 KiB), silent, autoplaying, no external
-assets. Tags: `v0.1.2` (Turn 10), `v0.1.3` (Turn 11), `v0.1.4` (this turn).
-It renders one tile of a rainy street corner as a *cell* of a tiled set: the
-boundary is glass planes and a lid, with no posts, rails, cut caps or plinth, so
-the cell can butt against another without a seam. Everything inside is generated
+One self-contained `index.html` (~185 KiB), silent, autoplaying, no external
+assets. Tags: `v0.1.3` (Turn 11), `v0.1.4` / `v0.1.5` (Turn 12), `v0.1.6`
+(this turn).
+It renders one **module** of a rainy street corner as a *cell* of a tiled set:
+an east–west street with a building row on each side, and a north–south half
+street down each x edge so two cells meet in a full street. The boundary is
+glass planes and a lid, with no posts, rails, cut caps or plinth, so the cell can
+butt against another without a seam. Everything inside is generated
 from code every frame, and neighbouring cells are painted from the same rules
 (`src/cells.js`) with detail falling off by distance.
 

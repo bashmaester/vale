@@ -4,10 +4,19 @@
 // x. The cut-away back wall is at z = -14, the left wall at x = -15, the open
 // faces are +z (front) and +x (right).
 //
-//   z -14 ────────── back wall / elevated line
-//   z -14..-5.9      far sidewalk (buildings, shopfronts)
-//   z -5.9..5.9      road: two travel lanes + a parking bay at each kerb
-//   z  5.9..10.5     near sidewalk (the stage: people, trees, lamps)
+// The cell is an intersection module: an east–west street through the middle,
+// buildings on BOTH sides of it (north row and a low south row), and a
+// half-width north–south street down each side. Two cells side by side make the
+// south–north street whole, so a tiled set is a street grid rather than a row
+// of islands.
+//
+//   x -15..-11.4     north–south street, west half
+//   x  11.4..15      north–south street, east half
+//   z -14..-9.6      north block: tower / mid / shop / corner
+//   z -9.6..-5.9     far sidewalk (buildings, shopfronts)
+//   z -5.9..5.9      east–west street: two travel lanes + parking bays
+//   z  5.9..8.3      near sidewalk (the stage: people, trees, lamps)
+//   z  8.3..10.5     south block: a low row of shops facing the street
 //
 // Every z below is measured from the road edges in tile.js, so widening the
 // street (or tiling the cell) does not leave stray kerbs behind.
@@ -23,6 +32,16 @@ import { TILE, SIDEWALK_Y, ROAD_EDGE, groundYAt } from './tile.js';
 // each kerb.
 export const ROAD = { x0: TILE.x0, x1: TILE.x1, z0: ROAD_EDGE.back, z1: ROAD_EDGE.front };
 
+// The north–south street lives on the cell boundary: each cell owns a half of
+// it, so two neighbours meet in the middle of a whole street. `x0`/`x1` are the
+// inner kerbs of that street (the block edge).
+export const SIDE_STREET = {
+  half: 3.6,
+  x0: -11.4,
+  x1: 11.4,
+  wid: TILE.x1 - TILE.x0,
+};
+
 // Kerb offsets, in world z, for anything that wants to stand just off the road.
 export const KERB = {
   front: ROAD.z1 + 0.55,        // lamp posts, signal poles
@@ -37,9 +56,14 @@ export const ROAD_V = { x0: 0.0, x1: 0.0, z0: ROAD.z0, z1: ROAD.z1 };
 export const INTERSECTION = { x0: -5.2, x1: -0.6, z0: ROAD.z0, z1: ROAD.z1 };
 
 // Two raised slabs: the far sidewalk (buildings) and the near one (stage).
+// The raised slabs stop at the inner kerb of the north–south street: beyond
+// that line the ground is the side street itself.
+export const SOUTH_BLOCK = { z0: TILE.z1 - 2.2, z1: TILE.z1 };   // 8.3 .. 10.5
+export const NORTH_BLOCK = { z0: TILE.z0, z1: -9.6 };
+
 export const SIDEWALKS = [
-  { id: 'FRONT', x0: TILE.x0, x1: TILE.x1, z0: ROAD.z1, z1: TILE.z1, detail: 1.0 },
-  { id: 'BACK', x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: ROAD.z0, detail: 0.85 },
+  { id: 'FRONT', x0: SIDE_STREET.x0, x1: SIDE_STREET.x1, z0: ROAD.z1, z1: SOUTH_BLOCK.z0, detail: 1.0 },
+  { id: 'BACK', x0: SIDE_STREET.x0, x1: SIDE_STREET.x1, z0: NORTH_BLOCK.z1, z1: ROAD.z0, detail: 0.85 },
 ];
 
 export const CORNER = SIDEWALKS[0];
@@ -79,48 +103,84 @@ export const SIGNAL_POSITIONS = [
   { id: 'back', x: 1.05, z: KERB.back, yaw: Math.PI, toward: { x: 0, z: 1 }, arm: 4.3 },
 ];
 
+// Things a person has to walk around. Kept in step with the furniture pass in
+// environment.js: the crowd uses this list to steer, so a lamp post that is not
+// here is a lamp post people walk straight through.
+export const STREET_PROPS = [
+  // street lamps
+  { x: -10.9, z: 6.45, r: 0.26 }, { x: -10.7, z: 7.4, r: 0.26 },
+  { x: 10.6, z: 6.45, r: 0.26 }, { x: -6.9, z: -6.45, r: 0.26 },
+  { x: 4.6, z: -6.45, r: 0.26 },
+  // utility poles
+  { x: -10.9, z: 6.05, r: 0.22 }, { x: 10.9, z: 6.05, r: 0.22 },
+  // signals
+  { x: -6.05, z: 6.1, r: 0.26 }, { x: 1.05, z: -6.1, r: 0.26 },
+  // vending machine, bin, benches, planters, trees, bike rack
+  { x: 10.5, z: 6.9, r: 0.66 },
+  { x: 10.4, z: 7.5, r: 0.34 }, { x: -10.7, z: 7.5, r: 0.3 },
+  { x: -9.8, z: 7.3, r: 0.6 }, { x: -7.9, z: 7.5, r: 0.55 },
+  { x: -7.4, z: 7.4, r: 0.4 }, { x: 2.4, z: 7.5, r: 0.36 }, { x: -1.4, z: 7.6, r: 0.3 },
+  { x: 6.6, z: 7.4, r: 0.42 }, { x: -10.0, z: 7.3, r: 0.42 },
+  { x: -8.8, z: 6.4, r: 0.85 },
+  // bus stop pole
+  { x: -3.9, z: 7.5, r: 0.24 },
+];
+
 // Facades sit on the far sidewalk. `face` is which cut face carries the shop.
+// North row: four lots between the two side streets, their fronts on the far
+// sidewalk. Depth is measured back from the building line at z = -9.6.
 export const BUILDING_LOTS = [
   {
-    id: 'tower', x: -11.3, z: -11.2, w: 6.2, d: 5.2, h: 13.1,
+    id: 'tower', x: -8.5, z: -11.8, w: 5.6, d: 4.4, h: 13.1,
     cols: 4, rows: 6, accent: 'red', face: 'south', lit: 0.42,
     shop: false, roofTank: true, verticalSign: false,
   },
   {
-    id: 'mid', x: -5.1, z: -10.9, w: 5.6, d: 5.4, h: 8.4,
+    id: 'mid', x: -3.0, z: -11.8, w: 4.9, d: 4.4, h: 8.4,
     cols: 3, rows: 4, accent: 'teal', face: 'south', lit: 0.5,
     shop: true, roofTank: false, verticalSign: true,
   },
   {
-    id: 'shop', x: 1.7, z: -10.6, w: 6.8, d: 5.8, h: 5.4,
+    id: 'shop', x: 2.1, z: -11.8, w: 5.1, d: 4.4, h: 5.4,
     cols: 4, rows: 2, accent: 'teal', face: 'south', lit: 0.66,
     shop: true, roofTank: false, verticalSign: false,
   },
   {
-    id: 'corner', x: 9.6, z: -10.9, w: 7.4, d: 5.4, h: 7.6,
+    id: 'corner', x: 8.1, z: -11.8, w: 6.2, d: 4.4, h: 7.6,
     cols: 5, rows: 4, accent: 'red', face: 'south', lit: 0.38,
     shop: true, roofTank: true, verticalSign: true,
   },
 ];
 
+// South row: the other side of the street. These are deliberately low — a
+// single storey of shops with a sign band — so the near pavement, the crossing
+// and the crowd in front of them stay visible from the camera.
+export const SOUTH_LOTS = [
+  // Two blocks with a gap on the centre line. The gap is what lets the street
+  // read from the film's camera; when cells tile, the blocks meet at the seam
+  // and the gaps repeat every 30 m as mid-block yards.
+  { id: 's_west', x: -7.55, z: 9.55, w: 7.7, d: 1.9, h: 2.7, cols: 4, rows: 1, accent: 'red', lit: 0.7 },
+  { id: 's_east', x: 7.85, z: 9.55, w: 7.1, d: 1.9, h: 2.9, cols: 4, rows: 1, accent: 'teal', lit: 0.8 },
+];
+
 // Colour accents as light on the wet ground. z is the base of each source
 // (just in front of the shopfronts), so the smear runs toward the camera.
 export const LIGHT_SOURCES = [
-  { x: 1.8, z: -7.72, color: 'teal', w: 4.2, h: 3.0, seed: 11 },
-  { x: 9.6, z: -8.22, color: 'red', w: 3.0, h: 3.4, seed: 12 },
-  { x: 12.6, z: -8.22, color: 'teal', w: 1.1, h: 5.2, seed: 13 },
-  { x: -5.1, z: -8.22, color: 'red', w: 1.1, h: 4.8, seed: 14 },
-  { x: -11.3, z: -8.62, color: 'red', w: 2.6, h: 7.5, seed: 15 },
-  { x: 13.0, z: 6.4, color: 'teal', w: 1.0, h: 1.7, seed: 16 },
-  { x: -9.2, z: 8.4, color: 'bone', w: 1.4, h: 2.6, seed: 17 },
+  { x: 2.1, z: -9.4, color: 'teal', w: 4.2, h: 3.0, seed: 11 },
+  { x: 8.1, z: -9.4, color: 'red', w: 3.0, h: 3.4, seed: 12 },
+  { x: 10.9, z: -9.4, color: 'teal', w: 1.1, h: 5.2, seed: 13 },
+  { x: -3.0, z: -9.4, color: 'red', w: 1.1, h: 4.8, seed: 14 },
+  { x: -8.5, z: -9.4, color: 'red', w: 2.6, h: 7.5, seed: 15 },
+  { x: 6.1, z: 8.5, color: 'red', w: 2.2, h: 2.2, seed: 16 },
+  { x: -8.4, z: 8.5, color: 'teal', w: 1.8, h: 2.2, seed: 17 },
 ];
 
 // Waiting zones. Weights bias the crowd toward the crossing itself.
 export const WAIT_ZONES = [
-  { id: 'cross_front', weight: 0.40, x0: -8.0, x1: 0.8, z0: 6.1, z1: 7.9 },
-  { id: 'cross_back', weight: 0.20, x0: -8.0, x1: 0.8, z0: -7.9, z1: -6.2 },
-  { id: 'shop_front', weight: 0.26, x0: 2.2, x1: 11.4, z0: 6.1, z1: 8.2 },
-  { id: 'left_front', weight: 0.14, x0: -13.4, x1: -8.4, z0: 6.4, z1: 9.6 },
+  { id: 'cross_front', weight: 0.40, x0: -8.0, x1: 0.8, z0: 6.05, z1: 7.85 },
+  { id: 'cross_back', weight: 0.20, x0: -8.0, x1: 0.8, z0: -7.9, z1: -6.1 },
+  { id: 'shop_front', weight: 0.26, x0: 2.2, x1: 10.8, z0: 6.1, z1: 7.95 },
+  { id: 'left_front', weight: 0.14, x0: -10.9, x1: -8.4, z0: 6.3, z1: 7.95 },
 ];
 
 // Pedestrian motion. Crossings run along z; strolling runs along x. Every flow
@@ -134,13 +194,13 @@ export const FLOWS = [
   { id: 'cross_diag', kind: 'cross', weight: 0.10,
     bounds: { x0: -4.9, x1: -1.1, z0: 6.0, z1: 7.4 }, delta: { x: 6.2, z: -11.6 }, bend: 0.7 },
   { id: 'front_e', kind: 'stroll', weight: 0.18,
-    bounds: { x0: -13.6, x1: -4.4, z0: 7.4, z1: 9.9 }, delta: { x: 15.0, z: -0.7 }, bend: 1.1 },
+    bounds: { x0: -10.9, x1: -4.4, z0: 6.35, z1: 7.05 }, delta: { x: 15.0, z: -0.5 }, bend: 1.0 },
   { id: 'front_w', kind: 'stroll', weight: 0.16,
-    bounds: { x0: 4.2, x1: 13.6, z0: 7.4, z1: 9.9 }, delta: { x: -15.0, z: 0.6 }, bend: -1.0 },
+    bounds: { x0: 4.2, x1: 10.8, z0: 6.35, z1: 7.05 }, delta: { x: -15.0, z: 0.5 }, bend: -0.9 },
   { id: 'back_e', kind: 'stroll', weight: 0.11,
-    bounds: { x0: -13.2, x1: -5.8, z0: -8.0, z1: -6.3 }, delta: { x: 14.0, z: 0.2 }, bend: 0.6 },
+    bounds: { x0: -10.9, x1: -5.8, z0: -7.6, z1: -6.4 }, delta: { x: 14.0, z: 0.2 }, bend: 0.5 },
   { id: 'shop_front', kind: 'stroll', weight: 0.11,
-    bounds: { x0: 1.6, x1: 9.6, z0: 6.1, z1: 8.0 }, delta: { x: -8.0, z: 0.4 }, bend: 0.8 },
+    bounds: { x0: 1.6, x1: 9.6, z0: 6.2, z1: 7.0 }, delta: { x: -8.0, z: 0.3 }, bend: 0.7 },
 ];
 
 // Puddles are procedural but seeded: they pool at the kerbs and under lights.

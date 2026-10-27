@@ -13,6 +13,7 @@
 
 import { PALETTE, glowAt as glowBlit } from './draw.js';
 import { grade } from './palette.js';
+import { laneDashes } from './cells.js';
 import {
   v3, clamp, lerp, hash11, hash21, makeRng, quadLerp, smoothstep, TAU,
 } from './math.js';
@@ -20,7 +21,7 @@ import { TILE, SIDEWALK_Y, TILE_COLORS as C } from './tile.js';
 import { LOOP, loopNoise } from './loop.js';
 import {
   ROAD, SIDEWALKS, CROSSWALKS, LANES, SIGNAL_POSITIONS, BUILDING_LOTS,
-  LIGHT_SOURCES, PUDDLES,
+  SOUTH_LOTS, SOUTH_BLOCK, SIDE_STREET, KERB, LIGHT_SOURCES, PUDDLES,
 } from './world.js';
 
 const RNG = makeRng(20261027);
@@ -261,8 +262,10 @@ export function drawBackdrop(p, camera, detail = { wallDetail: 1 }, params = {})
 }
 
 export function drawStreet(p, camera, detail = { hatch: 1 }) {
-  const { x0, x1, z1 } = TILE;
+  const { z1 } = TILE;
   const rx0 = ROAD.x0, rx1 = ROAD.x1, rz0 = ROAD.z0, rz1 = ROAD.z1;
+  // The block between the two side streets: kerbs, aprons and paving stop here.
+  const bx0 = SIDE_STREET.x0, bx1 = SIDE_STREET.x1;
 
   // Asphalt with a subtle crown: overlapping bands rather than one flat fill.
   p.groundQuad(camera, rx0, rz0, rx1, rz1, { fill: '#101215', stroke: null, jitter: 0, y: 0.0 });
@@ -330,21 +333,30 @@ export function drawStreet(p, camera, detail = { hatch: 1 }) {
     }
   }
 
+  // The forecourt on the near block: the shops stand on the same raised level
+  // as the pavement, so the seam between the two reads as a step, not a crack.
+  p.box(camera, [0, SIDEWALK_Y / 2, (SOUTH_BLOCK.z0 + SOUTH_BLOCK.z1) / 2],
+    [SIDE_STREET.x1 - SIDE_STREET.x0, SIDEWALK_Y, SOUTH_BLOCK.z1 - SOUTH_BLOCK.z0], {
+      fill: '#1d1d21', stroke: BONE(0.40), width: 0.9, alpha: 1,
+      seed: 1680, jitter: 0.16, edgeAlpha: 0.7,
+    });
+
   // Wet apron along the near kerb: the brightest ground in the shot, because
   // it is where the crowd's feet and the light reflections meet.
-  p.groundQuad(camera, rx0, ROAD.z1 - 1.5, rx1, ROAD.z1, {
+  p.groundQuad(camera, bx0, ROAD.z1 - 1.5, bx1, ROAD.z1, {
     fill: 'rgba(60,58,58,0.20)', stroke: null, jitter: 0.5, y: 0.010,
   });
 
-  // Kerb faces: a bright top edge and a darker riser, with stone ticks.
+  // Kerb faces: a bright top edge and a darker riser, with stone ticks. They
+  // stop at the inner kerb of the north–south street, where the block ends.
   for (const [z, dir] of [[rz1, 1], [rz0, -1]]) {
-    line3(p, camera, [rx0, SIDEWALK_Y, z], [rx1, SIDEWALK_Y, z], {
+    line3(p, camera, [bx0, SIDEWALK_Y, z], [bx1, SIDEWALK_Y, z], {
       color: BONE(0.62), width: 1.5, alpha: 0.85, jitter: 0.14, seed: 1700 + z, double: false,
     });
-    line3(p, camera, [rx0, 0.015, z], [rx1, 0.015, z], {
+    line3(p, camera, [bx0, 0.015, z], [bx1, 0.015, z], {
       color: BONE(0.20), width: 1.0, alpha: 0.7, jitter: 0.2, seed: 1710 + z, double: false,
     });
-    for (let x = x0 + 1.4; x < x1; x += 1.55) {
+    for (let x = bx0 + 1.4; x < bx1; x += 1.55) {
       line3(p, camera, [x, 0.01, z], [x, SIDEWALK_Y - 0.01, z], {
         color: BONE(0.16), width: 0.55, alpha: 0.65,
         jitter: 0.12, seed: 1720 + x * 3 + dir, double: false,
@@ -435,9 +447,68 @@ function paving(p, camera, s, detail, seed) {
   }
 }
 
+// The north–south street down the side of the cell. Each cell owns a half;
+// when two cells meet, the two halves read as one street, which is the whole
+// point of the module.
+export function drawSideStreet(p, camera, detail = { hatch: 1 }) {
+  const { x0, x1, z0, z1 } = TILE;
+  const half = SIDE_STREET.half;
+  const strips = [[x0, x0 + half], [x1 - half, x1]];
+  for (let si = 0; si < strips.length; si++) {
+    const [sx0, sx1] = strips[si];
+    p.groundQuad(camera, sx0, z0, sx1, z1, {
+      fill: '#0e1013', stroke: null, jitter: 0, y: 0.001,
+    });
+    // A wet band down the middle of the half-street, and wear along the kerb.
+    p.groundQuad(camera, (sx0 + sx1) / 2 - 1.2, z0 + 0.6, (sx0 + sx1) / 2 + 1.2, z1 - 0.6, {
+      fill: 'rgba(239,233,216,0.035)', stroke: null, jitter: 0.5, y: 0.008,
+    });
+    const inner = si === 0 ? sx1 : sx0;
+    // Kerb along the block side, in two runs either side of the main street.
+    for (const [za, zb] of [[z0, ROAD.z0], [ROAD.z1, z1]]) {
+      line3(p, camera, [inner, SIDEWALK_Y, za], [inner, SIDEWALK_Y, zb], {
+        color: BONE(0.58), width: 1.4, alpha: 0.8, jitter: 0.14,
+        seed: 1800 + si * 17 + za, double: false,
+      });
+      line3(p, camera, [inner, 0.015, za], [inner, 0.015, zb], {
+        color: BONE(0.18), width: 0.9, alpha: 0.65, jitter: 0.2,
+        seed: 1810 + si * 17 + za, double: false,
+      });
+      for (let z = za + 1.2; z < zb; z += 1.5) {
+        line3(p, camera, [inner, 0.01, z], [inner, SIDEWALK_Y - 0.01, z], {
+          color: BONE(0.15), width: 0.55, alpha: 0.6, jitter: 0.12,
+          seed: 1820 + si * 23 + z, double: false,
+        });
+      }
+    }
+    // Corner kerbs where the side street meets the main one.
+    for (const [za, sgn] of [[ROAD.z0, -1], [ROAD.z1, 1]]) {
+      line3(p, camera, [x0 + (si === 0 ? 0 : half * 2), 0.02, za], [inner, 0.02, za], {
+        color: BONE(0.26), width: 0.9, alpha: 0.7, jitter: 0.2,
+        seed: 1830 + si * 11 + za, double: false,
+      });
+    }
+  }
+  // Wear and a couple of drain covers: enough to read as a used street.
+  if ((detail.hatch || 1) > 0.4) {
+    for (let i = 0; i < 6; i++) {
+      const sx = x0 + 1.4 + hash11(1900 + i) * (half - 2.8);
+      const zz = z0 + 2 + hash11(1910 + i) * (z1 - z0 - 4);
+      line3(p, camera, [sx, 0.012, zz], [sx + 1.6 + hash11(1920 + i) * 2.6, 0.012, zz + (hash11(1930 + i) - 0.5) * 0.5], {
+        color: BONE(0.05), width: 1.0, alpha: 0.6, jitter: 0.3,
+        seed: 1940 + i, double: false,
+      });
+    }
+  }
+}
+
 export function drawPaving(p, camera, detail = { hatch: 1 }) {
   paving(p, camera, SIDEWALKS[1], detail, 1800);
   paving(p, camera, SIDEWALKS[0], detail, 1900);
+  paving(p, camera, {
+    id: 'SOUTH', x0: SIDE_STREET.x0, x1: SIDE_STREET.x1,
+    z0: SOUTH_BLOCK.z0, z1: SOUTH_BLOCK.z1,
+  }, detail, 2100);
 
   // Tactile strip and dots at the crossing (front sidewalk only).
   const cw = CROSSWALKS.main;
@@ -460,7 +531,7 @@ export function drawPaving(p, camera, detail = { hatch: 1 }) {
   }
 
   // Drain grates along the near kerb.
-  for (const gx of [-11.6, -6.4, 2.2, 10.8]) {
+  for (const gx of [-10.9, -6.4, 2.2, 10.5]) {
     p.projectPoly(camera, [
       v3(gx - 0.55, 0.02, ROAD.z1 - 0.42), v3(gx + 0.55, 0.02, ROAD.z1 - 0.42),
       v3(gx + 0.55, 0.02, ROAD.z1 - 0.06), v3(gx - 0.55, 0.02, ROAD.z1 - 0.06),
@@ -525,14 +596,13 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
     v3(cw.x1 + 0.82, y, -0.18), v3(cw.x1 + 0.42, y, -0.18),
   ], { fill: BONE(0.42), stroke: BONE(0.46), width: 0.6, jitter: 0.25, seed: 341 });
 
-  // Centre line, broken through the crossing.
-  line3(p, camera, [ROAD.x0, y, 0], [cw.x0 - 0.5, y, 0], {
-    color: BONE(0.34), width: 0.95, alpha: 0.8,
-    dash: [66, 14], jitter: 0.2, seed: 350, double: false,
-  });
-  line3(p, camera, [cw.x1 + 0.5, y, 0], [ROAD.x1, y, 0], {
-    color: BONE(0.34), width: 0.95, alpha: 0.8,
-    dash: [68, 14], jitter: 0.2, seed: 351, double: false,
+  // Centre line. Dashes are laid out on a WORLD grid (see cells.js): a cell
+  // boundary always lands on a dash period, so a neighbour's line continues
+  // this one across the seam instead of restarting mid-dash.
+  laneDashes(p, camera, { z: 0, color: BONE(0.34), width: 1.0, seed: 350, dash: 3.2, y: 0.026 });
+  // The crossing is left clear.
+  p.groundQuad(camera, cw.x0 - 0.2, -0.9, cw.x1 + 0.2, 0.9, {
+    fill: 'rgba(12,14,16,0.55)', stroke: null, jitter: 0.5, y: 0.027,
   });
 
   // Kerb-side edge lines and broken lane dividers.
@@ -547,12 +617,13 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
       jitter: 0.2, seed: 370 + l.offset, double: false,
     });
     // Lane divider dashes on the open road either side of the crossing.
-    for (const [xa, xb] of [[ROAD.x0, cw.x0 - 1.2], [cw.x1 + 1.2, ROAD.x1]]) {
-      line3(p, camera, [xa, y + 0.002, l.offset], [xb, y + 0.002, l.offset], {
-        color: BONE(0.34), width: 0.9, alpha: 0.85,
-        dash: [62, 14], jitter: 0.18, seed: 375 + l.offset, double: false,
-      });
-    }
+    laneDashes(p, camera, {
+      z: l.offset, color: BONE(0.30), width: 0.85, seed: 375 + l.offset,
+      dash: 2.6, y: 0.026,
+    });
+    p.groundQuad(camera, cw.x0 - 0.2, l.offset - 0.5, cw.x1 + 0.2, l.offset + 0.5, {
+      fill: 'rgba(12,14,16,0.5)', stroke: null, jitter: 0.4, y: 0.028,
+    });
   }
 
   // Direction arrows, one per lane, drawn as thin open chevrons.
@@ -825,7 +896,14 @@ function drawSignBox(p, camera, side, y, w, h, d, tint, detail, seed) {
 }
 
 export function drawBuildings(p, camera, detail = { windows: 1 }, timeline = null) {
-  for (let i = 0; i < BUILDING_LOTS.length; i++) {
+  // Far to near. Each block paints its own windows after its walls, so a block
+  // drawn after its neighbour would print its windows straight through it.
+  const order = BUILDING_LOTS.map((b, i) => {
+    const q = camera.project(v3(b.x, b.h * 0.5, b.z));
+    return { i, depth: q && Number.isFinite(q.depth) ? q.depth : 1e6 };
+  }).sort((a, b2) => b2.depth - a.depth);
+  for (const ord of order) {
+    const i = ord.i;
     const b = BUILDING_LOTS[i];
     const seed = 2400 + i * 137;
     const faces = p.box(camera, [b.x, b.h / 2, b.z], [b.w, b.h, b.d], {
@@ -1043,6 +1121,121 @@ function signalHead(p, camera, center, size, facing, walk, stop, seed) {
       });
     }
   }
+}
+
+// The other side of the street: a low row of shops. Deliberately single
+// storey with a sign band and an awning, so the near pavement and the crossing
+// still read over the top of it from the film's camera.
+function drawSouthLot(p, camera, b, i, detail = { windows: 1 }) {
+  const seed = 2800 + i * 91;
+  const faces = p.box(camera, [b.x, SIDEWALK_Y + b.h / 2, b.z], [b.w, b.h, b.d], {
+    fill: SHADE.building, stroke: BONE(0.44), width: 1.0, alpha: 1,
+    seed, jitter: 0.18, edgeAlpha: 0.7, edges: false,
+  });
+  const front = faceOf(faces, 'front');
+  if (!front) return;
+  // v runs 1 at the pavement to 0 at the parapet.
+  const vAt = (y) => 1 - clamp(y / b.h, 0.02, 0.98);
+
+  // Solid mass first: without this the shop reads as a glass tank and the
+  // crowd behind it shows straight through.
+  for (const f of faces) {
+    if (f.name === 'top' || f.name === 'bottom') continue;
+    p.poly(f.quad, {
+      fill: f.name === 'front' ? 'rgba(30,30,36,0.97)' : 'rgba(14,14,18,0.96)',
+      stroke: null, jitter: 0.5, seed: seed + (f.name === 'front' ? 7 : 8),
+    });
+  }
+
+  // Glazing: one long shop window, sign band above it, parapet over that.
+  const y0 = b.h * 0.16, y1 = b.h * 0.60;
+  const s0 = b.h * 0.63, s1 = b.h * 0.88;
+  const win = [
+    quadLerp(front.quad, 0.04, vAt(y1)), quadLerp(front.quad, 0.96, vAt(y1)),
+    quadLerp(front.quad, 0.96, vAt(y0)), quadLerp(front.quad, 0.04, vAt(y0)),
+  ];
+  p.poly(win, {
+    fill: b.accent === 'red' ? 'rgba(216,160,58,0.30)' : 'rgba(43,184,174,0.26)',
+    stroke: BONE(0.42), width: 0.7, jitter: 0.2, seed: seed + 1,
+  });
+  const mullions = Math.max(3, Math.round(b.cols * (detail.windows || 1)));
+  for (let m = 1; m < mullions; m++) {
+    const u = m / mullions;
+    p.line([quadLerp(front.quad, u, vAt(y1)), quadLerp(front.quad, u, vAt(y0))], {
+      color: 'rgba(8,10,9,0.8)', width: 1.0, alpha: 0.9, jitter: 0.1,
+      seed: seed + 10 + m, double: false,
+    });
+  }
+  const sign = [
+    quadLerp(front.quad, 0.03, vAt(s1)), quadLerp(front.quad, 0.97, vAt(s1)),
+    quadLerp(front.quad, 0.97, vAt(s0)), quadLerp(front.quad, 0.03, vAt(s0)),
+  ];
+  p.poly(sign, {
+    fill: b.accent === 'red' ? 'rgba(212,59,48,0.22)' : 'rgba(43,184,174,0.18)',
+    stroke: BONE(0.30), width: 0.6, jitter: 0.16, seed: seed + 2,
+  });
+  let u = 0.06;
+  let k = 0;
+  const ly0 = s0 + (s1 - s0) * 0.18, ly1 = s1 - (s1 - s0) * 0.18;
+  while (u < 0.92) {
+    const w = 0.012 + hash11(seed + 30 + k) * 0.03;
+    const gap = 0.008 + hash11(seed + 40 + k) * 0.014;
+    p.poly([
+      quadLerp(front.quad, u, vAt(ly1)), quadLerp(front.quad, u + w, vAt(ly1)),
+      quadLerp(front.quad, u + w, vAt(ly0)), quadLerp(front.quad, u, vAt(ly0)),
+    ], { fill: BONE(0.24 + hash11(seed + 50 + k) * 0.2), stroke: null, jitter: 0.02, seed: seed + 60 + k });
+    u += w + gap;
+    k++;
+  }
+  // Awning: a thin slab reaching out over the pavement, and its underside.
+  const zFront = b.z - b.d / 2;
+  p.projectPoly(camera, [
+    v3(b.x - b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.10, zFront), v3(b.x + b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.10, zFront),
+    v3(b.x + b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.04, zFront - 0.62), v3(b.x - b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.04, zFront - 0.62),
+  ], {
+    fill: b.accent === 'red' ? 'rgba(120,34,30,0.55)' : 'rgba(20,74,72,0.55)',
+    stroke: BONE(0.34), width: 0.6, alpha: 0.95, jitter: 0.16, seed: seed + 3,
+  });
+  p.line([
+    v3(b.x - b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.04, zFront - 0.62), v3(b.x + b.w * 0.46, SIDEWALK_Y + b.h * 0.60 + 0.04, zFront - 0.62),
+  ], { color: BONE(0.42), width: 0.8, alpha: 0.8, jitter: 0.1, seed: seed + 4, double: false });
+
+  // Parapet and roof plane.
+  const top = faceOf(faces, 'top');
+  if (top) {
+    p.poly(top.quad, { fill: 'rgba(22,22,26,0.96)', stroke: BONE(0.32), width: 0.8, jitter: 0.14, seed: seed + 5 });
+    p.line([quadLerp(top.quad, 0.0, 0.0), quadLerp(top.quad, 1.0, 0.0)], {
+      color: BONE(0.5), width: 1.2, alpha: 0.9, jitter: 0.08, seed: seed + 6, double: false,
+    });
+  }
+  // One blade sign per unit, standing a little above the parapet so the row
+  // still has a silhouette without becoming a wall in front of the street.
+  p.box(camera, [b.x + b.w * 0.34, SIDEWALK_Y + b.h + 0.30, b.z - 0.1], [0.10, 0.62, 0.62], {
+    fill: b.accent === 'red' ? 'rgba(190,52,42,0.85)' : 'rgba(30,150,142,0.85)',
+    stroke: BONE(0.5), width: 0.7, seed: seed + 9, jitter: 0.12, edges: false,
+  });
+  if (detail.props > 0.4) {
+    p.box(camera, [b.x - b.w * 0.3, SIDEWALK_Y + 0.42, zFront - 0.5], [0.5, 0.84, 0.44], {
+      fill: '#0b0e10', stroke: BONE(0.36), width: 0.7,
+      seed: seed + 12, jitter: 0.14, edges: false,
+    });
+  }
+}
+
+// The row sits between the camera and the crowd, so it cannot live in the
+// cached set: it has to take part in the depth sort or the people in front of
+// it would paint straight over it.
+export function southRowItems(camera, detail = { windows: 1 }) {
+  const items = [];
+  for (let i = 0; i < SOUTH_LOTS.length; i++) {
+    const b = SOUTH_LOTS[i];
+    const q = camera.project(v3(b.x, b.h * 0.6, b.z + b.d * 0.5));
+    items.push({
+      depth: q && Number.isFinite(q.depth) ? q.depth : 1e6,
+      draw: (pp) => drawSouthLot(pp, camera, b, i, detail),
+    });
+  }
+  return items;
 }
 
 export function drawSignals(p, camera, timeline) {
@@ -1273,10 +1466,10 @@ function bicycle(p, camera, x, z, rot, seed) {
 
 export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null) {
   // Street lamps along both kerbs.
-  streetLamp(p, camera, -12.9, ROAD.z1 + 0.55, 1);
+  streetLamp(p, camera, -10.9, ROAD.z1 + 0.55, 1);
   // A second lamp on the near-left sidewalk so that corner is not a black hole.
-  streetLamp(p, camera, -13.6, 8.6, 1);
-  streetLamp(p, camera, 10.9, ROAD.z1 + 0.55, -1);
+  streetLamp(p, camera, -10.7, 7.4, 1);
+  streetLamp(p, camera, 10.6, ROAD.z1 + 0.55, -1);
   streetLamp(p, camera, -6.9, ROAD.z0 - 0.55, 1);
   streetLamp(p, camera, 4.6, ROAD.z0 - 0.55, -1);
 
@@ -1298,8 +1491,8 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
       alpha: 0.85, jitter: 0.12, seed: 3300 + w.seed, double: false,
     });
   }
-  for (const px of [-14.1, 14.1]) {
-    const zz = 1.4;
+  for (const px of [-10.9, 10.9]) {
+    const zz = KERB.front + 0.15;
     line3(p, camera, [px, SIDEWALK_Y, zz], [px, 8.9, zz], {
       color: BONE(0.34), width: 1.1, alpha: 0.85,
       jitter: 0.14, seed: 3310 + px, double: false,
@@ -1313,7 +1506,7 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
   }
 
   // Vending machine: the bright foreground note on the near right.
-  const vx = 12.9, vz = 6.2;
+  const vx = 10.5, vz = 6.9;
   const vfaces = p.box(camera, [vx, SIDEWALK_Y + 0.95, vz], [1.05, 1.9, 0.75], {
     fill: '#0e0f11', stroke: BONE(0.55), width: 0.9, alpha: 0.98,
     seed: 3400, jitter: 0.16, edgeAlpha: 0.8,
@@ -1340,7 +1533,7 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
   }
 
   // Bench, planters, bin, bollards.
-  for (const [bx, bz] of [[-12.6, 7.6]]) {
+  for (const [bx, bz] of [[-9.8, 7.3]]) {
     for (let i = 0; i < 4; i++) {
       p.projectPoly(camera, [
         v3(bx - 1.1, SIDEWALK_Y + 0.42, bz - 0.26 + i * 0.14),
@@ -1358,7 +1551,7 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
       });
     }
   }
-  for (const [px, pz, s] of [[-7.4, 8.9, 1.0], [2.4, 9.2, 0.9], [-1.4, 9.3, 0.7]]) {
+  for (const [px, pz, s] of [[-7.4, 7.4, 1.0], [2.4, 7.5, 0.9], [-1.4, 7.6, 0.7]]) {
     p.box(camera, [px, SIDEWALK_Y + 0.28 * s, pz], [0.9 * s, 0.56 * s, 0.7 * s], {
       fill: '#101711', stroke: BONE(0.34), width: 0.6, alpha: 0.92,
       seed: 3520 + px, jitter: 0.2, edgeAlpha: 0.6,
@@ -1434,14 +1627,14 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
   });
 
   // Trash bin and a bus-stop pole.
-  p.box(camera, [12.0, SIDEWALK_Y + 0.45, 8.2], [0.6, 0.9, 0.6], {
+  p.box(camera, [10.4, SIDEWALK_Y + 0.45, 7.5], [0.6, 0.9, 0.6], {
     fill: '#0d130f', stroke: BONE(0.34), width: 0.6, alpha: 0.92,
     seed: 3550, jitter: 0.18, edgeAlpha: 0.6,
   });
-  line3(p, camera, [-3.9, SIDEWALK_Y, 9.0], [-3.9, SIDEWALK_Y + 2.7, 9.0], {
+  line3(p, camera, [-3.9, SIDEWALK_Y, 7.5], [-3.9, SIDEWALK_Y + 2.7, 7.5], {
     color: BONE(0.4), width: 0.8, alpha: 0.85, jitter: 0.12, seed: 3560, double: false,
   });
-  const bq = camera.project(v3(-3.9, SIDEWALK_Y + 2.45, 9.0));
+  const bq = camera.project(v3(-3.9, SIDEWALK_Y + 2.45, 7.5));
   if (bq) {
     p.rect(bq.x - bq.scale * 0.28, bq.y - bq.scale * 0.2, bq.scale * 0.56, bq.scale * 0.4, {
       fill: 'rgba(239,233,216,0.10)', stroke: BONE(0.55), width: 0.6, jitter: 0.2, seed: 3561,
@@ -1450,17 +1643,17 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
 
   // Trees: the strongest foreground silhouette.
   if (detail.trees > 0.4) {
-    tree(p, camera, 6.6, 8.0, 1.10, 3570, detail);
-    tree(p, camera, -10.6, 9.2, 1.00, 3590, detail);
+    tree(p, camera, 6.6, 7.4, 1.10, 3570, detail);
+    tree(p, camera, -10.0, 7.3, 1.00, 3590, detail);
   }
 
   // Front-left street furniture: the near corner was bare pavement.
   if (detail.props > 0.4) {
-    bench(p, camera, -12.6, 8.4, 0.06, 3602);
-    bench(p, camera, -12.9, 9.9, Math.PI + 0.04, 3604);
-    bikeRack(p, camera, -8.8, 5.6, 3, 3610);
+    bench(p, camera, -9.6, 7.4, 0.06, 3602);
+    bench(p, camera, -7.9, 7.5, Math.PI + 0.04, 3604);
+    bikeRack(p, camera, -8.8, 6.4, 3, 3610);
     // Bin beside the bench.
-    p.box(camera, [-11.2, SIDEWALK_Y + 0.32, 8.6], [0.44, 0.64, 0.44], {
+    p.box(camera, [-10.7, SIDEWALK_Y + 0.32, 7.5], [0.44, 0.64, 0.44], {
       fill: '#0d130f', stroke: BONE(0.34), width: 0.6, alpha: 0.92,
       seed: 3618, jitter: 0.18, edgeAlpha: 0.6,
     });
@@ -1475,7 +1668,7 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
   // A few people-scale details that make the sidewalk feel used: chalk marks,
   // a dropped flyer, a puddle-side crate.
   for (let i = 0; i < 5; i++) {
-    const q = camera.project(v3(-8 + i * 4.2, SIDEWALK_Y + 0.01, 7.6 + hash11(i) * 3.4));
+    const q = camera.project(v3(-8 + i * 4.2, SIDEWALK_Y + 0.01, 6.2 + hash11(i) * 1.5));
     if (!q) continue;
     p.line([
       [q.x - 6 - hash11(i * 3) * 5, q.y],

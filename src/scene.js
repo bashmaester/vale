@@ -1,5 +1,5 @@
 import { Painter } from './draw.js';
-import { Camera } from './math.js';
+import { Camera, v3 } from './math.js';
 import { CameraRig } from './camera.js';
 import { CameraDirector } from './camera-director.js';
 import { Timeline } from './timeline.js';
@@ -7,14 +7,14 @@ import { Crowd } from './crowd.js';
 import { Traffic, drawVehicle } from './traffic.js';
 import { Weather } from './weather.js';
 import {
-  lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel,
+  lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel, TILE,
 } from './tile.js';
 import {
-  drawWalls, drawGroundSlab, drawStreet, drawPaving, drawRoadMarkings, drawRail,
-  drawBuildings, drawSignals, drawFurniture, drawReflections, drawFlicker,
-  collectFrame,
+  drawWalls, drawGroundSlab, drawStreet, drawSideStreet, drawPaving,
+  drawRoadMarkings, drawRail, drawBuildings, southRowItems, drawSignals,
+  drawFurniture, drawReflections, drawFlicker, collectFrame,
 } from './environment.js';
-import { drawBufferCells, BUFFER_CELLS } from './neighbors.js';
+import { drawBufferCells, BUFFER_CELLS, CELL_D } from './neighbors.js';
 import { grade, paletteVersion, PLATE_CLEAR } from './palette.js';
 
 export const SCENE_PARAM_DEFS = {
@@ -171,6 +171,7 @@ export class Scene {
     p.setBoil(this.pp.boil);
     drawGroundSlab(p, camera);
     drawStreet(p, camera, detail);
+    drawSideStreet(p, camera, detail);
     drawPaving(p, camera, detail);
     drawRoadMarkings(p, camera, this.timeline);
     drawRail(p, camera);
@@ -277,9 +278,12 @@ export class Scene {
     // 1) Buffer cells go down first: they are neighbours, so the hero volume
     //    must be able to cover them.
     const cells = this.bufferMask();
+    const bufferStyle = this.params.bufferStyle === 1 ? 'wire' : this.params.bufferStyle === 2 ? 'points' : 'full';
     if (cells.size) {
-      const style = this.params.bufferStyle === 1 ? 'wire' : this.params.bufferStyle === 2 ? 'points' : 'full';
-      drawBufferCells(this.pp, camera, cells, style, this.params.bufferOpacity);
+      // The cells behind the hero are part of its backdrop; the ones in front
+      // of it are not, and must be drawn over it further down.
+      drawBufferCells(this.pp, camera, cells, bufferStyle, this.params.bufferOpacity,
+        (c) => c.dz <= 0);
     }
     tick('buffer');
 
@@ -329,6 +333,23 @@ export class Scene {
         draw: (p) => { for (const d of it.draws) d(p); },
       });
     }
+    // Neighbour cells in front of the hero.
+    if (cells.size) {
+      const nearer = new Set([...cells].filter((id) => {
+        const c = BUFFER_CELLS.find((b) => b.id === id);
+        return c && c.dz > 0;
+      }));
+      if (nearer.size) {
+        const q = camera.project(v3(0, 1.5, TILE.z1 + CELL_D * 0.5));
+        drawables.push({
+          depth: q && Number.isFinite(q.depth) ? q.depth : 1e6,
+          draw: (p) => drawBufferCells(p, camera, nearer, bufferStyle, this.params.bufferOpacity),
+        });
+      }
+    }
+    // The row of shops across the street: nearer than the crowd, so it sorts
+    // with them instead of being baked into the set behind them.
+    for (const it of southRowItems(camera, detail)) drawables.push(it);
     // Near case members (plinth, posts, rails) sort with the scene so a post
     // in front of a vehicle occludes it and the plinth never floats.
     for (const it of frameItems) {

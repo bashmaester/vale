@@ -13,7 +13,7 @@
 
 import { PALETTE } from './draw.js';
 import { v3, clamp, lerp, norm3, makeRng, hash11, TAU, smoothstep, smootherstep } from './math.js';
-import { separate, separateGroups, poissonDisk } from './collision.js';
+import { relax, poissonDisk } from './collision.js';
 import { groundYAt, TILE } from './tile.js';
 import { LOOP, boundaryAlpha } from './loop.js';
 
@@ -22,7 +22,7 @@ import { LOOP, boundaryAlpha } from './loop.js';
 // would dim the whole foreground row.
 const CROWD_BOX = { x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: TILE.z1 + 3.0 };
 import {
-  FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone,
+  FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone, STREET_PROPS,
 } from './world.js';
 
 // Canopy colours. The palette is carried mostly by umbrellas, so they get the
@@ -40,10 +40,12 @@ const UMBRELLAS = [
 ];
 
 // Coats: opaque, mostly dark, a few carrying colour.
+// Coats have to sit a step above the pavement, or a dark figure reads as a
+// floating head and a pair of white trouser lines.
 const COATS = [
-  '#080a09', '#0d100e', '#12160f', '#1a1e18', '#0a0d0c', '#141a17',
+  '#1b201e', '#20261f', '#252b26', '#171b19', '#2b312d', '#12160f',
   'rgba(239,233,216,0.82)', 'rgba(239,233,216,0.55)', 'rgba(222,214,196,0.66)',
-  'rgba(93,105,97,0.78)',
+  'rgba(93,105,97,0.78)', 'rgba(58,66,62,0.9)',
   'rgba(43,184,174,0.80)', 'rgba(212,59,48,0.82)',
 ];
 
@@ -125,6 +127,10 @@ function makePerson(rng, id, extra = {}) {
     pace: rng.range(0.82, 1.18),
     shadowLen: rng.range(1.0, 2.2),
     entourage: rng.chance(0.10) ? 1 : 0,
+    // Which side of the pavement they keep. Two people on the same path with
+    // different lanes pass each other instead of colliding, which is most of
+    // what makes a crowd read as natural.
+    lane: rng.range(-0.42, 0.42),
     ...extra,
   };
 }
@@ -141,10 +147,23 @@ export class Crowd {
     const rng = makeRng(918273);
     const N = Math.round(34 * this.density);
     this.crossers = [];
+    // A body that is placed inside a lamp post can never be resolved by the
+    // solver: it just gets shoved back and forth. So the scatter already keeps
+    // clear of the furniture.
+    const nearProp = (x, z, pad) => {
+      for (const o of STREET_PROPS) {
+        const dx = x - o.x, dz = z - o.z;
+        const rr = o.r + pad;
+        if (dx * dx + dz * dz < rr * rr) return true;
+      }
+      return false;
+    };
+    this._nearProp = nearProp;
+
     const specs = [];
     for (const f of FLOWS) {
       const count = Math.floor(N * f.weight);
-      const pts = poissonDisk(count, f.bounds, 0.70, rng, (x, z) => isOnSidewalk(x, z));
+      const pts = poissonDisk(count, f.bounds, 0.92, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.52));
       for (const pt of pts) specs.push({ flow: f, start: pt });
     }
     let guard = 0;
@@ -152,7 +171,7 @@ export class Crowd {
       const f = chooseFlow(rng);
       const x = rng.range(f.bounds.x0, f.bounds.x1);
       const z = rng.range(f.bounds.z0, f.bounds.z1);
-      if (isOnSidewalk(x, z)) specs.push({ flow: f, start: { x, z } });
+      if (isOnSidewalk(x, z) && !nearProp(x, z, 0.52)) specs.push({ flow: f, start: { x, z } });
     }
     for (let i = 0; i < specs.length; i++) {
       const { flow, start } = specs[i];
@@ -164,11 +183,16 @@ export class Crowd {
         x: (start.x + end.x) / 2 + side.x * bend,
         z: (start.z + end.z) / 2 + side.z * bend,
       };
-      // Where this person comes from: along the sidewalk, at the edge of the
-      // tile. They walk in from there, so nobody ever pops into mid-frame.
-      const approachSign = rng.chance(0.5) ? 1 : -1;
-      const edgeX = approachSign > 0 ? TILE.x1 - 0.35 : TILE.x0 + 0.35;
-        const approach = { x: edgeX, z: start.z + rng.range(-0.18, 0.18) };
+      // Where this person comes from: a few metres along the pavement, on the
+      // side they would have walked from. A short walk-in at walking pace —
+      // starting them at the far edge of the tile made them sprint.
+      const sign = start.x > 0 ? 1 : -1;
+      const room = sign > 0 ? TILE.x1 - 0.6 - start.x : start.x - (TILE.x0 + 0.6);
+      const reach = Math.max(1.6, Math.min(4.6, room));
+      const approach = {
+        x: start.x + sign * reach,
+        z: start.z + rng.range(-0.15, 0.15),
+      };
       const adx = start.x - approach.x, adz = start.z - approach.z;
       const al = Math.hypot(adx, adz) || 1;
       this.crossers.push(makePerson(rng, i, {
@@ -183,7 +207,7 @@ export class Crowd {
     this.waiters = [];
     for (let i = 0; i < M; i++) {
       const zone = weightedWaitZone(rng);
-      const pts = poissonDisk(1, zone, 0.62, rng, (x, z) => isOnSidewalk(x, z));
+      const pts = poissonDisk(1, zone, 0.86, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.50));
       const base = pts[0] || { x: -2.6, z: 5.8 };
       const dir = norm3(v3(-base.x, 0, -base.z));
       this.waiters.push(makePerson(rng, 10000 + i, {
@@ -251,7 +275,7 @@ export class Crowd {
         : osc(2, ped.phase) * 0.10);
       raw.push({
         ped, world, alpha, dir, side, scale: ped.scale,
-        stridePhase, moving, waiter: false, radius: 0.44 * ped.scale,
+        stridePhase, moving, waiter: false, radius: 0.30 * ped.scale,
         group: 'crowd', fixed: false,
       });
     }
@@ -266,20 +290,64 @@ export class Crowd {
         ped: w, world, alpha: 0.92 * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade'),
         dir: w.dir, side: w.side, scale: w.scale,
         stridePhase: w.phase + osc(2, w.phase) * 0.08,
-        moving: false, waiter: true, radius: 0.44 * w.scale,
+        moving: false, waiter: true, radius: 0.30 * w.scale,
         group: 'crowd', fixed: false,
       });
     }
 
-    separate(raw, {
-      iterations: 3, padding: 0.10,
-      bounds: { x0: TILE.x0 + 1, x1: TILE.x1 - 1, z0: TILE.z0 + 1, z1: TILE.z1 - 1 },
+    for (const r of raw) { r.base = { x: r.world.x, z: r.world.z }; }
+    // 1) Walk around the street furniture first: a person steering past a lamp
+    //    post is the clearest signal that the crowd is alive.
+    for (const r of raw) r.dir = r.dir || { x: 0, z: 1 };
+    // Lane offset is along the flow's own side vector, never the current
+    // heading: a heading that turns at the kerb must not swing the body
+    // sideways by half a metre.
+    for (const r of raw) {
+      if (r.waiter || !r.ped.lane) continue;
+      r.world.x += r.ped.side.x * r.ped.lane;
+      r.world.z += r.ped.side.z * r.ped.lane;
+    }
+    const fixedProps = [];
+    for (const o of STREET_PROPS) {
+      fixedProps.push({ world: { x: o.x, z: o.z }, radius: o.r, alpha: 1, fixed: true, group: 'prop' });
+    }
+    for (const o of obstacles) {
+      fixedProps.push({ world: { x: o.world.x, z: o.world.z }, radius: Math.max(0.6, o.radius || 0.8), alpha: 1, fixed: true, group: 'vehicle' });
+    }
+    if (fixedProps.length) {
+      // Only pedestrians move here, and only against the furniture: mixing the
+      // two groups into one solve lets a passer-by block someone's escape from
+      // a bench and flips the push from one side to the other between frames.
+      relax([...raw, ...fixedProps], {
+        iterations: 3, padding: 0.22, lateral: 0.5, strength: 0.9,
+        damp: 0.7, maxOffset: 0.4, onlyDifferentGroups: true,
+      });
+    }
+    // 2) Then the crowd against itself, and a single clamp to the volume. The
+    //    clamp is applied once, after the solver, so a push at the kerb is not
+    //    undone and re-applied every iteration (that is what used to make the
+    //    edges of the crowd buzz).
+    relax(raw, {
+      // One pass from the base positions: the push is then a continuous
+      // function of where people are standing, which is what keeps the motion
+      // smooth frame to frame. Iterating on each other's offsets makes the
+      // solution flip when a knot of people is tight.
+      iterations: 1, padding: 0.02, lateral: 0.6, strength: 0.9, damp: 1,
+      maxOffset: 0.18,
+      bounds: { x0: TILE.x0 + 0.9, x1: TILE.x1 - 0.9, z0: TILE.z0 + 0.9, z1: TILE.z1 - 0.9 },
     });
-    if (obstacles.length) separateGroups(raw, obstacles, { iterations: 2, padding: 0.42 });
     for (const r of raw) {
       const c = clampToWorld(r.world, 0.9);
       r.world.x = c.x; r.world.z = c.z;
     }
+
+    // Kept for the motion check in tools/ and for the stats HUD: the resolved
+    // positions of this frame, before the draw list is built.
+    this.lastPositions = raw.map((r) => ({
+      id: r.ped.id, x: r.world.x, z: r.world.z, bx: r.base.x, bz: r.base.z,
+      moving: r.moving, alpha: r.alpha, kind: r.ped.kind, flow: r.ped.flow,
+      waiter: r.waiter,
+    }));
 
     const budget = detail.crowd == null ? 1 : detail.crowd;
     this.items = [];
@@ -311,19 +379,6 @@ export class Crowd {
         alpha: smoothstep(0.0, 0.03, u),
       };
     }
-    if (u > 0.80) {
-      // Standing at the kerb before the wrap; a slow weight shift, no drift.
-      const idle = Math.sin((TAU * 2 * motionT) / LOOP + ped.phase) * 0.07;
-      return {
-        x: ped.start.x + idle,
-        z: ped.start.z + sway(ped.phase + 1.57),
-        moving: false,
-        distance: 0,
-        // Hidden: they have finished the walk and the loop is about to take
-        // them back to the seam. A fade over the last second, no pop.
-        alpha: 1 - smoothstep(0.795, 0.815, u),
-      };
-    }
     const s = this.timeline.crossAt(ped.delay * ped.pace, u);
     if (s < 0.999) {
       const w = bezier2(ped.start, ped.ctrl, ped.end, s);
@@ -337,13 +392,22 @@ export class Crowd {
         alpha: 1 - smoothstep(0.74, 0.80, u),
       };
     }
-    const d = this.timeline.drainAt(u) * (ped.kind === 'stroll' ? 4.5 : 8);
+    // Off the crossing and up the far pavement towards the shop windows, where
+    // they dissolve. Walking on is what makes the crossing look like a place
+    // people go to rather than a stage they step off.
+    // `drainAt` is already running when the crossing finishes, so it is
+    // measured from that moment: the walk-on starts at zero instead of
+    // teleporting the body forward by however far the drain has travelled.
+    const db = 0.66 + ped.delay * ped.pace * 0.055;
+    const d0 = this.timeline.drainAt(Math.min(0.999, db));
+    const d = Math.max(0, this.timeline.drainAt(u) - d0)
+      * (ped.kind === 'stroll' ? 2.6 : 3.4);
     return {
       x: ped.end.x + ped.dir.x * d,
       z: ped.end.z + ped.dir.z * d,
-      moving: d > 0.001,
+      moving: d > 0.001 && u < 0.82,
       distance: ped.pathLength + d,
-      alpha: 1 - smoothstep(0.74, 0.80, u),
+      alpha: 1 - smoothstep(0.755, 0.815, u),
     };
   }
 

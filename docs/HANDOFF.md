@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 12, v0.1.4), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 13, v0.1.6), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -72,6 +72,32 @@ Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
 luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
 
+### Turn 13 — a module with two frontages, and crowds that steer
+
+The module is now an **intersection**, not a street with a backdrop:
+
+- `world.js` has `SIDE_STREET` (half width 3.6 at each x edge → two cells meet in
+  a 7.2 m north–south street), `NORTH_BLOCK` (−14…−9.6) and `SOUTH_BLOCK`
+  (8.3…10.5). Pavements are clipped to the block between the half streets, the
+  four lots sit on the north frontage at z −11.8, and `SOUTH_LOTS` puts two
+  single-storey shop blocks on the near side with a gap on the centre line — the
+  gap is what keeps the street and the crowd legible from the film's camera.
+- The south row is drawn per lot (`drawSouthLot`: solid mass, glazing, lettered
+  sign band, awning, blade sign) and returned as depth-sorted items
+  (`southRowItems`) so it occludes the crowd instead of being pasted behind it.
+  `drawBuildings` and `drawCellBlock` sort their lots far-to-near for the same
+  reason: a block drawn after its neighbour printed its windows through it.
+- `cells.js` paints the south row and the half streets, clips pavements/kerbs to
+  the block, and the lane dashes now take the neighbour's own z offset.
+- **Crowd steering.** `collision.relax()` is a damped, softly saturated solver
+  (tanh cap, so a rotated push never jumps) with a `lateral` bias that turns a
+  backwards shove into a sideways slide; bodies are weighted by opacity instead
+  of being switched in and out; each pass is single-group (people vs furniture,
+  then people vs people). Pedestrians carry a lane along their flow, the furniture
+  is an explicit obstacle list (`STREET_PROPS`), scatter avoids the furniture, and
+  the walk-in is 1.6–4.6 m at walking pace. Measured: 0.045 m mean step at 20 fps
+  (≈0.9 m/s), worst step 0.8 m, no teleports.
+
 ### Turn 12 — glass planes, wide street, tileable cells, palettes
 
 Four things changed under the film, and one of them is structural:
@@ -98,7 +124,9 @@ Four things changed under the film, and one of them is structural:
    Custom (four colour wells, persisted). The static-set cache keys on the
    palette version.
 
-Keybinds: `Tab` panel, `\` stats, `H` hide all UI, `C` camera.
+Keybinds: `Tab` panel, `\` stats, `H` hide all UI, `C` camera. The drone opens
+on `v3(10.2, 19.0, 35.6) → v3(-1, 2.2, -2.6)` (fov 38.5), which is the framing
+the module was composed for.
 
 ### Turn 11 — frame budget, GPU-side look graph, walls, 3×3 buffer
 
@@ -314,9 +342,9 @@ Still open from the same list: vehicle glazing at L0, and a CI screenshot job
 | File | Responsibility |
 | --- | --- |
 | `src/tile.js` | tile volume, colours, `LOD_LEVELS`, `makeDetail`, `groundYAt` |
-| `src/world.js` | data for one tile: road, sidewalks, crossing, lanes, lots, flows, puddles |
+| `src/world.js` | one module's data: road, half streets, both blocks, lots (N + S), props, flows, puddles |
 | `src/environment.js` | all staged street/building/furniture/frame drawing |
-| `src/crowd.js` | procedural people: archetypes, LoD thinning, umbrellas |
+| `src/crowd.js` | procedural people: archetypes, lanes, steering, LoD thinning, umbrellas |
 | `src/traffic.js` | vehicles (extruded profiles) + overhead train |
 | `src/weather.js` | raindrops, ripples, puddles |
 | `src/scene.js` | orchestration, params, depth sorting, cached set, `render(t, dt)` |
@@ -328,7 +356,7 @@ Still open from the same list: vehicle glazing at L0, and a CI screenshot job
 | `src/shaders.js` / `src/graph.js` | print finish presets and node graph |
 | `src/renderer.js` | WebGL2 fullscreen pass, `bypass` for raw plate |
 | `src/lab.js` | hidden lab UI |
-| `src/cells.js` | one complete neighbour cell: ground, street, block, props, rail |
+| `src/cells.js` | one complete neighbour cell: ground, half streets, both rows, props, rail |
 | `src/palette.js` | colour palettes + the grade every mark passes through |
 | `src/sidebar.js` | hidden scene-control sidebar (Tab) |
 | `src/style.css` | film screen, lab, camera HUD, `.sb-*` sidebar |

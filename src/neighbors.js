@@ -148,10 +148,18 @@ export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35) {
 }
 
 /** Draw every enabled buffer cell. `mask` is a Set of cell ids. */
-export function drawBufferCells(p, camera, mask, style, alpha) {
+export function drawBufferCells(p, camera, mask, style, alpha, only) {
   if (!mask || mask.size === 0) return;
-  for (const cell of BUFFER_CELLS) {
-    if (!mask.has(cell.id)) continue;
-    drawBufferCell(p, camera, cell, style, alpha);
-  }
+  // Far cells first. A cell is opaque, so drawing a near one first would let
+  // the cell behind it paint over its walls.
+  const list = BUFFER_CELLS.filter((c) => mask.has(c.id) && (!only || only(c)))
+    .map((c) => {
+      const q = camera.project(v3(
+        (TILE.x0 + TILE.x1) / 2 + c.dx * CELL_W, 2,
+        (TILE.z0 + TILE.z1) / 2 + c.dz * CELL_D,
+      ));
+      return { c, depth: q && Number.isFinite(q.depth) ? q.depth : 1e6 };
+    })
+    .sort((a, b) => b.depth - a.depth);
+  for (const { c } of list) drawBufferCell(p, camera, c, style, alpha);
 }

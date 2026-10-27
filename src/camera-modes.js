@@ -284,8 +284,8 @@ export class DroneMode extends CameraMode {
     const d = this.dir;
     d.fov = 38.5;
     if (this.touched) return;
-    d.eye = v3(9.4, 14.6, 38.8);
-    d.target = v3(-1.0, 3.6, -2.2);
+    d.eye = v3(10.2, 17.4, 35.6);
+    d.target = v3(-1.0, 2.4, -2.6);
     const yp = yawPitchFromDir(norm3(sub3(d.target, d.eye)));
     d.yaw = yp.yaw;
     d.pitch = yp.pitch;

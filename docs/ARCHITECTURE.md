@@ -40,8 +40,12 @@ Everything inside the tile is generated every frame. Nothing is loaded.
 
 The back wall (z = −14) and left wall (x = −15) are closed; +z and +x are the
 open, cut-away faces. The camera sits in the open corner, so the volume reads as
-a theatre set, and two tiles placed along x continue the road and the sidewalk
-row without a seam. `groundYAt(x, z)` gives the walking surface including kerb
+a theatre set. The cell is an **intersection**: the east–west street runs through
+the middle with a building row on each side, and a 3.6 m half street runs down
+each x edge — two cells side by side therefore meet in a 7.2 m north–south
+street, and the block between them is closed off by the shop row. That is what
+makes the layout tile: the same module repeats, and cars can turn from one
+street into the next. `groundYAt(x, z)` gives the walking surface including kerb
 ramps; every foot, puddle and prop uses it.
 
 **Procedural LoD is a property of the tile, not of each asset.** `LOD_LEVELS`
@@ -60,13 +64,17 @@ popping between frames.
 
 One tile's worth of geometry and intent:
 
-- `ROAD` z −5.0…4.2 across the full x range, `SIDEWALKS` front 4.2→10.5 and
-  back −14→−5.0.
-- `CROSSWALKS.main` x −4.2…−0.8 (the only crossing; one corner, not an
-  intersection).
-- `LANES` z ±2.15, two `PARKING` bays, two `SIGNAL_POSITIONS`, four
-  `BUILDING_LOTS`, seven `LIGHT_SOURCES`, four `WAIT_ZONES`, seven pedestrian
-  `FLOWS`, ten `PUDDLES`.
+- `ROAD` z −5.9…5.9 across the block, 11.8 m wide, lanes at z ±2.6.
+- `SIDE_STREET` x0/x1 = ∓11.4, half width 3.6: the north–south street down each
+  edge, shared with the neighbour cell.
+- `NORTH_BLOCK` z −14…−9.6 (buildings) and `SOUTH_BLOCK` z 8.3…10.5 (the shop
+  row and its forecourt). `SIDEWALKS` are the two pavements of the block: front
+  z 5.9…8.3, back z −9.6…−5.9, both clipped to x ∓11.4.
+- `CROSSWALKS.main` x −5.2…−0.6, the only crossing.
+- `LANES`, two `PARKING` bays, two `SIGNAL_POSITIONS`, four north lots
+  (`BUILDING_LOTS`) and two south lots (`SOUTH_LOTS`), `LIGHT_SOURCES`,
+  `WAIT_ZONES`, pedestrian `FLOWS`, `PUDDLES`, and `STREET_PROPS` — the list of
+  furniture the crowd has to walk around.
 - `isOnSidewalk`, `clampToWorld`, `weightedWaitZone` are the crowd's contact
   with the world.
 
@@ -149,8 +157,17 @@ Procedural people, last on the set:
   and turned every figure into a wireframe X.
 - Umbrellas are domes: rim ring + mid ring + apex, with the rim plane tilted
   and a stub stem. A flat quad on a long stem reads as a flying saucer.
-- Separation: `separate()` then `separateGroups()` then `clampToWorld`, so
-  nobody overlaps and nobody leaves the tile.
+- **Steering, not shoving.** Every body is a base point on its path plus the
+  offset `collision.relax()` asks for. `relax()` is damped, softly saturated
+  (`maxOffset * tanh(m / maxOffset)`), weighted by opacity, and biased
+  `lateral`: a push that points backwards along someone's heading is turned into
+  a sideways slide, which is what walking past somebody looks like. Two passes,
+  each single-group — people against the furniture in `STREET_PROPS` (and the
+  parked cars), then people against people. A single `clampToWorld` at the end.
+- Pedestrians keep a **lane** along their flow (`lane` ±0.42 applied along the
+  flow's side vector, never the current heading), and the scatter keeps clear of
+  the furniture, so most conflicts never happen. The walk-in is a short
+  1.6–4.6 m at walking pace rather than a sprint from the cell edge.
 - LoD thins people with a seeded hash and drops accessories before it drops
   silhouettes.
 
