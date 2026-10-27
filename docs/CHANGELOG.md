@@ -52,6 +52,15 @@ each neighbour switchable and off by default; hide the UI until `\` is pressed.
 
 ### Fixed
 
+- **Frame-killing canvas arguments (the actual cause of the blank page).** The
+  blade-sign call in `environment.js` passed its arguments one slot out of
+  order, so `drawSignBox` received an object where it expected a tint and `NaN`
+  where it expected an alpha. `@napi-rs/canvas` coerces those silently and every
+  headless still looked fine; a browser throws from `createRadialGradient` and
+  the frame dies. The call is fixed, `glowAt()` refuses non-finite input, and
+  `tools/finite.mjs` (wired into CI as `npm run finite`) now re-renders the whole
+  loop at three viewport sizes through a browser-strict canvas guard. The boot
+  test does the same to the *built bundle*, so this class of bug fails the build.
 - **Blank page after the Turn 11 renderer refactor.** `initGL()` built the
   full-screen quad before compiling the look program, so `_initQuad()` called
   `gl.getAttribLocation(undefined, 'a_pos')`. On a real WebGL2 context that

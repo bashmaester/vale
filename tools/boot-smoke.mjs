@@ -3,6 +3,7 @@
 // fail here instead of producing a blank page in the browser.
 //   node tools/boot-smoke.mjs ["?finish=raw"|"?cam=fly"|...]
 import './canvas-env.mjs';
+import { guardContext } from './ctx-guard.mjs';
 import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -108,6 +109,23 @@ if (error) {
   process.exit(1);
 }
 const v = globalThis.VALE;
+
+// Second pass: render the loop with browser-strict canvas guards, so a NaN that
+// only appears mid-film fails here instead of blanking a browser.
+{
+  const failures = [];
+  guardContext(v.scene.pp.ctx, 'boot plate', failures);
+  guardContext(v.scene.fp.ctx, 'boot field', failures);
+  for (let t = 0; t < 20; t += 0.5) {
+    try {
+      v.scene.render(t, 1 / 60);
+    } catch (e) {
+      console.error('BOOT FAILED (guarded render):', e.message);
+      process.exit(1);
+    }
+  }
+}
+
 console.log('boot ok:', JSON.stringify({
   W: v.W, H: v.H, duration: v.DURATION,
   renderer: { fallback: v.renderer.fallback, bypass: !!v.renderer.bypass, gl: !!v.renderer.gl },

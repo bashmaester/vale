@@ -10,53 +10,15 @@
 import './canvas-env.mjs';
 const { Scene } = await import('../src/scene.js');
 
-const METHODS = [
-  'moveTo', 'lineTo', 'bezierCurveTo', 'quadraticCurveTo', 'arc', 'arcTo',
-  'ellipse', 'rect', 'fillRect', 'strokeRect', 'clearRect', 'translate',
-  'scale', 'rotate', 'setTransform', 'createLinearGradient',
-  'createRadialGradient', 'createPattern', 'drawImage', 'putImageData', 'setLineDash',
-];
-
-// Radii must also be non-negative: the browser throws IndexSizeError for a
-// negative radius even when the value is finite.
-const RADIUS_ARGS = {
-  arc: [2], arcTo: [4], ellipse: [2, 3],
-  createRadialGradient: [2, 5],
-};
-
-function guard(ctx, label, failures) {
-  for (const name of METHODS) {
-    const orig = ctx[name];
-    if (typeof orig !== 'function') continue;
-    ctx[name] = function (...args) {
-      for (let i = 0; i < args.length; i++) {
-        const a = args[i];
-        if (typeof a === 'number' && !Number.isFinite(a)) {
-          const stack = new Error().stack.split('\n').slice(2, 5).join('\n');
-          failures.push(`${label}.${name} arg[${i}] = ${a}\n${stack}`);
-          throw new Error(`non-finite argument\n${failures[failures.length - 1]}`);
-        }
-      }
-      const radiusIdx = RADIUS_ARGS[name] || [];
-      for (const i of radiusIdx) {
-        if (typeof args[i] === 'number' && args[i] < 0) {
-          const stack = new Error().stack.split('\n').slice(2, 5).join('\n');
-          failures.push(`${label}.${name} arg[${i}] radius < 0 (${args[i]})\n${stack}`);
-          throw new Error(`negative radius\n${failures[failures.length - 1]}`);
-        }
-      }
-      return orig.apply(ctx, args);
-    };
-  }
-}
+import { guardContext } from './ctx-guard.mjs';
 
 let bad = 0;
 for (const [W, H] of [[1440, 810], [900, 506], [640, 360]]) {
   const scene = new Scene(W, H);
   scene.cameraController.hudEnabled = false;
   const failures = [];
-  guard(scene.pp.ctx, `${W}x${H} plate`, failures);
-  guard(scene.fp.ctx, `${W}x${H} field`, failures);
+  guardContext(scene.pp.ctx, `${W}x${H} plate`, failures);
+  guardContext(scene.fp.ctx, `${W}x${H} field`, failures);
   for (let t = 0; t < 20; t += 0.5) {
     try {
       scene.render(t, 1 / 60);
