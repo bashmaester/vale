@@ -13,9 +13,10 @@ The working agreement is:
 The push is the trigger. There is no separate manual deploy command needed.
 
 **Current live site:** https://bashmaester.github.io/vale/ — the corner-set /
-raindrop-and-puddle-sim turn deploys through this same workflow. Successful
-runs on this branch so far include `40521585370`, `40521959240`,
-`40531284984` and `40531618858`. Check `DEPLOY_STATUS.md` for the newest run.
+raindrop-and-puddle-sim turn deployed as commit `ed3f8e0` through this same
+workflow. Successful runs on this branch so far include `40521585370`,
+`40521959240`, `40531284984`, `40531618858` and `40539760362`. Check
+`DEPLOY_STATUS.md` for the newest run.
 
 ## Workflow
 

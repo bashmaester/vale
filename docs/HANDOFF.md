@@ -156,7 +156,8 @@ Live site: **https://bashmaester.github.io/vale/**
 - handoff: `https://bashmaester.github.io/vale/docs/HANDOFF.md`
 
 Successful Pages runs on this branch so far: `40521585370`, `40521959240`,
-`40531284984`, `40531618858`. Check `DEPLOY_STATUS.md` for the newest run.
+`40531284984`, `40531618858`, `40539760362`. The corner-set turn deployed as
+commit `ed3f8e0`; check `DEPLOY_STATUS.md` for the newest run.
 
 ---
 

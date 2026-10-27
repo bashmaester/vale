@@ -59,6 +59,10 @@ variety, remove the wet-glass overlay, and bring back raindrop/puddle simulation
 - Footprint `destination-out` erasures and `footstepStrength` parameter.
 - Faint diagonal scramble guide markings; the set now has four straight crosswalks.
 
+### Deployed
+
+- GitHub Pages workflow run `40539760362` succeeded for commit `ed3f8e0`.
+
 ### Known / unverified
 
 - No browser screenshot available in the sandbox. A DOM smoke test passed across
