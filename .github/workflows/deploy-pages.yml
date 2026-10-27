@@ -2,9 +2,10 @@ name: Deploy film + handoff docs to GitHub Pages
 
 on:
   push:
+    # Any branch: every branch is a previewable build of the sample scene.
+    # The most recent push wins the single Pages site.
     branches:
-      - arena/082e9ffd-vale
-      - main
+      - '**'
   workflow_dispatch:
 
 permissions:
@@ -34,6 +35,9 @@ jobs:
 
       - name: Install
         run: npm ci
+
+      - name: Syntax / import check
+        run: npm run check
 
       - name: Build self-contained film
         run: npm run build

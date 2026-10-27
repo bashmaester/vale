@@ -27,6 +27,10 @@ scene.setParams(PRESETS[presetName].scene || {});
 const canvas = document.getElementById('screen');
 const renderer = new Renderer(canvas, graph, W, H);
 
+// ?finish=raw shows the ink plate with no print graph, for judging the drawing.
+if (q.get('finish') === 'raw' || q.get('raw') === '1') renderer.bypass = true;
+window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
+
 const camMode = q.get('cam');
 scene.cameraController.hudEnabled = q.get('hud') !== '0';
 if (camMode === 'orbit' || camMode === 'fly' || camMode === 'user') {
@@ -36,9 +40,6 @@ if (camMode === 'orbit' || camMode === 'fly' || camMode === 'user') {
 const lab = new Lab({ graph, scene, renderer, state });
 
 if (q.has('lab')) lab.open();
-
-// Expose a small runtime handle for console experimentation.
-window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
 
 let last = performance.now();
 function frame(now) {

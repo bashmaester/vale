@@ -2,13 +2,20 @@ import { Painter } from './draw.js';
 import { CameraRig } from './camera.js';
 import { CameraController } from './camera-control.js';
 import { Timeline } from './timeline.js';
-import { drawEnvironment } from './environment.js';
 import { Crowd } from './crowd.js';
-import { Traffic } from './traffic.js';
+import { Traffic, drawVehicle } from './traffic.js';
 import { Weather } from './weather.js';
+import {
+  lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel,
+} from './tile.js';
+import {
+  drawBackdrop, drawStreet, drawPaving, drawRoadMarkings, drawRail,
+  drawBuildings, drawSignals, drawFurniture, drawReflections,
+  drawFrameBack, drawFrameFront,
+} from './environment.js';
 
 export const SCENE_PARAM_DEFS = {
-  crowdDensity: { value: 1.0, min: 0.3, max: 2.0, step: 0.01, label: 'crowd density' },
+  crowdDensity: { value: 1.0, min: 0.2, max: 2.0, step: 0.01, label: 'crowd density' },
   walkSpeed: { value: 1.0, min: 0.3, max: 2.0, step: 0.01, label: 'walk tempo' },
   rainAmount: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'raindrop amount' },
   rainSpeed: { value: 1.0, min: 0.2, max: 2.0, step: 0.01, label: 'raindrop speed' },
@@ -17,6 +24,7 @@ export const SCENE_PARAM_DEFS = {
   cameraShake: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'gate weave' },
   flySpeed: { value: 1.0, min: 0.2, max: 3.0, step: 0.01, label: 'fly speed' },
   cameraEase: { value: 8.0, min: 2.0, max: 20.0, step: 0.1, label: 'camera ease' },
+  lod: { value: -1, min: -1, max: 2, step: 1, label: 'LoD (-1 = auto)' },
 };
 
 function defaults() {
@@ -39,8 +47,6 @@ export class Scene {
     this.field = makeCanvas(W, H, false);
     this.pp = new Painter(this.plate.getContext('2d'), W, H);
     this.fp = new Painter(this.field.getContext('2d'), W, H);
-    this.pp.ctx = this.plate.getContext('2d');
-    this.fp.ctx = this.field.getContext('2d');
 
     this.timeline = new Timeline(20);
     this.cameraRig = new CameraRig(W, H);
@@ -48,6 +54,8 @@ export class Scene {
     this.crowd = new Crowd(this.params);
     this.traffic = new Traffic(this.params);
     this.weather = new Weather(W, H);
+    this.lod = { level: 0, px: 999, id: 'hero' };
+    this.detail = makeDetail(0);
   }
 
   setViewport(W, H) {
@@ -78,13 +86,20 @@ export class Scene {
     const ctx = this.pp.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-    const g = ctx.createLinearGradient(0, 0, 0, this.H);
-    g.addColorStop(0, '#050605');
-    g.addColorStop(0.55, '#080a08');
-    g.addColorStop(1, '#0b0d0c');
-    ctx.fillStyle = g;
+    ctx.fillStyle = '#050605';
     ctx.fillRect(0, 0, this.W, this.H);
     ctx.restore();
+  }
+
+  // Resolve procedural LoD for this frame from the tile's projected height.
+  resolveDetail(camera) {
+    const px = tileScreenHeight(camera);
+    const forced = this.params.lod;
+    const level = forced >= 0 ? clampLevel(forced) : lodForScreenHeight(px).level;
+    const detail = makeDetail(level);
+    this.lod = { level, px, id: detail.id };
+    this.detail = detail;
+    return detail;
   }
 
   render(t, dt = 0.016) {
@@ -95,26 +110,56 @@ export class Scene {
 
     const autoCamera = this.cameraRig.update(timeline.u, this.params);
     const camera = this.cameraController.apply(autoCamera, dt, this.params);
+    const detail = this.resolveDetail(camera);
     const boil = Math.floor(timeline.motionT * 7.5);
     this.pp.setBoil(boil); this.fp.setBoil(boil);
 
-    // 1) Set: big volumes, road markings, buildings, fixed props.
-    this._clearPlate();
-    drawEnvironment(this.pp, camera, timeline, this.params);
-
-    // 2) Simulated puddles live on the ground, below cars and people.
+    // Simulate before drawing so the plane can be sorted by depth.
     this.weather.update(dt, timeline, this.params);
-    this.weather.drawPuddles(this.pp, camera, timeline, this.params);
+    this.traffic.update(camera, timeline, this.params, detail);
+    this.crowd.update(camera, timeline, this.params, this.traffic.activeItems(), detail);
 
-    // 3) Cars, then people. Traffic resolves first so walkers avoid hulls.
-    this.traffic.update(camera, timeline, this.params);
-    const obstacles = this.traffic.activeItems();
-    this.crowd.update(camera, timeline, this.params, obstacles);
-    this.traffic.draw(this.pp, camera, timeline, this.params);
-    this.crowd.draw(this.pp, camera, timeline, this.params);
+    this._clearPlate();
 
-    // 4) Rain is drawn last, over the whole set.
-    this.weather.drawRain(this.pp, camera, timeline, this.params);
+    // 1) The case and the street.
+    drawBackdrop(this.pp, camera, detail);
+    drawStreet(this.pp, camera, detail);
+    drawPaving(this.pp, camera, detail);
+    drawRoadMarkings(this.pp, camera, timeline);
+
+    // 2) The elevated line sits behind the buildings but above the street.
+    drawRail(this.pp, camera);
+    this.traffic.drawTrain(this.pp, camera, timeline, this.params);
+    drawFrameBack(this.pp, camera);
+
+    // 3) Buildings, signals, furniture.
+    drawBuildings(this.pp, camera, detail, timeline);
+    drawSignals(this.pp, camera, timeline);
+    drawFurniture(this.pp, camera, detail, timeline);
+
+    // 4) Wet ground: puddles, then the reflections of the signs.
+    this.weather.drawPuddles(this.pp, camera, timeline, this.params, detail);
+    drawReflections(this.pp, camera, timeline, detail);
+
+    // 5) Cars and people, interleaved by projected depth so a person on the
+    //    far sidewalk can be occluded by a car in the near lane.
+    const drawables = [];
+    for (const it of this.traffic.activeItems()) {
+      drawables.push({ depth: it.depth, draw: (p) => drawVehicle(p, camera, it) });
+    }
+    for (const it of this.crowd.items) {
+      if (it.alpha < 0.02) continue;
+      drawables.push({
+        depth: it.depth,
+        draw: (p) => { for (const d of it.draws) d(p); },
+      });
+    }
+    drawables.sort((a, b) => b.depth - a.depth);
+    for (const d of drawables) d.draw(this.pp);
+
+    // 6) Rain inside the volume, then the frame in front of everything.
+    this.weather.drawRain(this.pp, camera, timeline, this.params, detail);
+    drawFrameFront(this.pp, camera);
 
     this.weather.drawField(this.fp, timeline, this.crowd, this.traffic, camera, this.params);
     return { plate: this.plate, field: this.field };

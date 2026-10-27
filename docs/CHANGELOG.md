@@ -255,3 +255,58 @@ was not present on this branch. Rebuilt from scratch.
 The first turn used screen-space billboard figures and box-only vehicles. Those
 were intentionally replaced in Turn 2 after the user asked for procedural 3D
 figures, wheels/silhouettes and a believable fly-around camera.
+
+## 2026-10-27 — Turn 6: the tile becomes an engine unit
+
+**User brief:** “we are building the foundations for a cosy indie sim game
+engine… everything is procedurally generated with procedural LoD… think of the
+scene as a modular 3d volume (almost like a snow globe or a vignette that we can
+use to build tiles from).”
+
+### Added
+
+- `src/tile.js`: the tile volume (`x −15…15`, `z −14…10.5`, `y −1.6…15.6`),
+  colours, three `LOD_LEVELS` with detail budgets, `makeDetail`,
+  `lodForScreenHeight`, `groundYAt`, `tileScreenHeight`.
+- `src/world.js` rewritten as one-tile data (single road, two sidewalks, one
+  crossing, four lots, seven flows, ten puddles).
+- `src/environment.js` rewritten as staged set construction, including the
+  physical case (plinth, posts, cut-face caps, engraved label).
+- `tools/shot.mjs` + `tools/canvas-env.mjs`: headless stills through a
+  DOM/canvas shim, with `--t`, `--eye`, `--target`, `--fov`.
+- `src/renderer.js` `bypass`; `?finish=raw` / `?raw=1` in `src/main.js`.
+- `docs/CURRENT_STATE.md`, `docs/HANDOFF.md`, `docs/ARCHITECTURE.md` rewritten
+  for the engine framing.
+
+### Changed
+
+- Camera refit against the full object extents so the whole case is in frame
+  (eye ≈ `[9.4,14.6,38.8]`, target ≈ `[−1.0,3.6,−2.2]`, fov 37.7–38.8).
+- Crowd rewritten twice. The final version gives every person a filled
+  silhouette with a leg split, a head disc sized from the projected body
+  height, arms, and a dome umbrella whose rim plane is tilted; density reduced
+  to 34 + 18, umbrella rate to ~35 %.
+- Trees rebuilt: tapered trunk, root flares, 4–6 primary limbs with
+  sub-branches, a 9-sided leaf cluster per tip, cast shadow.
+- Facades: full window grid on the primary face, 55 % density / 60 % light on
+  the side face; mullions, sills, balcony rails; shopfront transom, counter and
+  interior silhouette.
+- Road darkened (`#101215` base, `#232327` front sidewalk); zebra bars dulled
+  and scuffed.
+- Vehicles: gradient body fill, roof rim, wet sheen, brake glow for stopped
+  vehicles.
+- `draw.js`: `poly` accepts `gradient: [[t, colour], …]`.
+
+### Fixed
+
+- People no longer collapse into wireframe X's: every size is derived from the
+  projected body height, not from world units.
+- Umbrellas no longer read as flying saucers or lollipops.
+- Trees no longer read as white ferns or as a single floating blob.
+- Windows no longer read as a spreadsheet, and blocks no longer look
+  transparent.
+
+### CI
+
+- `deploy-pages.yml` now triggers on **every branch** (`'**'`) and runs
+  `npm run check` before building, so any branch is a previewable build.

@@ -9,9 +9,13 @@
     "docs": "node scripts/update-docs.mjs",
     "deploy:local": "npm run build && npm run docs",
     "dev": "npm run build && python3 -m http.server 8000 --bind 0.0.0.0",
-    "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js"
+    "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js",
+    "stills": "node tools/shot.mjs",
+    "lod": "node tools/lod.mjs",
+    "smoke": "node tools/smoke.mjs"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "esbuild": "^0.25.12"
   }
 }

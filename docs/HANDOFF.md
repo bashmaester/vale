@@ -1,275 +1,163 @@
 # VALE — session handoff
 
-**Purpose:** resume this project in another session. The user’s latest
-assessment is that the result is “very underwhelming” and that “almost none” of
-their notes have landed. Treat this document as the source of truth for the
-next art-direction pass.
+**Purpose:** resume this project in a fresh session without re-deriving
+anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27, merged to `main` via PR #1.
-
-**Read in this order:**
-
-1. `docs/CURRENT_STATE.md` — frank snapshot of what is actually built.
-2. `docs/HANDOFF.md` — this file: notes, gaps, next steps.
-3. `docs/ARCHITECTURE.md` — technical pipeline.
-4. `docs/CHANGELOG.md` — turn-by-turn history.
-5. `docs/CI.md` — deployment notes.
+**Last reviewed:** 2026-10-27, branch `arena/bab4bc10-vale`.
 
 ---
 
-## 1. Reality check
+## 1. What the user asked for
 
-The repository has a working technical scaffold:
+> “we are building the foundations for a cosy indie sim game engine. the key
+> aspect is that everything is procedurally generated with procedural LoD. we
+> are starting with trying to get a sample scene to use as a baseline and
+> template. previous attempts failed at getting the sample scene right. think of
+> the scene as a modular 3d volume (almost like a snow globe or a vignette that
+> we can use to build tiles from.”
 
-- one self-contained `index.html`,
-- silent autoplaying 20s loop,
-- hybrid 3D→2D projection pipeline,
-- node-based WebGL2 shader graph,
-- hidden lab and user camera,
-- GitHub Pages CI,
-- one built-out street corner with buildings, signals, cars, people, rain and
-  puddles.
+So: **engine foundation**, not a film. The sample scene is the *template*. Every
+element must be procedural, must degrade through LoD, and must live inside one
+modular volume that can be instanced into tiles.
 
-But the **visual result is not approved**. The user explicitly said it is
-“very underwhelming” and that “almost none” of their notes have landed. Do not
-assume that because a feature exists in code, it reads on screen. The next
-session must validate against the references with real browser screenshots.
+Standing constraints carried from earlier sessions (do not break them):
 
----
-
-## 2. Full summary of user notes
-
-### Original brief
-
-- Silent, autoplaying **20-second film** in one self-contained HTML file.
-- Rainy Tokyo crossing.
-- Palette: black, red, teal, white.
-- Rough carved lines and visible but controlled print grain.
-- One signal cycle: umbrellas waiting → crossing → draining away → briefly
-  empty street → returning traffic.
-- Footsteps break gouged wet reflections.
-- Train passes overhead.
-- All artwork code-generated.
-- No outside visual assets, no normal website UI, no audio.
-
-### Architecture / process corrections
-
-- Keep **hybrid 3D-2D**. The user explicitly rejected switching to pure 2D
-  Canvas/SVG as the main architecture.
-- Focus on style, aesthetics, execution, shaders / TSL-like modular looks and
-  parametric creation.
-- Build a representation of structure and feeling, not a simulation.
-- Keep a mini modular node-based shader graph.
-- Keep user camera / fly-around capability.
-- Keep CI deploying to GitHub Pages at the end of every turn.
-- Keep docs and handoff current for interrupted sessions.
-
-### Crowd / world corrections
-
-- People must not overlap; scatter meaningfully.
-- Vehicles should be more than boxes: wheels and silhouettes.
-- Humans must walk rather than slide.
-- World rules must prevent cars on crosswalks and interpenetration.
-- Hatching should be expressive and non-uniform.
-- Use “tiny people” architectural-sketch references:
-  small simple bodies, head dots/shapes, solid coats/pants, varied umbrella
-  silhouettes, ground shadows, occasional pairs/bags/dogs/strollers. Less detail
-  is fine if motion quality and feeling are right.
-- All animation was too fast; slow it down while keeping camera movement.
-- People should cross in more directions than diagonals only.
-- People need more variety.
-
-### Set corrections
-
-- Rebuild the set with a proper sidewalk street and believable but not
-  over-detailed street geometry.
-- Traffic lights only where they belong.
-- Add a few buildings.
-- Add a few cars where they belong.
-- Build a **cubic volume scene / set**. Block out big elements first, then
-  proceed smaller and add people at the end.
-- Focus on one corner rather than a giant scramble intersection.
-- Start with street and sidewalk.
-- Signs should be 3D and not always face the camera.
-
-### Wet / rain corrections
-
-- The procedural wet-glass fake overlay was too strong and broke the vibe.
-- Remove that overlay.
-- Rain and puddles look good and should remain.
-- Bring back a raindrop and puddle simulation, not a shader noise overlay.
-
-### Latest feedback
-
-- “this is very underwhelming.”
-- “almost none of my notes ahve landed.”
-- Document current state, write handoff, commit/push, merge to main, include a
-  summary of the notes.
+- Hybrid 3D→2D. Pure 2D canvas/SVG was explicitly rejected.
+- Everything code-generated; `index.html` self-contained, no external assets,
+  silent autoplay, no website chrome during playback.
+- Black / red / teal / white palette, rough carved lines, controlled grain.
+- Rain and puddles are a real particle/puddle simulation — **no wet-glass
+  overlay**.
+- People: tiny architectural-sketch figures, walking (never sliding), varied
+  directions, no overlaps.
+- Build order inside the volume: cubic masses → street furniture → vehicles →
+  people last.
+- Hidden lab, node shader graph, user camera takeover all stay.
 
 ---
 
-## 3. What is technically in the repo now
+## 2. Where the work stands
 
-- `src/world.js` — corner layout: two road strips, four sidewalk blocks,
-  crosswalks, lanes, legal parking, four signal positions, four building lots,
-  weighted waiting zones and seven pedestrian flows.
-- `src/environment.js` — staged cubic set: road/sidewalk blockout, road
-  markings, buildings, traffic lights, street furniture, wires and track.
-- `src/traffic.js` — five vehicles (three parked, two moving) plus a five-car
-  overhead train; parked cars are sanitized to legal curbs.
-- `src/crowd.js` — ~122 tiny people with archetypes, coat/head/umbrella
-  variety, long shadows, accessories, companions and distance-driven gait.
-- `src/weather.js` — 220 persistent 3D raindrop particles, 8 puddle polygons,
-  ripple rings, splash spikes and ambient drips.
-- `src/scene.js` — only `plate` and `field` canvases. No wet-glass canvas.
-- `src/shaders.js` / `src/graph.js` — 8-node GLSL graph; the `rain` node is a
-  disabled pass-through.
-- `src/camera.js` / `src/camera-control.js` — three-quarter corner camera plus
-  user orbit/fly takeover.
-- `src/lab.js` — hidden patch bay.
-- `.github/workflows/deploy-pages.yml` — Pages CI.
-- `index.html` — generated self-contained deliverable.
+The scene now reads as a **diorama in a case**: plinth, corner posts, cut-face
+caps, engraved label, four blocks at the back, one road, two sidewalks, a
+crossing, traffic signals, trees, vehicles, an overhead train, a rain-swept
+crowd.
 
-See `docs/CURRENT_STATE.md` for a frank table of “technical implementation vs
-visual confidence”.
+Recent fixes that matter (all verified with stills):
 
----
+- **Camera refit** against the full extents so the whole case is in frame
+  (`.shots/v19-*.png` onwards).
+- **People rewritten twice**: the earlier version drew heads at ~1 px and limb
+  strokes below 1 px, which collapsed every figure into a wireframe X. The rule
+  now is *all sizes derive from the projected body height* (`bodyPx`), with a
+  single filled silhouette that includes a leg split, a small head disc, and an
+  umbrella dome built from rim + mid ring + apex.
+- **Umbrellas** are now a tilted dome sitting just above the head — not a flat
+  saucer on a long stem. Fewer people carry one (~35 % average), which stops
+  the crowd reading as a mushroom farm.
+- **Trees** are a tapered trunk + 4–6 primary limbs with leaf clusters at the
+  tips, drawn over a cast shadow. Three earlier attempts (bright thin strokes =
+  white ferns; a single dark cloud = a floating blob) are documented as dead
+  ends.
+- **Facades** run the full window grid on the primary face and 55 % density on
+  the side face, with mullions, sills and balcony rails; a uniform grid on both
+  faces made the blocks look transparent.
+- **Road** is darker than the pavement (`#101215` base vs `#232327` sidewalk),
+  and the zebra bars are dulled and scuffed so they no longer compete with the
+  umbrellas.
+- **Vehicles** get a vertical gradient body fill, roof rim, wet sheen and brake
+  glow — a flat fill had made them read as holes in the road.
 
-## 4. What has not landed visually
-
-The following are implemented in code but are **not approved visually**:
-
-- The set still feels sparse and blocky rather than like a rich street corner.
-- Buildings, cars and signals may be too small, too simple or badly placed.
-- People may still read as noise or stick marks at final resolution.
-- Walking motion may not read as hand-animated.
-- Rain and puddles may be too subtle after removing the fake overlay.
-- The shader finish may flatten the carved-line / grain feeling.
-- Camera framing was chosen by projecting coordinates, not by looking at a
-  render.
-- Overall composition, scale, density, contrast and rhythm have not been
-  validated against the supplied references.
-
-Root cause: no browser screenshot validation was possible in this sandbox. All
-visual tuning was done by reasoning about code.
+Measured in this build: `npm run check` passes, `npm run build` is 125.5 KiB,
+luminance 47–63 % dark across sizes, and the LoD contact sheet shows the three
+tiers degrading as designed.
 
 ---
 
-## 5. Next session: first actions
+## 3. Do not repeat these
 
-1. Open the film in a real browser. Capture stills at WAIT, CROSS, EMPTY and
-   TRAFFIC. If no browser is available, solve that first.
-2. Put the supplied architectural-sketch references beside those stills.
-3. Compare:
-   - people scale / density / shadows,
-   - building scale and silhouette,
-   - street and sidewalk readability,
-   - umbrella shapes,
-   - rain and puddle readability,
-   - palette balance,
-   - carved line and grain quality.
-4. Re-art-direct from the references. It is acceptable to discard large parts
-   of `environment.js`, `camera.js`, `crowd.js` or `weather.js` if they block the
-   image.
-5. Keep the stable infrastructure: self-contained `index.html`, hybrid 3D→2D,
-   hidden lab, user camera, node shader graph and Pages CI.
-6. Rebuild the set in visible stages and validate each stage with a screenshot:
-   big volumes → road markings → buildings/signals/cars → people → rain/puddles
-   → shader finish.
-7. Tune a still frame first. Only then tune motion and the 20s cycle.
-8. Consider bypassing the shader graph temporarily in the lab to judge the raw
-   ink plate, then re-enable the print finish.
+- **No browser in the sandbox.** `apt` cannot reach the Debian mirror, the
+  Playwright CDN times out, and `npm i gl` fails in node-gyp. Do not burn a turn
+  retrying them; use `tools/shot.mjs` (napi-canvas stills of the ink plate with
+  the shader bypassed).
+- **Flat-rim umbrella discs** and long stems: they read as flying saucers /
+  lollipops. The rim + mid + apex dome with a tilted rim plane is the only
+  version that worked.
+- **Sub-pixel detail.** Anything smaller than ~1 px vanishes or turns to noise.
+  Budget facade props, crowd accessories and leaf ticks by screen scale.
+- **Trees as thin bright strokes** read as white ferns; **trees as one big
+  dark blob** read as a floating cloud. Tapered limbs *plus* leaf clusters at
+  the tips is the working recipe.
+- **Uniform window grids on every face** make a block look transparent.
+- **Heavy posterize + vignette** once dropped the film to 94 % dark. Keep the
+  current presets.
+- **Vertical mirror polys** for road reflections cover the road. Use
+  kerb-anchored floor wedges only.
 
 ---
 
-## 6. Invariants
-
-- One self-contained `index.html`, silent autoplay, no external assets.
-- Hybrid 3D→2D pipeline. Do not regress to pure 2D.
-- 20-second signal cycle with waiting → crossing → drain → empty → traffic.
-- Black / red / teal / white palette with rough carved lines and controlled
-  grain.
-- Hidden lab / camera HUD only; no normal website UI.
-- User camera takeover.
-- All artwork code-generated.
-- CI deploys to GitHub Pages on pushes.
-- Human docs stay current.
-- No procedural wet-glass overlay; rain/puddles should be a real simulation.
-- Traffic lights only at intersection corners.
-- Parked cars must pass `sanitizePark()` / `isParkable()`.
-- Signs are `sign3D()` oriented quads, not billboards.
-
----
-
-## 7. Commands
+## 4. Verify
 
 ```bash
-npm install
-npm run build           # regenerate self-contained index.html
-npm run docs            # regenerate deploy metadata + docs/index.html
-npm run dev             # build + serve on :8000
-npm run check           # esbuild bundle check
+npm run check
+node tools/shot.mjs --t 3,9,15,19 --prefix vX   # → .shots/vX-*.png
+npm run build                                   # → index.html (self-contained)
+npm run docs                                    # → docs/BUILD.md, DEPLOY_STATUS.md
 ```
 
-Useful URLs:
+Stills use the raw plate. To inspect a region at 2×:
 
-- `index.html` — clean film
-- `index.html?lab=1` — hidden lab
-- `index.html?lab=1&paused=1&t=7` — paused inspection frame
-- `index.html?cam=fly` — user fly camera
-- `index.html?preset=riso` — alternate print look
-- `index.html?w=1920&h=1080` — higher internal resolution
+```bash
+node -e "const {createCanvas,loadImage}=require('@napi-rs/canvas');(async()=>{
+  const i=await loadImage('.shots/vX-9.png');const c=createCanvas(1120,460);
+  c.getContext('2d').drawImage(i,230,430,560,230,0,0,1120,460);
+  require('fs').writeFileSync('.shots/crop.png',c.toBuffer('image/png'))})()"
+```
 
-Live site: https://bashmaester.github.io/vale/
+LoD sheet: `node tools/lod.mjs [time] [width]` → `.shots/lod.png`.
+Luminance sweep: `node tools/smoke.mjs` (guard rail against an all-dark film).
 
 ---
 
-## 8. Branch / merge / deploy
+## 5. Next concrete steps
 
-- Working branch: `arena/082e9ffd-vale`.
-- This handoff commit is pushed to that branch.
-- Merged to `main` via PR #1 from
-  `arena/082e9ffd-vale` → `main` using `gh pr merge`, without switching the
-  local working branch.
-- Pages CI triggers on both the working branch and `main`.
-- Generated deploy metadata lives in `BUILD.md`, `DEPLOY_STATUS.md`,
-  `manifest.json` and `docs/index.html`; CI regenerates these on deploy.
-
----
-
-## 9. File map
-
-```
-index.html                  generated deliverable
-build.mjs                   inlines CSS+JS into index.html
-scripts/update-docs.mjs     deploy docs generator
-.github/workflows/...       Pages CI
-docs/CURRENT_STATE.md       frank snapshot of what is actually built
-docs/HANDOFF.md             this file
-docs/ARCHITECTURE.md        system design
-docs/CHANGELOG.md           turn-by-turn changes
-docs/CI.md                  deployment notes
-src/world.js                corner layout and world rules
-src/collision.js            separation + poissonDisk
-src/camera.js               three-quarter corner camera rig
-src/camera-control.js       user orbit/fly camera
-src/environment.js          staged cubic set
-src/traffic.js              five vehicles + train
-src/crowd.js                varied tiny 3D people
-src/weather.js              raindrop particles + puddle ripples
-src/scene.js                plate/field orchestration
-src/shaders.js              GLSL node defs + presets
-src/graph.js                shader graph compiler
-src/draw.js                 painter primitives incl. sign3D()
-src/lab.js                  optional patch bay
-src/main.js                 wiring + query params + loop
-```
+1. Fill the empty front-left quadrant with LoD-aware street furniture.
+2. Crowd pass 3: less conical coats, canopy resting on the head, a few more
+   accessories at L0 only.
+3. `tools/tiles.mjs`: render two tiles along x to prove snapping and inspect
+   the seam (this is the core engine claim, currently unproven visually).
+4. Glazing/interiors for vehicles at L0.
+5. Add a CI screenshot job (GitHub Actions has a browser) so the WebGL finish
+   can be validated for the first time.
 
 ---
 
-## 10. Bottom line
+## 6. File map
 
-The current build is a technical prototype, not the film the user asked for.
-The next session should start from the references and the notes above, not from
-the assumption that the current look is correct. Real browser screenshots are
-the missing validation step.
+| File | Responsibility |
+| --- | --- |
+| `src/tile.js` | tile volume, colours, `LOD_LEVELS`, `makeDetail`, `groundYAt` |
+| `src/world.js` | data for one tile: road, sidewalks, crossing, lanes, lots, flows, puddles |
+| `src/environment.js` | all staged street/building/furniture/frame drawing |
+| `src/crowd.js` | procedural people: archetypes, LoD thinning, umbrellas |
+| `src/traffic.js` | vehicles (extruded profiles) + overhead train |
+| `src/weather.js` | raindrops, ripples, puddles |
+| `src/scene.js` | orchestration, params, depth sorting, `render(t, dt)` |
+| `src/camera.js` | `CameraRig`: fitted keyframes, roll, fov |
+| `src/draw.js` | `Painter`: jittered polylines, polys, gradients, hatching |
+| `src/shaders.js` / `src/graph.js` | print finish presets and node graph |
+| `src/renderer.js` | WebGL2 fullscreen pass, `bypass` for raw plate |
+| `src/lab.js` | hidden lab UI |
+| `tools/shot.mjs` | stills renderer (`--t`, `--eye`, `--target`, `--fov`) |
+| `tools/lod.mjs` | three-tier LoD contact sheet |
+| `tools/smoke.mjs` | luminance sweep at three viewport sizes |
+| `tools/canvas-env.mjs` | DOM/canvas shim so `src/` can run under Node |
+
+---
+
+## 7. Deploy
+
+`npm run build && npm run docs`, commit, push. `.github/workflows/deploy-pages.yml`
+now triggers on **every branch** (`'**'`) and runs `npm run check` before the
+build, so any branch is a previewable build of the sample scene; the newest push
+wins the single Pages site: https://bashmaester.github.io/vale/

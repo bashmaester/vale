@@ -119,6 +119,21 @@ export class Renderer {
   }
 
   render(plate, field, time) {
+    if (this.bypass) {
+      // Raw plate view: judge the drawing before the print finish.
+      if (!this.ctx2d) {
+        const c = document.createElement('canvas');
+        c.className = this.canvas.className || 'screen';
+        c.id = `${this.canvas.id || 'screen'}-raw`;
+        this.canvas.replaceWith(c);
+        this.canvas = c;
+        this.ctx2d = c.getContext('2d');
+        this.canvas.width = this.W; this.canvas.height = this.H;
+      }
+      this.ctx2d.clearRect(0, 0, this.W, this.H);
+      this.ctx2d.drawImage(plate, 0, 0, this.W, this.H);
+      return;
+    }
     if (this.fallback) {
       this.ctx2d.clearRect(0, 0, this.W, this.H);
       this.ctx2d.drawImage(plate, 0, 0);

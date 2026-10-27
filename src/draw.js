@@ -112,8 +112,23 @@ export class Painter {
     c.moveTo(jpts[0][0], jpts[0][1]);
     for (let i = 1; i < jpts.length; i++) c.lineTo(jpts[i][0], jpts[i][1]);
     c.closePath();
-    if (opts.fill) { c.fillStyle = opts.fill; c.fill(); }
-    if (opts.stroke !== null && (opts.stroke || opts.fill == null)) {
+    if (opts.gradient && opts.gradient.length) {
+      let y0 = Infinity, y1 = -Infinity, x0 = Infinity, x1 = -Infinity;
+      for (const pt of jpts) {
+        if (pt[1] < y0) y0 = pt[1];
+        if (pt[1] > y1) y1 = pt[1];
+        if (pt[0] < x0) x0 = pt[0];
+        if (pt[0] > x1) x1 = pt[0];
+      }
+      const horizontal = opts.gradientDir === 'h';
+      const g = horizontal
+        ? c.createLinearGradient(x0, 0, x1, 0)
+        : c.createLinearGradient(0, y0, 0, y1);
+      for (const [t, col] of opts.gradient) g.addColorStop(t, col);
+      c.fillStyle = g;
+      c.fill();
+    } else if (opts.fill) { c.fillStyle = opts.fill; c.fill(); }
+    if (opts.stroke !== null && (opts.stroke || (opts.fill == null && !opts.gradient))) {
       c.strokeStyle = opts.stroke || PALETTE.ink;
       c.lineWidth = opts.width == null ? 1.1 : opts.width;
       c.stroke();
@@ -213,7 +228,8 @@ export class Painter {
       if (proj.some((p) => !p)) continue;
       const quad = proj.map((p) => [p.x, p.y]);
       const depth = proj.reduce((a, p) => a + p.depth, 0) / 4;
-      out.push({ ...f, pts3, quad, depth, visible });
+      const scale = proj.reduce((a, p) => a + p.scale, 0) / 4;
+      out.push({ ...f, pts3, quad, depth, scale, visible });
     }
     if (opts.draw !== false) {
       const fill = opts.fill || PALETTE.black;
