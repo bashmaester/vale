@@ -1,4 +1,4 @@
-// Post-processing: film grain + color grading for print aesthetic
+// Post-processing: film grain + print aesthetic
 export const grainVertexShader = /* glsl */ `
   varying vec2 vUv;
   void main() {
@@ -22,18 +22,29 @@ export const grainFragmentShader = /* glsl */ `
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
   }
 
+  float hash3(vec3 p) {
+    return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453123);
+  }
+
   void main() {
     vec4 color = texture2D(tDiffuse, vUv);
 
-    // Film grain
-    float grain = hash(vUv * 1000.0 + uTime * 100.0) * 2.0 - 1.0;
+    // Film grain — layered
+    float grain = 0.0;
+    grain += (hash(vUv * 1000.0 + uTime * 50.0) - 0.5) * 0.6;
+    grain += (hash(vUv * 2000.0 - uTime * 30.0) - 0.5) * 0.3;
+    grain += (hash(vUv * 500.0 + uTime * 80.0) - 0.5) * 0.1;
     color.rgb += grain * uGrain;
 
-    // Contrast
-    color.rgb = (color.rgb - 0.5) * uContrast + 0.5;
+    // Contrast — push blacks darker, whites brighter
+    color.rgb = pow(color.rgb, vec3(1.0 / uContrast));
 
-    // Tint
-    color.rgb = mix(color.rgb, color.rgb * uTint, 0.15);
+    // Warm tint in shadows, cool in highlights
+    float lum = dot(color.rgb, vec3(0.299, 0.587, 0.114));
+    vec3 shadowTint = vec3(1.05, 0.97, 0.92);
+    vec3 highlightTint = vec3(0.95, 0.97, 1.02);
+    vec3 tint = mix(shadowTint, highlightTint, lum);
+    color.rgb = mix(color.rgb, color.rgb * tint * uTint, 0.2);
 
     // Vignette
     vec2 center = vUv - 0.5;
@@ -41,14 +52,20 @@ export const grainFragmentShader = /* glsl */ `
     color.rgb *= vig;
 
     // Subtle scanlines for print feel
-    float scan = sin(vUv.y * 800.0) * 0.02 * uScanline;
+    float scan = sin(vUv.y * 600.0 + uTime * 0.5) * 0.015 * uScanline;
     color.rgb += scan;
+
+    // Slight color aberration at edges
+    float aberration = length(center) * 0.002;
+    float r = texture2D(tDiffuse, vUv + vec2(aberration, 0.0)).r;
+    float b = texture2D(tDiffuse, vUv - vec2(aberration, 0.0)).b;
+    color.r = mix(color.r, r, 0.3);
+    color.b = mix(color.b, b, 0.3);
 
     gl_FragColor = vec4(color.rgb, 1.0);
   }
 `;
 
-// Simple quad for post-processing
 export function createGrainPass(renderer, scene, camera, options = {}) {
   const material = new THREE.ShaderMaterial({
     uniforms: {

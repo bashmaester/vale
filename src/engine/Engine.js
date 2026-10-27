@@ -1,4 +1,4 @@
-// Core Engine - Three.js renderer, scene management, render loop
+// Core Engine — Three.js renderer, scene management, render loop
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
@@ -12,11 +12,12 @@ export class Engine {
   constructor(container) {
     this.container = container;
     this.clock = new THREE.Clock();
-    this.mode = 'live'; // 'live' or 'edit'
+    this.mode = 'live';
     this.time = 0;
     this.fps = 0;
     this.frameCount = 0;
     this.fpsTime = 0;
+    this.cameraAnimTime = 0;
 
     // Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -26,9 +27,9 @@ export class Engine {
     });
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.setSize(window.innerWidth, window.innerHeight);
-    this.renderer.setClearColor(0x0a0a0f);
+    this.renderer.setClearColor(0x06060e);
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.2;
+    this.renderer.toneMappingExposure = 1.1;
     container.appendChild(this.renderer.domElement);
 
     // Scene
@@ -38,7 +39,7 @@ export class Engine {
 
     // Camera
     this.camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 500);
-    this.camera.position.set(25, 12, 30);
+    this.camera.position.set(30, 14, 35);
 
     // Controls
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
@@ -54,12 +55,12 @@ export class Engine {
     this.grainPass = new ShaderPass({
       uniforms: {
         tDiffuse: { value: null },
-        uGrain: { value: 0.03 },
+        uGrain: { value: 0.035 },
         uTime: { value: 0 },
-        uContrast: { value: 1.1 },
-        uVignette: { value: 1.0 },
-        uTint: { value: new THREE.Color(1.0, 0.98, 0.96) },
-        uScanline: { value: 0.2 },
+        uContrast: { value: 1.15 },
+        uVignette: { value: 1.2 },
+        uTint: { value: new THREE.Color(1.0, 0.97, 0.94) },
+        uScanline: { value: 0.15 },
       },
       vertexShader: grainVertexShader,
       fragmentShader: grainFragmentShader,
@@ -75,8 +76,7 @@ export class Engine {
 
     // State
     this.activeSceneName = null;
-    this.editingNode = null;
-    this.modules = []; // Flat list of active modules for editor
+    this.modules = [];
 
     // Bind
     this._onResize = this._onResize.bind(this);
@@ -117,25 +117,16 @@ export class Engine {
     const scene = this.sceneManager.setActiveScene(name);
     this.activeSceneName = name;
     this.modules = [];
+    this.cameraAnimTime = 0;
 
-    // Instantiate modules
+    // Instantiate modules using registry
     const instantiate = (node, parentGroup) => {
+      const modInfo = this.registry.modules.get(node.type);
       let mesh;
-      switch (node.type) {
-        case 'sky':
-          mesh = this.registry.modules.get('sky').factory(node.params);
-          break;
-        case 'mountain':
-          mesh = this.registry.modules.get('mountain').factory(node.params);
-          break;
-        case 'train':
-          mesh = this.registry.modules.get('train').factory(node.params);
-          break;
-        case 'crossing':
-          mesh = this.registry.modules.get('crossing').factory(node.params);
-          break;
-        default:
-          mesh = new THREE.Group();
+      if (modInfo) {
+        mesh = modInfo.factory(node.params || {});
+      } else {
+        mesh = new THREE.Group();
       }
 
       mesh.position.set(...node.position);
@@ -158,8 +149,9 @@ export class Engine {
 
     // Set camera from config
     if (scene.config?.camera) {
-      this.camera.position.set(...scene.config.camera.pos);
-      this.controls.target.set(...scene.config.camera.target);
+      const cam = scene.config.camera;
+      this.camera.position.set(...cam.startPos);
+      this.controls.target.set(...cam.startTarget);
     }
 
     // Initialize audio for scene
@@ -198,7 +190,7 @@ export class Engine {
 
     // Update all modules
     for (const mod of this.modules) {
-      if (mod.userData.update) {
+      if (mod.userData?.update) {
         mod.userData.update(this.time, delta);
       }
     }
@@ -206,39 +198,58 @@ export class Engine {
     // Update post-processing
     this.grainPass.uniforms.uTime.value = this.time;
 
-    // Train animation in mountain scene
-    if (this.activeSceneName === 'mountain-train') {
-      const train = this.modules.find(m => m.userData?.type === 'train');
-      if (train) {
-        // Camera dolly animation in live mode
-        if (this.mode === 'live') {
-          const cycleTime = 20;
-          const t = (this.time % cycleTime) / cycleTime;
-          // Dolly from far to close and back
-          const dolly = Math.sin(t * Math.PI);
-          const dist = 35 - dolly * 25;
-          const angle = t * Math.PI * 0.3;
-          this.camera.position.x = Math.cos(angle) * dist;
-          this.camera.position.z = Math.sin(angle) * dist * 0.5 + 15;
-          this.camera.position.y = 8 + dolly * 4;
-          this.controls.target.set(5 + dolly * 3, 3, 0);
+    // Camera animation in live mode
+    if (this.mode === 'live') {
+      const scene = this.sceneManager.activeScene;
+      if (scene?.config?.camera) {
+        const cam = scene.config.camera;
+        const cycleTime = this.activeSceneName === 'mountain-train' ? 25 : 20;
+        this.cameraAnimTime = (this.cameraAnimTime + delta) % cycleTime;
+        const t = this.cameraAnimTime / cycleTime;
 
-          // Update audio state
+        // Smooth ease in-out
+        const eased = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+
+        // Camera dolly
+        const pos = new THREE.Vector3(
+          cam.startPos[0] + (cam.endPos[0] - cam.startPos[0]) * eased,
+          cam.startPos[1] + (cam.endPos[1] - cam.startPos[1]) * eased,
+          cam.startPos[2] + (cam.endPos[2] - cam.startPos[2]) * eased
+        );
+
+        // Add slight orbital motion
+        const orbitAngle = t * Math.PI * 0.4;
+        const orbitRadius = 2;
+        pos.x += Math.cos(orbitAngle) * orbitRadius;
+        pos.z += Math.sin(orbitAngle) * orbitRadius * 0.5;
+
+        this.camera.position.lerp(pos, 0.02);
+
+        const target = new THREE.Vector3(
+          cam.startTarget[0] + (cam.endTarget[0] - cam.startTarget[0]) * eased,
+          cam.startTarget[1] + (cam.endTarget[1] - cam.startTarget[1]) * eased,
+          cam.startTarget[2] + (cam.endTarget[2] - cam.startTarget[2]) * eased
+        );
+        this.controls.target.lerp(target, 0.02);
+
+        // Audio state for mountain-train
+        if (this.activeSceneName === 'mountain-train') {
+          const dolly = eased;
           this.audio.updateFromState({
             trainProximity: dolly,
-            windLevel: 0.3 + dolly * 0.5,
-            ambientLevel: 0.5,
+            windLevel: 0.2 + dolly * 0.6,
+            ambientLevel: 0.4,
+          });
+        }
+
+        // Audio state for tokyo-crossing
+        if (this.activeSceneName === 'tokyo-crossing') {
+          this.audio.updateFromState({
+            rainIntensity: 0.8,
+            ambientLevel: 0.3,
           });
         }
       }
-    }
-
-    // Crossing scene updates
-    if (this.activeSceneName === 'tokyo-crossing') {
-      this.audio.updateFromState({
-        rainIntensity: 0.8,
-        ambientLevel: 0.3,
-      });
     }
 
     // FPS counter

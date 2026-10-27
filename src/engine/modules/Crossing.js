@@ -1,16 +1,15 @@
-// Procedural Tokyo Crossing Module
-// Creates a rainy intersection with umbrellas, reflections, and overhead train
+// Procedural Tokyo Crossing Module — rainy night intersection
 import * as THREE from 'three';
 import { createLinocutMaterial } from '../shaders/linocut.js';
 
 export function createCrossingModule(params = {}) {
   const group = new THREE.Group();
 
-  // Road surface with wet reflections
+  // Wet road surface
   const road = createWetRoad(params);
   group.add(road);
 
-  // Crosswalk stripes
+  // Crosswalk
   const crosswalk = createCrosswalk(params);
   group.add(crosswalk);
 
@@ -22,11 +21,11 @@ export function createCrossingModule(params = {}) {
   const crowd = createUmbrellaCrowd(params);
   group.add(crowd);
 
-  // Rain system
-  const rain = createRainSystem(params);
+  // Rain streaks
+  const rain = createRainStreaks(params);
   group.add(rain);
 
-  // Overhead train track and train
+  // Overhead train and track
   const overhead = createOverheadTrain(params);
   group.add(overhead);
 
@@ -34,15 +33,14 @@ export function createCrossingModule(params = {}) {
   const buildings = createBuildings(params);
   group.add(buildings);
 
-  // Reflections (rendered as inverted semi-transparent copies)
-  const reflections = createReflections(group, params);
-  group.add(reflections);
+  // Street details (poles, signs)
+  const street = createStreetDetails(params);
+  group.add(street);
 
   group.userData = {
     type: 'crossing',
     params,
-    state: 'waiting', // waiting -> crossing -> draining
-    timer: 0,
+    cycleTime: 0,
     update: (time, dt) => updateCrossing(group, time, dt),
   };
 
@@ -50,15 +48,14 @@ export function createCrossingModule(params = {}) {
 }
 
 function createWetRoad(params) {
-  const width = params.roadWidth || 30;
-  const depth = params.roadDepth || 30;
-  const geom = new THREE.PlaneGeometry(width, depth, 40, 40);
+  const width = params.roadWidth || 35;
+  const depth = params.roadDepth || 35;
 
+  const geom = new THREE.PlaneGeometry(width, depth, 60, 60);
   const mat = new THREE.ShaderMaterial({
     uniforms: {
       uTime: { value: 0 },
-      uWaterColor: { value: new THREE.Color(0x0a1520) },
-      uReflectColor: { value: new THREE.Color(0x1a3a4a) },
+      uRoadColor: { value: new THREE.Color(0x080810) },
     },
     vertexShader: `
       varying vec2 vUv;
@@ -70,11 +67,9 @@ function createWetRoad(params) {
       }
     `,
     fragmentShader: `
-      uniform vec3 uWaterColor;
-      uniform vec3 uReflectColor;
       uniform float uTime;
+      uniform vec3 uRoadColor;
       varying vec2 vUv;
-      varying vec3 vPos;
 
       float hash(vec2 p) {
         return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
@@ -82,27 +77,53 @@ function createWetRoad(params) {
 
       void main() {
         vec2 uv = vUv - 0.5;
-        // Ripple distortion
-        float ripple = sin(uv.x * 40.0 + uTime) * sin(uv.y * 30.0 + uTime * 0.7) * 0.02;
-        vec2 distUv = vUv + vec2(ripple);
 
-        // Reflection gradient
-        float reflect = smoothstep(0.0, 0.3, abs(distUv.y));
-        vec3 color = mix(uWaterColor, uReflectColor, reflect * 0.3);
+        // Base dark asphalt
+        vec3 color = uRoadColor;
 
-        // Wet highlights (carved lines look)
-        float line = abs(sin(distUv.x * 80.0 + distUv.y * 20.0));
-        color += vec3(0.1, 0.15, 0.2) * smoothstep(0.95, 1.0, line) * 0.3;
+        // Wet surface — mirror reflections
+        // Distort UV for ripple effect
+        float ripple = sin(uv.x * 50.0 + uTime * 2.0) * sin(uv.y * 40.0 + uTime * 1.5) * 0.008;
+        vec2 rUv = uv + vec2(ripple, ripple * 0.7);
 
-        // Red signal reflection
-        float redPool = smoothstep(0.5, 0.0, length(uv - vec2(0.0, 0.0))) * 0.15;
-        color += vec3(0.6, 0.15, 0.1) * redPool;
+        // Reflection of signals (red pool in center)
+        float redDist = length(uv);
+        float redReflect = smoothstep(0.4, 0.0, redDist) * 0.25;
+        // Stretched vertically for wet look
+        redReflect *= smoothstep(0.0, 0.1, abs(uv.y) + 0.05);
+        color += vec3(0.7, 0.15, 0.1) * redReflect;
 
-        // Teal reflections
-        float tealPool = smoothstep(0.5, 0.0, length(uv - vec2(0.3, -0.2))) * 0.1;
-        color += vec3(0.1, 0.5, 0.5) * tealPool;
+        // Teal/cyan reflections from train and signs
+        float tealDist = length(uv - vec2(0.2, -0.1));
+        float tealReflect = smoothstep(0.3, 0.0, tealDist) * 0.15;
+        color += vec3(0.1, 0.5, 0.55) * tealReflect;
 
-        gl_FragColor = vec4(color, 0.95);
+        // White reflections from crosswalk
+        float stripeX = fract(uv.x * 8.0);
+        float stripeY = abs(uv.y);
+        float stripeReflect = smoothstep(0.15, 0.0, abs(stripeX - 0.5)) * smoothstep(0.4, 0.0, stripeY) * 0.2;
+        color += vec3(0.8, 0.78, 0.75) * stripeReflect;
+
+        // Carved wet lines — horizontal gouges in asphalt
+        float line = abs(sin(uv.y * 120.0 + uv.x * 5.0));
+        float wetLine = smoothstep(0.97, 1.0, line) * 0.15;
+        color += vec3(0.2, 0.25, 0.3) * wetLine;
+
+        // Puddle highlights
+        float puddle = hash(floor(uv * 10.0));
+        if (puddle > 0.92) {
+          float pSize = (puddle - 0.92) * 12.5;
+          vec2 pCenter = fract(uv * 10.0) - 0.5;
+          float pDist = length(pCenter);
+          float puddleHighlight = smoothstep(0.08 * pSize, 0.0, pDist) * 0.12;
+          color += vec3(0.3, 0.35, 0.4) * puddleHighlight;
+        }
+
+        // Grain
+        float grain = hash(floor(uv * 500.0)) * 0.03;
+        color += grain;
+
+        gl_FragColor = vec4(color, 0.97);
       }
     `,
     transparent: true,
@@ -117,25 +138,27 @@ function createWetRoad(params) {
 
 function createCrosswalk(params) {
   const group = new THREE.Group();
-  const numStripes = params.stripes || 12;
-  const stripeWidth = 1.2;
-  const stripeGap = 0.6;
-  const crossingLength = params.crossingLength || 15;
+  const numStripes = 10;
+  const stripeWidth = 1.0;
+  const stripeGap = 0.5;
+  const crossingLength = 14;
+
+  const stripeMat = createLinocutMaterial({
+    color: new THREE.Color(0xf0ece8),
+    carveColor: new THREE.Color(0x3a3a40),
+    carveDepth: 0.4,
+    carveScale: 2.5,
+    gougeAmount: 0.15,
+    grainIntensity: 0.04,
+  });
 
   for (let i = 0; i < numStripes; i++) {
     const geom = new THREE.PlaneGeometry(stripeWidth, crossingLength);
-    const mat = createLinocutMaterial({
-      color: new THREE.Color(0xf0ece8),
-      carveColor: new THREE.Color(0x2a2a30),
-      carveDepth: 0.5,
-      carveScale: 3.0,
-      gougeAmount: 0.2,
-    });
-    const stripe = new THREE.Mesh(geom, mat);
+    const stripe = new THREE.Mesh(geom, stripeMat);
     stripe.rotation.x = -Math.PI / 2;
     stripe.position.set(
       -crossingLength / 2 + stripeWidth / 2 + i * (stripeWidth + stripeGap),
-      0.02,
+      0.025,
       0
     );
     group.add(stripe);
@@ -146,51 +169,63 @@ function createCrosswalk(params) {
 
 function createSignals(params) {
   const group = new THREE.Group();
-  const signalPositions = [
-    [-8, 0, -6], [8, 0, -6], [-8, 0, 6], [8, 0, 6],
+  const positions = [
+    [-7, 0, -5], [7, 0, -5], [-7, 0, 5], [7, 0, 5],
   ];
 
-  signalPositions.forEach((pos, i) => {
+  positions.forEach((pos, i) => {
     const pole = new THREE.Group();
 
     // Pole
-    const poleGeom = new THREE.CylinderGeometry(0.06, 0.06, 3, 6);
+    const poleGeom = new THREE.CylinderGeometry(0.05, 0.06, 3.5, 6);
     const poleMat = createLinocutMaterial({
       color: new THREE.Color(0x1a1a20),
       carveColor: new THREE.Color(0x0a0a10),
-    });
-    const poleMesh = new THREE.Mesh(poleGeom, poleMat);
-    poleMesh.position.y = 1.5;
-    pole.add(poleMesh);
-
-    // Signal head
-    const headGeom = new THREE.BoxGeometry(0.4, 0.8, 0.3);
-    const headMat = createLinocutMaterial({
-      color: new THREE.Color(0x1a1a20),
-      carveColor: new THREE.Color(0x050508),
       carveDepth: 0.8,
     });
+    const poleMesh = new THREE.Mesh(poleGeom, poleMat);
+    poleMesh.position.y = 1.75;
+    pole.add(poleMesh);
+
+    // Signal head box
+    const headGeom = new THREE.BoxGeometry(0.35, 0.7, 0.25);
+    const headMat = createLinocutMaterial({
+      color: new THREE.Color(0x151518),
+      carveColor: new THREE.Color(0x050508),
+      carveDepth: 0.9,
+      carveScale: 5.0,
+    });
     const head = new THREE.Mesh(headGeom, headMat);
-    head.position.y = 2.8;
+    head.position.y = 3.2;
     pole.add(head);
 
     // Red light
-    const redGeom = new THREE.SphereGeometry(0.12, 8, 8);
-    const redMat = new THREE.MeshBasicMaterial({ color: 0xcc2020 });
+    const redGeom = new THREE.SphereGeometry(0.1, 8, 8);
+    const redMat = new THREE.MeshBasicMaterial({ color: 0x220808 });
     const red = new THREE.Mesh(redGeom, redMat);
-    red.position.set(0, 3.0, 0.16);
+    red.position.set(0, 3.35, 0.13);
     red.userData.isLight = true;
     red.userData.color = 'red';
     pole.add(red);
 
     // Green/teal light
-    const tealGeom = new THREE.SphereGeometry(0.12, 8, 8);
-    const tealMat = new THREE.MeshBasicMaterial({ color: 0x002020 });
-    const teal = new THREE.Mesh(tealGeom, tealMat);
-    teal.position.set(0, 2.6, 0.16);
-    teal.userData.isLight = true;
-    teal.userData.color = 'teal';
-    pole.add(teal);
+    const greenGeom = new THREE.SphereGeometry(0.1, 8, 8);
+    const greenMat = new THREE.MeshBasicMaterial({ color: 0x082020 });
+    const green = new THREE.Mesh(greenGeom, greenMat);
+    green.position.set(0, 3.0, 0.13);
+    green.userData.isLight = true;
+    green.userData.color = 'teal';
+    pole.add(green);
+
+    // Hood over lights
+    const hoodGeom = new THREE.BoxGeometry(0.38, 0.08, 0.3);
+    const hoodMat = createLinocutMaterial({ color: new THREE.Color(0x151518) });
+    const hood1 = new THREE.Mesh(hoodGeom, hoodMat);
+    hood1.position.set(0, 3.45, 0.05);
+    pole.add(hood1);
+    const hood2 = hood1.clone();
+    hood2.position.y = 3.1;
+    pole.add(hood2);
 
     pole.position.set(...pos);
     group.add(pole);
@@ -201,16 +236,27 @@ function createSignals(params) {
 
 function createUmbrellaCrowd(params) {
   const group = new THREE.Group();
-  const count = params.crowdCount || 40;
+  const count = params.crowdCount || 50;
 
   for (let i = 0; i < count; i++) {
     const umbrella = createUmbrellaFigure();
-    const x = (Math.random() - 0.5) * 10;
-    const z = (Math.random() - 0.5) * 10;
+    const x = (Math.random() - 0.5) * 12;
+    const z = (Math.random() - 0.5) * 12;
     umbrella.position.set(x, 0, z);
-    umbrella.userData.speed = 0.5 + Math.random() * 1.5;
-    umbrella.userData.targetX = (Math.random() - 0.5) * 20;
-    umbrella.userData.targetZ = (Math.random() - 0.5) * 20;
+    umbrella.userData.speed = 0.3 + Math.random() * 1.2;
+    umbrella.userData.dir = Math.random() * Math.PI * 2;
+    umbrella.userData.phase = Math.random() * Math.PI * 2;
+    umbrella.userData.waitPos = new THREE.Vector3(x, 0, z);
+    umbrella.userData.crossTarget = new THREE.Vector3(
+      x + Math.cos(umbrella.userData.dir) * 8,
+      0,
+      z + Math.sin(umbrella.userData.dir) * 8
+    );
+    umbrella.userData.drainTarget = new THREE.Vector3(
+      (Math.random() - 0.5) * 20,
+      0,
+      (Math.random() - 0.5) * 20
+    );
     group.add(umbrella);
   }
 
@@ -220,44 +266,68 @@ function createUmbrellaCrowd(params) {
 function createUmbrellaFigure() {
   const figure = new THREE.Group();
 
-  // Umbrella canopy (dome)
-  const canopyGeom = new THREE.SphereGeometry(0.4, 8, 4, 0, Math.PI * 2, 0, Math.PI / 2);
-  const colors = [0xc44030, 0x1a5a50, 0xf0ece8, 0x0a0a10, 0xc44030];
+  // Umbrella canopy
+  const canopyGeom = new THREE.SphereGeometry(0.35, 8, 4, 0, Math.PI * 2, 0, Math.PI * 0.6);
+  const colors = [0xc44030, 0x1a6a5a, 0xf0ece8, 0x0a0a12, 0x2a8a7a, 0xc44030, 0x1a6a5a];
   const color = colors[Math.floor(Math.random() * colors.length)];
   const canopyMat = createLinocutMaterial({
     color: new THREE.Color(color),
-    carveColor: new THREE.Color(color).multiplyScalar(0.3),
-    carveDepth: 0.6,
-    carveScale: 4.0,
+    carveColor: new THREE.Color(color).multiplyScalar(0.25),
+    carveDepth: 0.65,
+    carveScale: 3.5,
+    gougeAmount: 0.3,
   });
   const canopy = new THREE.Mesh(canopyGeom, canopyMat);
-  canopy.position.y = 1.4;
+  canopy.position.y = 1.3;
   figure.add(canopy);
 
+  // Umbrella ribs (carved lines on canopy)
+  for (let r = 0; r < 6; r++) {
+    const angle = (r / 6) * Math.PI * 2;
+    const ribGeom = new THREE.CylinderGeometry(0.008, 0.008, 0.35, 3);
+    ribGeom.rotateZ(Math.PI / 2);
+    const ribMat = createLinocutMaterial({ color: new THREE.Color(0x0a0a10) });
+    const rib = new THREE.Mesh(ribGeom, ribMat);
+    rib.position.y = 1.3;
+    rib.rotation.y = angle;
+    rib.position.x = Math.cos(angle) * 0.15;
+    rib.position.z = Math.sin(angle) * 0.15;
+    figure.add(rib);
+  }
+
   // Stick
-  const stickGeom = new THREE.CylinderGeometry(0.02, 0.02, 0.8, 4);
-  const stickMat = createLinocutMaterial({ color: new THREE.Color(0x1a1a20) });
+  const stickGeom = new THREE.CylinderGeometry(0.015, 0.015, 0.75, 4);
+  const stickMat = createLinocutMaterial({ color: new THREE.Color(0x0a0a10) });
   const stick = new THREE.Mesh(stickGeom, stickMat);
-  stick.position.y = 1.0;
+  stick.position.y = 0.95;
   figure.add(stick);
 
-  // Body (simple figure)
-  const bodyGeom = new THREE.CylinderGeometry(0.1, 0.15, 0.8, 6);
+  // Body
+  const bodyGeom = new THREE.CylinderGeometry(0.08, 0.12, 0.65, 6);
   const bodyMat = createLinocutMaterial({
     color: new THREE.Color(0x0a0a10),
     carveColor: new THREE.Color(0x050508),
+    carveDepth: 0.9,
   });
   const body = new THREE.Mesh(bodyGeom, bodyMat);
-  body.position.y = 0.4;
+  body.position.y = 0.35;
   figure.add(body);
+
+  // Legs
+  for (let l = -1; l <= 1; l += 2) {
+    const legGeom = new THREE.CylinderGeometry(0.03, 0.03, 0.35, 4);
+    const leg = new THREE.Mesh(legGeom, bodyMat);
+    leg.position.set(l * 0.05, 0.17, 0);
+    figure.add(leg);
+  }
 
   return figure;
 }
 
-function createRainSystem(params) {
-  const count = params.rainCount || 2000;
-  const height = params.rainHeight || 15;
-  const spread = params.rainSpread || 20;
+function createRainStreaks(params) {
+  const count = params.rainCount || 3000;
+  const height = params.rainHeight || 18;
+  const spread = params.rainSpread || 30;
 
   const positions = new Float32Array(count * 3);
   const velocities = [];
@@ -267,27 +337,29 @@ function createRainSystem(params) {
     positions[i * 3 + 1] = Math.random() * height;
     positions[i * 3 + 2] = (Math.random() - 0.5) * spread;
     velocities.push({
-      speed: 8 + Math.random() * 5,
-      wobble: Math.random() * 2,
+      speed: 10 + Math.random() * 8,
+      windX: 0.5 + Math.random() * 0.5,
+      windZ: 0.2 + Math.random() * 0.3,
     });
   }
 
   const geom = new THREE.BufferGeometry();
   geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
 
+  // Use Lines instead of Points for streak effect
   const mat = new THREE.ShaderMaterial({
     uniforms: {
-      uColor: { value: new THREE.Color(0xaaccdd) },
-      uOpacity: { value: 0.4 },
+      uColor: { value: new THREE.Color(0x8ab4c8) },
+      uOpacity: { value: 0.35 },
     },
     vertexShader: `
       varying float vAlpha;
       void main() {
         vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
         float dist = length(mvPos.xyz);
-        vAlpha = smoothstep(30.0, 5.0, dist);
+        vAlpha = smoothstep(35.0, 3.0, dist);
         gl_Position = projectionMatrix * mvPos;
-        gl_PointSize = 1.5;
+        gl_PointSize = 1.2;
       }
     `,
     fragmentShader: `
@@ -295,7 +367,11 @@ function createRainSystem(params) {
       uniform float uOpacity;
       varying float vAlpha;
       void main() {
-        gl_FragColor = vec4(uColor, uOpacity * vAlpha);
+        // Elongated point for streak
+        float d = length(gl_PointCoord - vec2(0.5, 0.2)) * 2.5;
+        if (d > 1.0) discard;
+        float a = (1.0 - d * d) * uOpacity * vAlpha;
+        gl_FragColor = vec4(uColor, a);
       }
     `,
     transparent: true,
@@ -313,100 +389,154 @@ function createRainSystem(params) {
 
 function createOverheadTrain(params) {
   const group = new THREE.Group();
+  const trackZ = -12;
 
-  // Elevated track
-  const trackGeom = new THREE.BoxGeometry(40, 0.3, 2);
+  // Elevated track structure
+  const trackGeom = new THREE.BoxGeometry(50, 0.25, 2.5);
   const trackMat = createLinocutMaterial({
     color: new THREE.Color(0x1a1a20),
     carveColor: new THREE.Color(0x0a0a10),
-    carveDepth: 0.7,
-    carveScale: 4.0,
+    carveDepth: 0.8,
+    carveScale: 3.0,
+    gougeAmount: 0.3,
   });
   const track = new THREE.Mesh(trackGeom, trackMat);
-  track.position.y = 8;
-  track.position.z = -10;
+  track.position.set(0, 9, trackZ);
   group.add(track);
 
-  // Support pillars
-  for (let i = -5; i <= 5; i++) {
-    const pillarGeom = new THREE.BoxGeometry(0.3, 8, 0.3);
-    const pillar = new THREE.Mesh(pillarGeom, trackMat);
-    pillar.position.set(i * 4, 4, -10);
-    group.add(pillar);
+  // Track rails
+  for (const zOff of [-0.8, 0.8]) {
+    const railGeom = new THREE.BoxGeometry(50, 0.12, 0.08);
+    const railMat = createLinocutMaterial({
+      color: new THREE.Color(0x2a2a30),
+      carveColor: new THREE.Color(0x0a0a10),
+    });
+    const rail = new THREE.Mesh(railGeom, railMat);
+    rail.position.set(0, 9.18, trackZ + zOff);
+    group.add(rail);
   }
 
-  // Train on track
-  const trainGeom = new THREE.BoxGeometry(12, 1.5, 1.8);
+  // Support pillars
+  for (let i = -6; i <= 6; i++) {
+    const pillarGeom = new THREE.BoxGeometry(0.25, 9, 0.25);
+    const pillar = new THREE.Mesh(pillarGeom, trackMat);
+    pillar.position.set(i * 4, 4.5, trackZ);
+    group.add(pillar);
+
+    // Cross brace
+    if (i < 6) {
+      const braceGeom = new THREE.BoxGeometry(4, 0.15, 0.15);
+      const brace = new THREE.Mesh(braceGeom, trackMat);
+      brace.position.set(i * 4 + 2, 6, trackZ);
+      group.add(brace);
+    }
+  }
+
+  // Teal/cyan train on track
+  const trainBodyGeom = new THREE.BoxGeometry(14, 1.4, 2.0);
   const trainMat = createLinocutMaterial({
-    color: new THREE.Color(0x2a8a7a),
+    color: new THREE.Color(0x2a9a8a),
     carveColor: new THREE.Color(0x0a2a25),
-    carveDepth: 0.7,
+    carveDepth: 0.75,
     carveScale: 3.0,
+    gougeAmount: 0.35,
     overprintColor: new THREE.Color(0xc44030),
-    overprintAmount: 0.1,
+    overprintAmount: 0.06,
   });
-  const train = new THREE.Mesh(trainGeom, trainMat);
-  train.position.y = 9;
-  train.position.z = -10;
+  const train = new THREE.Mesh(trainBodyGeom, trainMat);
+  train.position.y = 10;
+  train.position.z = trackZ;
   train.userData.isOverheadTrain = true;
   group.add(train);
 
-  // Windows on train
-  for (let w = 0; w < 8; w++) {
-    const winGeom = new THREE.PlaneGeometry(0.6, 0.5);
-    const winMat = new THREE.MeshBasicMaterial({ color: 0xdde8f0 });
+  // Train roof
+  const roofGeom = new THREE.BoxGeometry(14.2, 0.1, 2.1);
+  const roofMat = createLinocutMaterial({
+    color: new THREE.Color(0x1a4a42),
+    carveColor: new THREE.Color(0x0a2020),
+    carveDepth: 0.9,
+  });
+  const roof = new THREE.Mesh(roofGeom, roofMat);
+  roof.position.y = 10.75;
+  roof.position.z = trackZ;
+  roof.userData.isOverheadTrain = true;
+  group.add(roof);
+
+  // Windows — bright
+  for (let w = 0; w < 10; w++) {
+    const winGeom = new THREE.PlaneGeometry(0.7, 0.5);
+    const winMat = new THREE.MeshBasicMaterial({
+      color: 0xdde8f0,
+    });
     const win = new THREE.Mesh(winGeom, winMat);
-    win.position.set(-5 + w * 1.4, 9.1, -9.09);
+    win.position.set(-6 + w * 1.3, 10.2, trackZ - 1.01);
+    win.userData.isOverheadTrain = true;
     group.add(win);
+
+    const win2 = win.clone();
+    win2.position.z = trackZ + 1.01;
+    win2.rotation.y = Math.PI;
+    group.add(win2);
   }
+
+  // Train stripe
+  const stripeGeom = new THREE.BoxGeometry(14.1, 0.08, 2.05);
+  const stripeMat = new THREE.MeshBasicMaterial({ color: 0xf0ece8 });
+  const stripe = new THREE.Mesh(stripeGeom, stripeMat);
+  stripe.position.y = 9.8;
+  stripe.position.z = trackZ;
+  stripe.userData.isOverheadTrain = true;
+  group.add(stripe);
 
   return group;
 }
 
 function createBuildings(params) {
   const group = new THREE.Group();
-  const count = 8;
+  const count = 10;
 
   for (let i = 0; i < count; i++) {
-    const h = 5 + Math.random() * 15;
-    const w = 2 + Math.random() * 4;
-    const d = 2 + Math.random() * 3;
+    const h = 6 + Math.random() * 18;
+    const w = 2.5 + Math.random() * 5;
+    const d = 2 + Math.random() * 4;
     const geom = new THREE.BoxGeometry(w, h, d);
     const mat = createLinocutMaterial({
-      color: new THREE.Color(0x12121a),
-      carveColor: new THREE.Color(0x08080c),
-      carveDepth: 0.6,
-      carveScale: 2.0 + Math.random(),
+      color: new THREE.Color(0x101018),
+      carveColor: new THREE.Color(0x060608),
+      carveDepth: 0.55,
+      carveScale: 1.8 + Math.random() * 1.5,
       gougeAmount: 0.2,
     });
     const building = new THREE.Mesh(geom, mat);
     const side = i < count / 2 ? -1 : 1;
     building.position.set(
-      side * (15 + Math.random() * 10),
+      side * (16 + Math.random() * 12),
       h / 2,
-      -8 + (i % 4) * 5
+      -10 + (i % 5) * 6
     );
     group.add(building);
 
-    // Lit windows
-    for (let wy = 0; wy < Math.floor(h / 1.5); wy++) {
-      for (let wx = 0; wx < Math.floor(w / 1.2); wx++) {
-        if (Math.random() > 0.4) {
-          const winGeom = new THREE.PlaneGeometry(0.4, 0.5);
-          const colors = [0xf0d080, 0xe8e4e0, 0xc44030, 0x2a9a8a];
-          const winColor = colors[Math.floor(Math.random() * colors.length)];
+    // Windows — warm lit
+    const rows = Math.floor(h / 1.8);
+    const cols = Math.floor(w / 1.0);
+    for (let wy = 0; wy < rows; wy++) {
+      for (let wx = 0; wx < cols; wx++) {
+        if (Math.random() > 0.35) {
+          const winGeom = new THREE.PlaneGeometry(0.5, 0.6);
+          const winColors = [0xf0d080, 0xe8e4e0, 0xc44030, 0x2a9a8a, 0xf0d080];
+          const winColor = winColors[Math.floor(Math.random() * winColors.length)];
           const winMat = new THREE.MeshBasicMaterial({
             color: winColor,
             transparent: true,
-            opacity: 0.7 + Math.random() * 0.3,
+            opacity: 0.6 + Math.random() * 0.4,
           });
           const win = new THREE.Mesh(winGeom, winMat);
           win.position.set(
-            building.position.x - w / 2 + 0.5 + wx * 1.2 + (side > 0 ? w : 0),
-            1 + wy * 1.5,
-            building.position.z
+            building.position.x + (-w / 2 + 0.5 + wx * 1.0) * side,
+            1.2 + wy * 1.8,
+            building.position.z + d / 2 * (side > 0 ? 1 : -1) * 0.5
           );
-          win.rotation.y = side > 0 ? 0 : Math.PI;
+          win.rotation.y = side > 0 ? Math.PI / 2 : -Math.PI / 2;
           group.add(win);
         }
       }
@@ -416,92 +546,146 @@ function createBuildings(params) {
   return group;
 }
 
-function createReflections(parent, params) {
-  // Simplified reflections via a mirrored semi-transparent plane
-  const geom = new THREE.PlaneGeometry(30, 30);
-  const mat = new THREE.MeshBasicMaterial({
-    color: 0x0a1520,
-    transparent: true,
-    opacity: 0.15,
+function createStreetDetails(params) {
+  const group = new THREE.Group();
+
+  // Street lamp posts
+  const lampMat = createLinocutMaterial({
+    color: new THREE.Color(0x1a1a20),
+    carveColor: new THREE.Color(0x0a0a10),
   });
-  const ref = new THREE.Mesh(geom, mat);
-  ref.rotation.x = -Math.PI / 2;
-  ref.position.y = 0.005;
-  return ref;
+
+  for (const pos of [[-4, 0, -3], [4, 0, 3], [-3, 0, 4], [5, 0, -4]]) {
+    const poleGeom = new THREE.CylinderGeometry(0.04, 0.05, 4, 5);
+    const pole = new THREE.Mesh(poleGeom, lampMat);
+    pole.position.set(...pos);
+    pole.position.y = 2;
+    group.add(pole);
+
+    // Lamp head
+    const lampGeom = new THREE.SphereGeometry(0.15, 6, 6);
+    const lampM = new THREE.MeshBasicMaterial({ color: 0xf0d080 });
+    const lamp = new THREE.Mesh(lampGeom, lampM);
+    lamp.position.set(pos[0], 4.1, pos[2]);
+    group.add(lamp);
+
+    // Light glow
+    const glowGeom = new THREE.SphereGeometry(0.4, 8, 8);
+    const glowMat = new THREE.MeshBasicMaterial({
+      color: 0xf0d080,
+      transparent: true,
+      opacity: 0.15,
+    });
+    const glow = new THREE.Mesh(glowGeom, glowMat);
+    glow.position.copy(lamp.position);
+    group.add(glow);
+  }
+
+  // Pedestrian signal boxes
+  const sigMat = createLinocutMaterial({
+    color: new THREE.Color(0x151518),
+    carveColor: new THREE.Color(0x050508),
+  });
+
+  for (const pos of [[-6, 0, 0], [6, 0, 0]]) {
+    const boxGeom = new THREE.BoxGeometry(0.2, 0.5, 0.15);
+    const box = new THREE.Mesh(boxGeom, sigMat);
+    box.position.set(pos[0], 2.5, pos[2]);
+    group.add(box);
+
+    // Walking figure (white)
+    const figGeom = new THREE.PlaneGeometry(0.12, 0.2);
+    const figMat = new THREE.MeshBasicMaterial({ color: 0xf0ece8 });
+    const fig = new THREE.Mesh(figGeom, figMat);
+    fig.position.set(pos[0] + (pos[0] > 0 ? -0.11 : 0.11), 2.5, pos[2]);
+    fig.rotation.y = pos[0] > 0 ? -Math.PI / 2 : Math.PI / 2;
+    group.add(fig);
+  }
+
+  return group;
 }
 
-// Signal cycle: waiting -> crossing -> draining
+// Signal cycle: waiting (0-25%) → crossing (25-60%) → draining (60-100%)
 function updateCrossing(group, time, dt) {
   const ud = group.userData;
-  if (!ud) return;
+  ud.cycleTime += dt;
+  const cycleTime = 10;
+  const phase = (ud.cycleTime % cycleTime) / cycleTime;
 
-  ud.timer += dt;
-  const cycleTime = 8; // seconds per full cycle
-  const phase = (ud.timer % cycleTime) / cycleTime;
-
-  // Update road shader
+  // Update road shader time
   group.traverse(child => {
-    if (child.userData.mat && child.userData.mat.uniforms) {
+    if (child.userData.mat?.uniforms?.uTime) {
       child.userData.mat.uniforms.uTime.value = time;
     }
   });
 
-  // Update rain
+  // Rain animation
   group.traverse(child => {
     if (child.userData.velocities) {
       const pos = child.geometry.attributes.position;
       const vels = child.userData.velocities;
+      const spread = child.userData.spread;
+      const height = child.userData.height;
       for (let i = 0; i < pos.count; i++) {
         let y = pos.getY(i);
         y -= vels[i].speed * dt;
+        let x = pos.getX(i) + vels[i].windX * dt * 2;
+        let z = pos.getZ(i) + vels[i].windZ * dt;
         if (y < 0) {
-          y = child.userData.height;
-          pos.setX(i, (Math.random() - 0.5) * child.userData.spread);
-          pos.setZ(i, (Math.random() - 0.5) * child.userData.spread);
+          y = height;
+          x = (Math.random() - 0.5) * spread;
+          z = (Math.random() - 0.5) * spread;
         }
-        // Wind drift
-        pos.setX(i, pos.getX(i) + Math.sin(time + i) * 0.001);
+        pos.setX(i, x);
         pos.setY(i, y);
+        pos.setZ(i, z);
       }
       pos.needsUpdate = true;
     }
   });
 
-  // Signal light cycling
-  const signalPhase = phase * 4;
+  // Signal lights
+  const signalOn = phase < 0.25 || phase > 0.6; // Red on during wait and drain
   group.traverse(child => {
     if (child.userData.isLight) {
-      const isRedOn = signalPhase < 2;
       if (child.userData.color === 'red') {
-        child.material.color.setHex(isRedOn ? 0xcc2020 : 0x330808);
+        child.material.color.setHex(signalOn ? 0xcc2020 : 0x220808);
       } else if (child.userData.color === 'teal') {
-        child.material.color.setHex(!isRedOn ? 0x20ccaa : 0x083328);
+        child.material.color.setHex(!signalOn ? 0x20ccaa : 0x082020);
       }
     }
   });
 
-  // Umbrella movement based on phase
-  const crowd = group.children.find(c => c.children?.length > 20);
-  if (crowd) {
-    const crossing = phase > 0.25 && phase < 0.6;
-    crowd.children.forEach((umbrella, i) => {
-      if (crossing) {
-        // Surge diagonally
+  // Umbrella crowd animation
+  group.traverse(child => {
+    if (child.userData?.waitPos && child.userData?.crossTarget) {
+      const ud2 = child.userData;
+      if (phase < 0.25) {
+        // Waiting — slight bobbing
+        child.position.y = Math.sin(time * 3 + ud2.phase) * 0.02;
+        child.position.x += Math.sin(time + ud2.phase) * 0.001;
+      } else if (phase < 0.6) {
+        // Surging diagonally across
         const t = (phase - 0.25) / 0.35;
-        umbrella.position.x += Math.cos(i * 0.7) * 0.02;
-        umbrella.position.z += Math.sin(i * 0.5) * 0.02;
-      } else if (phase > 0.6) {
-        // Drain away
-        umbrella.position.x += (umbrella.userData.targetX - umbrella.position.x) * 0.01;
-        umbrella.position.z += (umbrella.userData.targetZ - umbrella.position.z) * 0.01;
+        const eased = t * t * (3 - 2 * t); // smoothstep
+        child.position.x = ud2.waitPos.x + (ud2.crossTarget.x - ud2.waitPos.x) * eased;
+        child.position.z = ud2.waitPos.z + (ud2.crossTarget.z - ud2.waitPos.z) * eased;
+        // Bob while walking
+        child.position.y = Math.abs(Math.sin(time * 6 + ud2.phase)) * 0.05;
+      } else {
+        // Draining away
+        const t = (phase - 0.6) / 0.4;
+        child.position.x = ud2.crossTarget.x + (ud2.drainTarget.x - ud2.crossTarget.x) * t;
+        child.position.z = ud2.crossTarget.z + (ud2.drainTarget.z - ud2.crossTarget.z) * t;
+        child.position.y = Math.max(0, 0.05 * (1 - t));
       }
-    });
-  }
+    }
+  });
 
   // Overhead train movement
   group.traverse(child => {
     if (child.userData.isOverheadTrain) {
-      child.position.x = Math.sin(time * 0.3) * 15;
+      child.position.x = Math.sin(time * 0.25) * 18;
     }
   });
 }

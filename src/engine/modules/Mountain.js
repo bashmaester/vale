@@ -1,86 +1,128 @@
-// Procedural Mountain Module
-// Creates stylized mountains with carved linocut appearance
+// Procedural Mountain Module — rich carved terrain
 import * as THREE from 'three';
 import { createLinocutMaterial } from '../shaders/linocut.js';
 import SimplexNoise from '../procedural/noise.js';
 
 export function createMountainModule(params = {}) {
   const group = new THREE.Group();
-  const noise = new SimplexNoise(params.seed || Math.random() * 10000);
-  const numPeaks = params.numPeaks || 3;
-  const width = params.width || 60;
-  const depth = params.depth || 30;
-  const height = params.height || 20;
+  const noise = new SimplexNoise(params.seed || 42);
+  const width = params.width || 80;
+  const depth = params.depth || 40;
+  const height = params.height || 22;
 
-  // Create terrain mesh
-  const terrain = createTerrain(noise, width, depth, height, params);
-  group.add(terrain);
+  // Background mountains (distant, darker, less detail)
+  const bgMountains = createMountainLayer(noise, width * 1.5, depth * 0.8, height * 0.8, {
+    ...params,
+    distance: 1.0,
+    offset: { x: 0, z: -15 },
+    color: 0xe8e4e0,
+    carveColor: 0x2a2a30,
+    segments: 40,
+  });
+  group.add(bgMountains);
 
-  // Add pine trees
+  // Main mountains (mid-distance)
+  const mainMountains = createMountainLayer(noise, width, depth, height, {
+    ...params,
+    distance: 0.5,
+    offset: { x: 0, z: -5 },
+    color: 0xfaf8f5,
+    carveColor: 0x1a1a20,
+    segments: 80,
+    hasTunnel: true,
+  });
+  group.add(mainMountains);
+
+  // Foreground hills
+  const fgHills = createMountainLayer(noise, width * 0.8, depth * 0.4, height * 0.25, {
+    ...params,
+    distance: 0.1,
+    offset: { x: 5, z: 8 },
+    color: 0xf5f2ee,
+    carveColor: 0x2a2a30,
+    segments: 30,
+    hasTunnel: false,
+  });
+  group.add(fgHills);
+
+  // Pine forest
   if (params.trees !== false) {
-    const trees = createForest(noise, width, depth, height, params);
-    group.add(trees);
+    const forest = createForest(noise, width, depth, height, params);
+    group.add(forest);
   }
 
-  // Snow ground plane
+  // Foreground sparse grass/plants
+  const grass = createForegroundGrass(noise, width, depth, params);
+  group.add(grass);
+
+  // Snow ground
   const ground = createSnowGround(width, depth);
   ground.position.y = -0.1;
   group.add(ground);
 
   group.userData = { type: 'mountain', params };
-
   return group;
 }
 
-function createTerrain(noise, width, depth, height, params) {
-  const segments = params.segments || 80;
+function createMountainLayer(noise, width, depth, height, opts) {
+  const segments = opts.segments || 60;
   const geom = new THREE.PlaneGeometry(width, depth, segments, segments);
   const pos = geom.attributes.position;
+
+  const dist = opts.distance || 0.5;
+  const ox = opts.offset?.x || 0;
+  const oz = opts.offset?.z || 0;
 
   for (let i = 0; i < pos.count; i++) {
     const x = pos.getX(i);
     const y = pos.getY(i);
 
-    // Multi-octave terrain
-    let h = 0;
-    // Base large mountain shape
-    h += Math.pow(Math.max(0, 1 - Math.abs(x) / (width * 0.4)), 1.5) * height * 0.7;
-    // Secondary peaks
-    h += Math.pow(Math.max(0, 1 - Math.abs(x + 10) / 15), 2) * height * 0.5;
-    h += Math.pow(Math.max(0, 1 - Math.abs(x - 15) / 12), 2) * height * 0.4;
-    // Noise detail
-    h += noise.fbm(x * 0.05, y * 0.05, 4, 2, 0.5) * height * 0.3;
     // Ridged noise for sharp peaks
-    h += noise.ridged(x * 0.08, y * 0.08, 3) * height * 0.15;
+    let h = 0;
 
-    // Tunnel opening (for the train scene)
-    if (params.hasTunnel) {
-      const tunnelX = params.tunnelX || 5;
-      const tunnelZ = params.tunnelZ || 0;
-      const tunnelR = params.tunnelRadius || 2;
-      const dist = Math.sqrt((x - tunnelX) ** 2 + (y - tunnelZ) ** 2);
-      if (dist < tunnelR + 1) {
-        h = Math.min(h, Math.max(0, (dist - tunnelR) * 2));
-        // Carve tunnel arch
-        if (dist < tunnelR) {
-          h = 0;
-        }
+    // Primary sharp ridge
+    const ridgeX = (x + ox) * 0.04;
+    const ridgeY = (y + oz) * 0.04;
+    h += noise.ridged(ridgeX, ridgeY, 5) * height * 0.6;
+
+    // Secondary broad shape
+    h += Math.pow(Math.max(0, 1 - Math.abs(x + ox) / (width * 0.35)), 2) * height * 0.5;
+
+    // Peak clusters
+    const peak1 = Math.pow(Math.max(0, 1 - Math.hypot(x + ox + 12, y + oz) / 12), 2.5);
+    const peak2 = Math.pow(Math.max(0, 1 - Math.hypot(x + ox - 15, y + oz + 3) / 10), 2.5);
+    const peak3 = Math.pow(Math.max(0, 1 - Math.hypot(x + ox - 5, y + oz - 5) / 14), 2);
+    h += (peak1 * 0.7 + peak2 * 0.5 + peak3 * 0.4) * height * 0.4;
+
+    // FBM detail
+    h += noise.fbm((x + ox) * 0.06, (y + oz) * 0.06, 4, 2.2, 0.5) * height * 0.15;
+
+    // Tunnel carve
+    if (opts.hasTunnel) {
+      const tx = 8 - ox;
+      const tz = -oz;
+      const tr = 2.8;
+      const d = Math.hypot(x - tx, y - tz);
+      if (d < tr + 0.5) {
+        h = Math.max(0, h * Math.max(0, (d - tr) / 0.5));
+        if (d < tr - 0.2) h = 0;
       }
     }
 
-    pos.setZ(i, h);
+    pos.setZ(i, h * dist);
   }
 
   geom.computeVertexNormals();
 
   const mat = createLinocutMaterial({
-    color: new THREE.Color(0xfaf8f5),
-    carveColor: new THREE.Color(0x1a1a20),
-    carveDepth: 0.7,
-    carveScale: 2.5,
-    gougeAmount: 0.35,
+    color: new THREE.Color(opts.color || 0xfaf8f5),
+    carveColor: new THREE.Color(opts.carveColor || 0x1a1a20),
+    carveDepth: 0.75,
+    carveScale: 2.0 / Math.max(dist, 0.3),
+    gougeAmount: 0.45,
     grainIntensity: 0.06,
     edgeDarken: 0.5,
+    overprintAmount: 0.05,
     side: THREE.DoubleSide,
   });
 
@@ -92,31 +134,77 @@ function createTerrain(noise, width, depth, height, params) {
 
 function createForest(noise, width, depth, height, params) {
   const group = new THREE.Group();
-  const numTrees = params.treeCount || 60;
-  const treeGeom = createPineGeometry();
+  const count = params.treeCount || 80;
+
+  // Tree silhouettes — carved dark shapes
+  const trunkGeom = new THREE.CylinderGeometry(0.04, 0.06, 0.6, 4);
+  const canopyShapes = [];
+  for (let layer = 0; layer < 3; layer++) {
+    const shape = new THREE.Shape();
+    const w = 0.35 - layer * 0.08;
+    const h = 0.5;
+    shape.moveTo(0, 0);
+    shape.lineTo(-w, 0);
+    shape.lineTo(-w * 0.6, h * 0.3);
+    shape.lineTo(-w * 0.8, h * 0.3);
+    shape.lineTo(-w * 0.3, h * 0.7);
+    shape.lineTo(-w * 0.5, h * 0.7);
+    shape.lineTo(0, h);
+    shape.lineTo(w * 0.5, h * 0.7);
+    shape.lineTo(w * 0.3, h * 0.7);
+    shape.lineTo(w * 0.8, h * 0.3);
+    shape.lineTo(w * 0.6, h * 0.3);
+    shape.lineTo(w, 0);
+    shape.lineTo(0, 0);
+    const extrudeSettings = { depth: 0.06, bevelEnabled: false };
+    canopyShapes.push(new THREE.ExtrudeGeometry(shape, extrudeSettings));
+  }
+
   const treeMat = createLinocutMaterial({
     color: new THREE.Color(0x1a1a20),
-    carveColor: new THREE.Color(0x0a0a10),
-    carveDepth: 0.8,
-    carveScale: 5.0,
+    carveColor: new THREE.Color(0x08080c),
+    carveDepth: 0.85,
+    carveScale: 6.0,
     gougeAmount: 0.3,
   });
 
-  for (let i = 0; i < numTrees; i++) {
-    const x = (Math.random() - 0.5) * width * 0.8;
-    const z = (Math.random() - 0.5) * depth * 0.6;
+  for (let i = 0; i < count; i++) {
+    const x = (Math.random() - 0.5) * width * 0.7;
+    const z = (Math.random() - 0.5) * depth * 0.5;
 
-    // Check slope - place trees on slopes
-    const nx = x * 0.05;
-    const ny = z * 0.05;
+    const tree = new THREE.Group();
+
+    // Trunk
+    const trunk = new THREE.Mesh(trunkGeom, treeMat);
+    trunk.position.y = 0.3;
+    tree.add(trunk);
+
+    // Canopy layers
+    for (let layer = 0; layer < 3; layer++) {
+      const canopy = new THREE.Mesh(canopyShapes[layer], treeMat);
+      canopy.position.y = 0.5 + layer * 0.35;
+      canopy.position.z = -0.03;
+      const s = 0.8 + Math.random() * 0.4;
+      canopy.scale.set(s, s, s);
+      tree.add(canopy);
+    }
+
+    // Position on terrain
+    const nx = x * 0.04;
+    const ny = z * 0.04;
+    let terrainH = 0;
+    terrainH += noise.ridged(nx, ny, 5) * height * 0.6;
+    terrainH += Math.pow(Math.max(0, 1 - Math.abs(x) / (width * 0.35)), 2) * height * 0.5;
+    const peak1 = Math.pow(Math.max(0, 1 - Math.hypot(x + 12, z) / 12), 2.5);
+    terrainH += (peak1 * 0.7 + 0.2) * height * 0.4 * 0.5;
+
+    // Place on slopes, avoid tunnel
     const slope = Math.abs(noise.noise2D(nx + 0.1, ny) - noise.noise2D(nx, ny));
-
-    if (slope > 0.02 && slope < 0.1) {
-      const tree = new THREE.Mesh(treeGeom, treeMat);
-      const h = Math.pow(Math.max(0, 1 - Math.abs(x) / (width * 0.4)), 1.5) * height * 0.7;
-      tree.position.set(x, h * 0.5 + 0.5, z);
-      const s = 0.5 + Math.random() * 0.8;
-      tree.scale.set(s, s * (1 + Math.random() * 0.5), s);
+    const tunnelDist = Math.hypot(x - 8, z);
+    if (slope > 0.01 && slope < 0.08 && terrainH > 1 && tunnelDist > 4) {
+      tree.position.set(x, terrainH * 0.5, z);
+      const s = 0.6 + Math.random() * 0.6;
+      tree.scale.set(s, s * (0.9 + Math.random() * 0.3), s);
       tree.rotation.y = Math.random() * Math.PI * 2;
       group.add(tree);
     }
@@ -125,36 +213,52 @@ function createForest(noise, width, depth, height, params) {
   return group;
 }
 
-function createPineGeometry() {
-  const shape = new THREE.Shape();
-  // Simple pine tree silhouette
-  shape.moveTo(0, 0);
-  shape.lineTo(-0.3, 0);
-  shape.lineTo(-0.15, 0.5);
-  shape.lineTo(-0.4, 0.5);
-  shape.lineTo(-0.1, 1.2);
-  shape.lineTo(-0.3, 1.2);
-  shape.lineTo(0, 2.0);
-  shape.lineTo(0.3, 1.2);
-  shape.lineTo(0.1, 1.2);
-  shape.lineTo(0.4, 0.5);
-  shape.lineTo(0.15, 0.5);
-  shape.lineTo(0.3, 0);
-  shape.lineTo(0, 0);
+function createForegroundGrass(noise, width, depth, params) {
+  const group = new THREE.Group();
+  const count = params.grassCount || 30;
 
-  const extrudeSettings = { depth: 0.1, bevelEnabled: false };
-  const geom = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-  geom.translate(0, 0, -0.05);
-  return geom;
+  const grassMat = createLinocutMaterial({
+    color: new THREE.Color(0x1a1a20),
+    carveColor: new THREE.Color(0x08080c),
+    carveDepth: 0.9,
+    carveScale: 8.0,
+    gougeAmount: 0.2,
+  });
+
+  for (let i = 0; i < count; i++) {
+    const x = (Math.random() - 0.5) * width * 0.6;
+    const z = 5 + Math.random() * depth * 0.3;
+
+    // Grass tuft — simple V-shape
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    shape.lineTo(-0.08, 0.4 + Math.random() * 0.3);
+    shape.lineTo(-0.02, 0.1);
+    shape.lineTo(0.02, 0.5 + Math.random() * 0.2);
+    shape.lineTo(0.05, 0.15);
+    shape.lineTo(0.1, 0.3 + Math.random() * 0.2);
+    shape.lineTo(0.05, 0);
+    shape.lineTo(0, 0);
+
+    const geom = new THREE.ExtrudeGeometry(shape, { depth: 0.02, bevelEnabled: false });
+    const grass = new THREE.Mesh(geom, grassMat);
+    grass.position.set(x, 0, z);
+    grass.rotation.y = Math.random() * Math.PI * 2;
+    const s = 0.5 + Math.random() * 0.8;
+    grass.scale.set(s, s, s);
+    group.add(grass);
+  }
+
+  return group;
 }
 
 function createSnowGround(width, depth) {
-  const geom = new THREE.PlaneGeometry(width * 1.5, depth * 2);
+  const geom = new THREE.PlaneGeometry(width * 2, depth * 3, 20, 20);
   const mat = createLinocutMaterial({
     color: new THREE.Color(0xfaf8f5),
-    carveColor: new THREE.Color(0xd0ccc8),
-    carveDepth: 0.3,
-    carveScale: 1.5,
+    carveColor: new THREE.Color(0xd8d4d0),
+    carveDepth: 0.25,
+    carveScale: 1.2,
     gougeAmount: 0.1,
     grainIntensity: 0.04,
   });
