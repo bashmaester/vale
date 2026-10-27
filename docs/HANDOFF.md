@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 10, v0.1.2), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 11, v0.1.3), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -71,6 +71,51 @@ Recent fixes that matter (all verified with stills):
 Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
 luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
+
+### Turn 11 — frame budget, GPU-side look graph, walls, 3×3 buffer
+
+Perf was still the complaint, so this turn went after the two structural costs
+rather than more micro-tuning:
+
+1. **The look graph is compiled, not branched.** `ShaderGraph.isLive()` decides
+   whether a node contributes at all; `compile()` skips the function, the
+   uniforms and the call for dead nodes, and the renderer rebuilds the program
+   when `graph.activity()` changes. Switching the hatch to 0 now removes its
+   texture reads from the fragment shader instead of multiplying by 0.
+2. **No per-frame texture reallocation.** `texImage2D` per frame was replaced
+   with one allocation per size plus `texSubImage2D`, and
+   `preserveDrawingBuffer` is opt-in (`?capture=1`). That flag alone costs a
+   frame copy in every browser.
+
+Measured in Node (`@napi-rs/canvas`, 1440×810, 60-frame average). These rank
+costs, they do not predict browser timings:
+
+| Case | ms/frame |
+| --- | --- |
+| everything on | 42.5 |
+| crowd off | 31.3 |
+| vehicles off | 34.5 |
+| rain off | 36.5 |
+| puddles off | 36.5 |
+| reflections off | 36.2 |
+| signals off | 37.2 |
+| flicker off | 38.4 |
+| render scale 0.75 | 26.7 |
+| render scale 0.5 | 17.7 |
+| every feature off | 17.0 |
+
+The lesson: the plate is painted on the CPU, so **pixels are the budget**. Every
+subsystem is now a switch, and the governor trades resolution instead of frames.
+
+Also this turn: `walls` is a bitmask (back / left, default open), the eight
+buffer cells render as wireframe or point cloud with per-cell toggles, the
+drone is the default camera, and `\` hides the whole UI.
+
+**Next architectural step (not done):** move the set and the actors off
+Canvas2D — batched WebGL2 instancing first (quads for strokes, one draw call per
+line weight), WebGPU behind a capability check once the geometry contract is
+stable. The Painter API (`projectPoly`, `line3`, `box`, `ellipse`, `rect`) is the
+migration seam: it is already the only surface the scene draws through.
 
 ### Turn 10 — perfect loop, performance, cleaner case
 

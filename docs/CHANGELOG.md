@@ -2,6 +2,56 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 11: the frame budget pass
+
+**User feedback:** still not smooth; add a stats overlay and switches for every
+feature; “rebuild the engine from scratch if you must while trying to keep the
+look”; audit the texture features so a strength of 0 really switches them off;
+default camera should be the drone; remaining z-sorting errors; walls should be
+a toggle; render the surrounding cells of a 3×3 volume as a cheap point cloud,
+each neighbour switchable and off by default; hide the UI until `\` is pressed.
+
+### Added
+
+- `src/stats.js` — a self-contained stats.js-style overlay (fps, ms, 120-sample
+  graph with 16.7/33.3 ms guides, per-stage bars, live feature flags). No CDN.
+- `src/neighbors.js` — the eight buffer cells of the 3×3 volume. Each cell is a
+  real, correctly-offset copy of the tile's footprint and building lots, drawn
+  as a wireframe or a point cloud with adjustable opacity.
+- `CameraDirector.place()` and per-mode `place()` hooks, so tools and deep links
+  can teleport the camera without fighting the mode's own integrator.
+- `params.walls` bitmask (`1` back wall, `2` left wall, `0` = open diorama,
+  default `0`), `params.bufferCells` bitmask, `params.bufferStyle`,
+  `params.bufferOpacity`, and seven `feat*` switches (crowd, traffic, rain,
+  puddles, reflections, signals, lamp flicker).
+- Adaptive resolution: a governor in `src/main.js` moves the render scale in
+  5 % steps between 45 % and 100 % to hold ~60 fps (`?scale=` pins it).
+
+### Changed
+
+- **The shader graph compiles only live nodes.** A node that is switched off, or
+  whose every driving strength is 0, is dropped entirely — no function, no
+  uniforms, no call. Previously each node compiled in and early-returned on a
+  `u_enabled` uniform, which still paid for the branch and the preamble.
+- **Renderer no longer reallocates its textures every frame.** The plate and
+  field textures are allocated once per size and updated with `texSubImage2D`;
+  the program is rebuilt only when the live-node set changes; and
+  `preserveDrawingBuffer` is off unless `?capture=1` (it forced a full-frame
+  copy every frame).
+- The backdrop is split into two cached layers — `drawWalls()` (behind the
+  train) and the rest of the set (in front) — so the elevated train no longer
+  paints over the buildings. `drawGroundSlab()` closes the floor on its own.
+- Default camera is the drone, opening on the cinematic rig's framing.
+- The UI is hidden on load. `\` shows/hides it; the tab handle fades in on
+  hover and disappears entirely while the UI is hidden.
+
+### Fixed
+
+- `caseFrame` was never read by the case builder (it checked `params.case`), so
+  the toggle did nothing; the frame now disappears when switched off.
+- Shader presets no longer leak `enabled: false` from `plate` into the next
+  preset.
+
 ## 2026-10-27 — Turn 10: perfect loop, faster frames, cleaner case
 
 Tagged `v0.1.1` at the start of the turn (the state the user had just reviewed).

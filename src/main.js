@@ -3,6 +3,7 @@ import { Renderer } from './renderer.js';
 import { Scene } from './scene.js';
 import { Lab } from './lab.js';
 import { Sidebar } from './sidebar.js';
+import { StatsPanel } from './stats.js';
 import { DURATION } from './timeline.js';
 import { clamp } from './math.js';
 
@@ -52,14 +53,35 @@ const renderer = new Renderer(canvas, graph, RW, RH);
 // ?finish=raw shows the ink plate with no print graph, for judging the drawing.
 if (q.get('finish') === 'raw' || q.get('raw') === '1') renderer.bypass = true;
 
-const camMode = q.get('cam');
+// Drone is the default eye: it reads the volume best and needs no input.
+const camMode = q.get('cam') || 'drone';
 scene.cameraController.hudEnabled = q.get('hud') !== '0';
-if (camMode) scene.cameraController.setMode(camMode === 'user' ? 'third' : camMode);
+scene.cameraController.setMode(camMode === 'user' ? 'third' : camMode);
 const shotParam = q.get('shot');
 if (shotParam) scene.cameraController.setShot(shotParam);
 
 const lab = new Lab({ graph, scene, renderer, state });
-const sidebar = new Sidebar({ graph, scene, renderer, state, director: scene.cameraController });
+const stats = new StatsPanel({ scene, renderer, state }).mount();
+
+// --- adaptive resolution ---------------------------------------------------
+// The plate is painted on the CPU, so the only lever that scales every stage at
+// once is the number of pixels. Instead of guessing a fixed quality, watch the
+// frame time and move the render scale until the film holds ~60 fps.
+const perf = {
+  auto: !q.has('scale'),
+  quality() { return quality; },
+  setQuality(v) { setQuality(v); },
+  setAuto(v) { perf.auto = !!v; },
+};
+function setQuality(v) {
+  const next = clamp(Number(v) || 1, 0.4, 1);
+  if (Math.abs(next - quality) < 0.001) return quality;
+  quality = next;
+  applySize(W, H);
+  return quality;
+}
+
+const sidebar = new Sidebar({ graph, scene, renderer, state, director: scene.cameraController, stats, perf });
 sidebar.mount();
 // Handles go out only after every construction has finished: referencing `lab`
 // before this line threw a TDZ ReferenceError and blanked the whole page.
@@ -77,12 +99,10 @@ function applySize(nextW, nextH) {
 window.VALE = {
   graph, scene, renderer, lab, sidebar, state, get W() { return RW; }, get H() { return RH; },
   DURATION, applySize,
+  stats, perf,
   get quality() { return quality; },
-  setQuality(v) {
-    quality = clamp(Number(v) || 1, 0.4, 1);
-    applySize(W, H);
-    return quality;
-  },
+  setQuality,
+  get scale() { return { W: RW, H: RH, quality, auto: perf.auto }; },
 };
 
 if (!size0.fixed) {
@@ -93,13 +113,52 @@ if (!size0.fixed) {
   });
 }
 
-if (q.has('lab')) lab.open();
-if (q.has('ui') || q.has('panel')) sidebar.toggle(true);
+// The UI is hidden on load: this is a film, not a dashboard. `\` reveals it.
+const ui = { shown: false };
+function setUI(show) {
+  ui.shown = !!show;
+  document.body.classList.toggle('ui-hidden', !ui.shown);
+  if (!ui.shown) {
+    sidebar.toggle(false);
+    if (lab.close) lab.close();
+    stats.toggle(false);
+  } else {
+    sidebar.toggle(true);
+  }
+}
+document.body.classList.add('ui-hidden');
+window.addEventListener('keydown', (e) => {
+  const tag = (e.target && e.target.tagName || '').toLowerCase();
+  if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+  if (e.key === '\\') { e.preventDefault(); setUI(!ui.shown); }
+});
+window.VALE.setUI = setUI;
+window.VALE.ui = ui;
+
+if (q.has('lab')) { setUI(true); lab.open(); }
+if (q.get('stats') === '1') stats.toggle(true);
+if (q.has('ui') || q.has('panel')) setUI(true);
+
+// --- quality governor ------------------------------------------------------
+// One adjustment every ~1.5 s, in 5 % steps, with a dead band between 13.5 and
+// 20 ms so it cannot oscillate. ?scale= or a manual pick pins the scale.
+let frameEma = 16.7;
+let adjustIn = 90;
+function govern(frameMs) {
+  if (!perf.auto || state.paused) return;
+  if (!(frameMs > 0) || frameMs > 200) return;   // tab switch / resize spike
+  frameEma = frameEma * 0.9 + frameMs * 0.1;
+  if (--adjustIn > 0) return;
+  adjustIn = 90;
+  if (frameEma > 20 && quality > 0.45) setQuality(quality - 0.05);
+  else if (frameEma < 13.5 && quality < 1) setQuality(quality + 0.05);
+}
 
 let last = performance.now();
 let lastError = '';
 function frame(now) {
-  const dt = Math.min((now - last) / 1000, 0.05);
+  const frameMs = now - last;
+  const dt = Math.min(frameMs / 1000, 0.05);
   last = now;
   if (!state.paused) state.time += dt * state.speed;
   const t = state.time;
@@ -121,6 +180,8 @@ function frame(now) {
       console.error('VALE frame error:', err);
     }
   } finally {
+    stats.update(frameMs);
+    govern(frameMs);
     requestAnimationFrame(frame);
   }
 }

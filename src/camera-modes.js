@@ -278,7 +278,18 @@ export class DroneMode extends CameraMode {
   onWheel(dy) {
     this.speed = clamp(this.speed * Math.exp(-dy * 0.0009), 2, 60);
   }
-  enter() {}
+  // The drone is the default eye of the film, so it opens on the shot the
+  // cinematic rig established: high, three-quarter, whole volume in frame.
+  enter() {
+    const d = this.dir;
+    d.fov = 38.5;
+    if (this.touched) return;
+    d.eye = v3(9.4, 14.6, 38.8);
+    d.target = v3(-1.0, 3.6, -2.2);
+    const yp = yawPitchFromDir(norm3(sub3(d.target, d.eye)));
+    d.yaw = yp.yaw;
+    d.pitch = yp.pitch;
+  }
   reset() {}
   update(dt, params) {
     const d = this.dir;
@@ -294,14 +305,16 @@ export class DroneMode extends CameraMode {
     if (d.keys.has('e') || d.keys.has(' ')) m = add3(m, v3(0, 1, 0));
     if (d.keys.has('q')) m = sub3(m, v3(0, 1, 0));
     if (len3(m) > 0.001) {
+      this.touched = true;
       const step = scale3(norm3(m), speed);
       d.eye = add3(d.eye, step);
       d.target = add3(d.target, step);
     } else {
       d.target = add3(d.eye, look);
     }
-    // Damped so the drone glides to a stop instead of snapping.
-    d.fov = 52;
+    // Held at the film's framing until the pilot actually flies, then widened
+    // for a natural flying fov.
+    d.fov = this.touched ? 52 : 38.5;
     d.roll = 0;
     return true;
   }

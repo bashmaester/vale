@@ -26,12 +26,12 @@ footer{padding:20px clamp(18px,5vw,64px);border-top:1px solid #26332c;color:#617
 <body>
 <header>
   <h1>VALE / DOCS &amp; HANDOFF</h1>
-  <div class="meta">branch arena/bab4bc10-vale · commit 2095cd56 · built 2026-10-27T18:27:05.279Z · index.html 149,125 bytes</div>
+  <div class="meta">branch arena/bab4bc10-vale · commit b3af9f81 · built 2026-10-27T18:53:12.891Z · index.html 163,166 bytes</div>
 </header>
 <main>
   <a class="film" href="../index.html">▶ open the self-contained film</a>
   <div class="grid">
-    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>**Last updated:** 2026-10-27 (engine-foundation pass, branch `arena/bab4bc10-vale`)
+    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>**Last updated:** 2026-10-27 (Turn 11 — frame budget, branch `arena/bab4bc10-vale`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
@@ -45,7 +45,7 @@ such tile, presented in a physical-looking case (plinth, corner posts, cut-face
 caps, engraved label) so the modularity is vi</p></a>
     <a class="card" href="CHANGELOG.md"><h2>CHANGELOG</h2><p>Dates use the user’s local timezone (America/New_York).</p></a>
     <a class="card" href="CI.md"><h2>CI / PAGES</h2><p>The working agreement is:</p></a>
-    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit 2095cd56 on arena/bab4bc10-vale, built 2026-10-27T18:27:05.279Z.</p></a>
+    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit b3af9f81 on arena/bab4bc10-vale, built 2026-10-27T18:53:12.891Z.</p></a>
     <a class="card" href="DEPLOY_STATUS.md"><h2>DEPLOY STATUS</h2><p>Fresh deployment metadata for this Pages build.</p></a>
   </div>
   <h2 class="sec">README (live copy)</h2>
@@ -87,7 +87,8 @@ Useful URLs:
 | `index.html?w=1920&amp;h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&amp;paused=1&amp;t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts: `L` lab, `Tab` scene controls. Inside the lab: `Space`
+Keyboard shortcuts: `\` shows/hides the whole UI (it starts hidden, and the
+camera starts in drone mode), `L` lab, `Tab` scene controls. Inside the lab: `Space`
 play/pause, `R` reset, `Ctrl/Cmd+S` save a PNG frame (a bare `S` used to save one
 on every step backwards — it no longer does anything outside the lab). Camera: `C` cycles cinematic → first person →
 third person → drone, `1`–`4` jump straight to a mode, `V` returns to the
@@ -244,6 +245,8 @@ src/camera.js                    keyframed cinematic rig (used by CinematicMode)
 src/camera-modes.js              modular controllers: cinematic/fps/third/drone
 src/camera-director.js           mode switching, input plumbing, camera HUD
 src/sidebar.js                   hidden authoring sidebar (Tab)
+src/stats.js                     self-contained fps/stage overlay
+src/neighbors.js                 the eight buffer cells of the 3x3 volume
 src/timeline.js                  one signal cycle
 src/environment.js               cubic corner set: roads, sidewalks, buildings, signals
 src/crowd.js                     varied tiny 3D people, walk cycle, long shadows

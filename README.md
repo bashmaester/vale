@@ -36,7 +36,8 @@ Useful URLs:
 | `index.html?w=1920&h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&paused=1&t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts: `L` lab, `Tab` scene controls. Inside the lab: `Space`
+Keyboard shortcuts: `\` shows/hides the whole UI (it starts hidden, and the
+camera starts in drone mode), `L` lab, `Tab` scene controls. Inside the lab: `Space`
 play/pause, `R` reset, `Ctrl/Cmd+S` save a PNG frame (a bare `S` used to save one
 on every step backwards — it no longer does anything outside the lab). Camera: `C` cycles cinematic → first person →
 third person → drone, `1`–`4` jump straight to a mode, `V` returns to the
@@ -193,6 +194,8 @@ src/camera.js                    keyframed cinematic rig (used by CinematicMode)
 src/camera-modes.js              modular controllers: cinematic/fps/third/drone
 src/camera-director.js           mode switching, input plumbing, camera HUD
 src/sidebar.js                   hidden authoring sidebar (Tab)
+src/stats.js                     self-contained fps/stage overlay
+src/neighbors.js                 the eight buffer cells of the 3x3 volume
 src/timeline.js                  one signal cycle
 src/environment.js               cubic corner set: roads, sidewalks, buildings, signals
 src/crowd.js                     varied tiny 3D people, walk cycle, long shadows

@@ -10,6 +10,7 @@ export class ShaderGraph {
       index: i,
       params: clone(d.params),
       enabled: d.enabled !== false,
+      defEnabled: d.enabled !== false,
       ui: { ...d.ui },
     }));
     this.order = this.topoSort();
@@ -41,17 +42,43 @@ export class ShaderGraph {
     return out;
   }
 
+  // A node is "live" only if it is switched on *and* at least one of its
+  // driving strengths is non-zero. Anything else is stripped out of the shader
+  // at compile time — no function, no uniforms, no call, no GPU cost. (Before
+  // this, every node compiled in and early-returned on a uniform, which still
+  // paid for the preamble and the dynamic branch.)
+  isLive(n) {
+    if (!n || n.enabled === false) return false;
+    if (!n.bypass || n.bypass.length === 0) return true;
+    return n.bypass.some((k) => {
+      const p = n.params[k];
+      return p ? Math.abs(Number(p.value) || 0) > 1e-6 : false;
+    });
+  }
+
+  liveNodes() { return this.nodes.filter((n) => this.isLive(n)); }
+
+  // Signature of the compiled program: changes only when a node crosses the
+  // on/off line, so the renderer knows when a recompile is actually needed.
+  activity() {
+    return this.nodes.map((n) => (this.isLive(n) ? '1' : '0')).join('');
+  }
+
   compile() {
     const uniforms = [];
     const funcs = [];
+    const live = new Set();
     for (const n of this.nodes) {
+      if (!this.isLive(n)) continue;
+      live.add(n.id);
       for (const [key, p] of Object.entries(n.params)) {
         uniforms.push(`uniform ${p.type || 'float'} ${this.u(n, key)};`);
       }
-      uniforms.push(`uniform float ${this.u(n, 'enabled')};`);
       funcs.push(n.code(this, n));
     }
-    const calls = this.order.map((n) => `  c = n_${n.id}(c, uv, field);`).join('\n');
+    const calls = this.order
+      .filter((n) => live.has(n.id))
+      .map((n) => `  c = n_${n.id}(c, uv, field);`).join('\n');
     return `${FRAGMENT_HEADER}
 ${uniforms.join('\n')}
 ${FRAGMENT_HELPERS}
@@ -70,8 +97,11 @@ ${calls}
   uniformValues() {
     const out = {};
     for (const n of this.nodes) {
-      for (const [key, p] of Object.entries(n.params)) out[this.u(n, key)] = p.value;
-      out[this.u(n, 'enabled')] = n.enabled ? 1 : 0;
+      if (!this.isLive(n)) continue;
+      for (const [key, p] of Object.entries(n.params)) {
+        if (p.type === 'vec2' || p.type === 'vec3') out[this.u(n, key)] = p.value;
+        else out[this.u(n, key)] = p.value;
+      }
     }
     return out;
   }
@@ -99,6 +129,10 @@ ${calls}
   applyPreset(name) {
     const p = PRESETS[name];
     if (!p) return false;
+    // Start from "everything on": a preset that only lists strengths (or one
+    // that switched nodes off, like `plate`) must not leak its flags into the
+    // next preset.
+    for (const n of this.nodes) n.enabled = n.defEnabled !== false;
     for (const [id, vals] of Object.entries(p.graph || {})) {
       const n = this.getNode(id);
       if (n && typeof vals.enabled === 'boolean') n.enabled = vals.enabled;

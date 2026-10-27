@@ -10,10 +10,11 @@ import {
   lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel,
 } from './tile.js';
 import {
-  drawBackdrop, drawStreet, drawPaving, drawRoadMarkings, drawRail,
+  drawWalls, drawGroundSlab, drawStreet, drawPaving, drawRoadMarkings, drawRail,
   drawBuildings, drawSignals, drawFurniture, drawReflections, drawFlicker,
   collectFrame,
 } from './environment.js';
+import { drawBufferCells, BUFFER_CELLS } from './neighbors.js';
 
 export const SCENE_PARAM_DEFS = {
   crowdDensity: { value: 1.0, min: 0.2, max: 2.0, step: 0.01, label: 'crowd density' },
@@ -33,6 +34,23 @@ export const SCENE_PARAM_DEFS = {
   // Off by default: the case is a diagnostic / gallery object, not part of the
   // film. Turn it on in the sidebar when you want to read the tile boundary.
   caseFrame: { value: 0, min: 0, max: 1, step: 1, label: 'case boundaries' },
+  // Closed back/left walls. Off by default: the open diorama reads better and
+  // the walls are expensive to paint.
+  walls: { value: 0, min: 0, max: 1, step: 1, label: 'closed walls' },
+
+  // --- feature switches (0 = the subsystem is skipped entirely) ------------
+  featCrowd: { value: 1, min: 0, max: 1, step: 1, label: 'crowd' },
+  featTraffic: { value: 1, min: 0, max: 1, step: 1, label: 'vehicles' },
+  featRain: { value: 1, min: 0, max: 1, step: 1, label: 'rain' },
+  featPuddles: { value: 1, min: 0, max: 1, step: 1, label: 'puddles + ripples' },
+  featReflections: { value: 1, min: 0, max: 1, step: 1, label: 'reflections' },
+  featSignals: { value: 1, min: 0, max: 1, step: 1, label: 'signals' },
+  featFlicker: { value: 1, min: 0, max: 1, step: 1, label: 'lamp flicker' },
+
+  // --- buffer cells (0 = hidden; neighbours are off by default) ------------
+  bufferStyle: { value: 0, min: 0, max: 1, step: 1, label: 'buffer style (0 wire)' },
+  bufferOpacity: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'buffer opacity' },
+  bufferCells: { value: 0, min: 0, max: 255, step: 1, label: 'buffer cells (bitmask)' },
 };
 
 function defaults() {
@@ -60,6 +78,10 @@ export class Scene {
     // saving: the set costs ~34 ms a frame, the blit costs ~1 ms.
     this.static = makeCanvas(W, H, true);
     this.sp = new Painter(this.static.getContext('2d'), W, H);
+    // The far layer holds only the closed walls, so the elevated train can be
+    // painted between it and the set (it runs behind the block).
+    this.staticFar = makeCanvas(W, H, true);
+    this.spFar = new Painter(this.staticFar.getContext('2d'), W, H);
     this._staticKey = '';
     this._staticPose = null;
     this._staticShift = { x: 0, y: 0 };
@@ -77,9 +99,10 @@ export class Scene {
 
   setViewport(W, H) {
     this.W = W; this.H = H;
-    for (const c of [this.plate, this.field, this.static]) { c.width = W; c.height = H; }
-    this.pp.W = this.fp.W = this.sp.W = W;
-    this.pp.H = this.fp.H = this.sp.H = H;
+    for (const c of [this.plate, this.field, this.static, this.staticFar]) { c.width = W; c.height = H; }
+    this._fieldBlank = false;
+    this.pp.W = this.fp.W = this.sp.W = this.spFar.W = W;
+    this.pp.H = this.fp.H = this.sp.H = this.spFar.H = H;
     this._staticKey = '';
     this._staticPose = null;
     this.weather.W = W; this.weather.H = H;
@@ -110,6 +133,17 @@ export class Scene {
     ctx.restore();
   }
 
+  // Bitmask → set of buffer cell ids (bit order matches BUFFER_CELLS).
+  bufferMask() {
+    const mask = new Set();
+    const bits = this.params.bufferCells | 0;
+    if (!bits) return mask;
+    for (let i = 0; i < BUFFER_CELLS.length; i++) {
+      if (bits & (1 << i)) mask.add(BUFFER_CELLS[i].id);
+    }
+    return mask;
+  }
+
   // --- the cached set ----------------------------------------------------
   //
   // The set (backdrop, street, paving, markings, buildings, furniture, rails,
@@ -119,11 +153,19 @@ export class Scene {
   // stays smooth. Above ~2.5 px of drift the layer is repainted, which keeps
   // the parallax error invisible.
   _drawSet(camera, detail) {
+    // Far layer: the closed walls only.
+    const far = this.spFar;
+    far.ctx.setTransform(1, 0, 0, 1, 0, 0);
+    far.ctx.clearRect(0, 0, this.W, this.H);
+    far.setBoil(this.pp.boil);
+    drawWalls(far, camera, detail, this.params);
+
+    // Near layer: everything from the ground up.
     const p = this.sp;
     p.ctx.setTransform(1, 0, 0, 1, 0, 0);
     p.ctx.clearRect(0, 0, this.W, this.H);
     p.setBoil(this.pp.boil);
-    drawBackdrop(p, camera, detail);
+    drawGroundSlab(p, camera);
     drawStreet(p, camera, detail);
     drawPaving(p, camera, detail);
     drawRoadMarkings(p, camera, this.timeline);
@@ -134,7 +176,7 @@ export class Scene {
   }
 
   _ensureStatic(camera, detail) {
-    const key = `${detail.level}|${this.params.caseFrame}|${this.W}x${this.H}`;
+    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${this.W}x${this.H}`;
     const ref = { x: 0, y: 3.2, z: 0 };
     let needsRepaint = key !== this._staticKey || !this._staticPose;
     let dx = 0, dy = 0;
@@ -196,44 +238,72 @@ export class Scene {
     // Simulate before drawing so the plane can be sorted by depth.
     this.profile = this.profile || {};
     const simT = performance.now();
-    this.weather.update(t, this.params);
-    this.traffic.update(camera, timeline, this.params, detail);
-    this.crowd.update(camera, timeline, this.params, this.traffic.activeItems(), detail);
-    this.profile.sim = (this.profile.sim || 0) + (performance.now() - simT);
+    if (this.params.featRain || this.params.featPuddles) this.weather.update(t, this.params);
+    if (this.params.featTraffic) this.traffic.update(camera, timeline, this.params, detail);
+    else this.traffic.items = [];
+    if (this.params.featCrowd) {
+      this.crowd.update(camera, timeline, this.params, this.traffic.activeItems(), detail);
+    } else {
+      this.crowd.items = [];
+    }
+    const T = this.profile = this.profile || {};
+    const simMs = performance.now() - simT;
+    T.sim = T.sim == null ? simMs : T.sim * 0.85 + simMs * 0.15;
 
     this._clearPlate();
-    const T = this.profile = this.profile || {};
     let mark = performance.now();
-    const tick = (k) => { const n = performance.now(); T[k] = (T[k] || 0) + (n - mark); mark = n; };
+    // Per-frame stage cost with a light EMA, so the stats HUD reads "ms this
+    // frame", not a running total.
+    const tick = (k) => {
+      const n = performance.now();
+      const dt = n - mark;
+      T[k] = T[k] == null ? dt : T[k] * 0.85 + dt * 0.15;
+      mark = n;
+    };
 
-    // 1) The cached set (backdrop, street, paving, markings, rails, far case,
-    //    buildings, furniture). Repainted only when the camera drifts.
+    // 1) Buffer cells go down first: they are neighbours, so the hero volume
+    //    must be able to cover them.
+    const cells = this.bufferMask();
+    if (cells.size) {
+      drawBufferCells(this.pp, camera, cells, this.params.bufferStyle === 1 ? 'points' : 'wire', this.params.bufferOpacity);
+    }
+    tick('buffer');
+
+    // 2) Cached layers. The far layer is only the closed walls; the train runs
+    //    between it and the set, which is why it no longer paints over the
+    //    buildings. Both layers are repainted only when the camera drifts.
     const shift = this._ensureStatic(camera, detail);
-    if (shift.x || shift.y) this.pp.ctx.drawImage(this.static, shift.x, shift.y);
-    else this.pp.ctx.drawImage(this.static, 0, 0);
+    const blit = (canvas) => {
+      if (shift.x || shift.y) this.pp.ctx.drawImage(canvas, shift.x, shift.y);
+      else this.pp.ctx.drawImage(canvas, 0, 0);
+    };
+    blit(this.staticFar);
+    if (this.params.featTraffic) this.traffic.drawTrain(this.pp, camera, timeline, this.params);
+    tick('train');
+    blit(this.static);
     tick('set');
 
-    // 2) The train moves, so it is drawn over the cached set.
-    this.traffic.drawTrain(this.pp, camera, timeline, this.params); tick('train');
-
     // 3) Signals animate through the cycle; lamps flicker on looped noise.
-    drawSignals(this.pp, camera, timeline);
-    drawFlicker(this.pp, camera, timeline.t); tick('signals');
+    if (this.params.featSignals) drawSignals(this.pp, camera, timeline);
+    if (this.params.featFlicker) drawFlicker(this.pp, camera, timeline.t);
+    tick('signals');
 
     // The near case members take part in the depth sort below.
     const frameItems = collectFrame(this.pp, camera, this.params);
 
     // 4) Wet ground: puddles, then the reflections of the signs.
-    this.weather.drawPuddles(this.pp, camera, timeline, this.params, detail); tick('puddles');
-    drawReflections(this.pp, camera, timeline, detail); tick('reflections');
+    if (this.params.featPuddles) this.weather.drawPuddles(this.pp, camera, timeline, this.params, detail);
+    tick('puddles');
+    if (this.params.featReflections) drawReflections(this.pp, camera, timeline, detail);
+    tick('reflections');
 
     // 5) Cars and people, interleaved by projected depth so a person on the
     //    far sidewalk can be occluded by a car in the near lane.
     const drawables = [];
-    for (const it of this.traffic.activeItems()) {
+    if (this.params.featTraffic) for (const it of this.traffic.activeItems()) {
       drawables.push({ depth: it.depth, draw: (p) => drawVehicle(p, camera, it) });
     }
-    for (const it of this.crowd.items) {
+    if (this.params.featCrowd) for (const it of this.crowd.items) {
       if (it.alpha < 0.02) continue;
       drawables.push({
         depth: it.depth,
@@ -251,9 +321,21 @@ export class Scene {
 
     // 6) Rain inside the volume. Nothing is drawn over the plate after it: the
     //    case members are already in the depth sort.
-    this.weather.drawRain(this.pp, camera, timeline, this.params, detail); tick('rain');
+    if (this.params.featRain) this.weather.drawRain(this.pp, camera, timeline, this.params, detail); tick('rain');
 
-    this.weather.drawField(this.fp, timeline, this.crowd, this.traffic, camera, this.params); tick('field');
+    // The field is only read by the wet-ground passes: skip the whole pass and
+    // hand the shader a blank field when both are switched off.
+    if (this.params.featPuddles || this.params.featRain) {
+      this.weather.drawField(this.fp, timeline, this.crowd, this.traffic, camera, this.params);
+      this._fieldBlank = false;
+    } else if (!this._fieldBlank) {
+      const c = this.field.getContext('2d');
+      c.setTransform(1, 0, 0, 1, 0, 0);
+      c.fillStyle = '#000';
+      c.fillRect(0, 0, this.W, this.H);
+      this._fieldBlank = true;
+    }
+    tick('field');
     return { plate: this.plate, field: this.field };
   }
 }

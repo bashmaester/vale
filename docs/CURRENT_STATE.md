@@ -1,6 +1,6 @@
 # VALE — current state
 
-**Last updated:** 2026-10-27 (engine-foundation pass, branch `arena/bab4bc10-vale`)
+**Last updated:** 2026-10-27 (Turn 11 — frame budget, branch `arena/bab4bc10-vale`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
@@ -10,8 +10,8 @@ drives the sample, not the deliverable.
 
 ## 1. What the build is
 
-One self-contained `index.html` (~145 KiB), silent, autoplaying, no external
-assets. v0.1.1 was tagged mid-turn; this build is v0.1.2. It renders one tile of a rainy street corner inside a physical-looking
+One self-contained `index.html` (~159 KiB), silent, autoplaying, no external
+assets. Tags: `v0.1.2` (Turn 10), `v0.1.3` (this turn). It renders one tile of a rainy street corner inside a physical-looking
 case: plinth, four corner posts, wall-thickness caps on the cut faces, engraved
 label. Everything inside the case is generated from code every frame.
 
@@ -29,9 +29,45 @@ Runtime switches:
 | `?cam=cinematic\|fps\|third\|drone` | starts in a camera mode (`orbit`/`fly`/`auto`/`user` are aliases) |
 | `?shot=rig\|tripod\|crane\|orbit\|detail` | picks a cinematic shot |
 | `?hud=0` | hides the camera help line |
-| `?scale=0.7` | renders the plate + shader at 70 % (slow machines) |
+| `?scale=0.7` | pins the render scale (also disables the adaptive governor) |
+| `?stats=1` | opens the stats overlay at boot |
+| `?capture=1` | keeps `preserveDrawingBuffer` on, for canvas readback |
+| `?ui=1` / `?panel=1` | shows the UI at boot (it is hidden by default) |
 
-`window.VALE = { graph, scene, renderer, lab, sidebar, state, W, H, DURATION }`.
+`window.VALE = { graph, scene, renderer, lab, sidebar, state, stats, perf, W, H,
+DURATION, setQuality, setUI }`.
+
+### Turn 11 controls
+
+| Input | Effect |
+| --- | --- |
+| `\` | show / hide the entire UI (hidden on load) |
+| `Tab` | scene sidebar (while the UI is shown) |
+| `L` | lab |
+| `C`, `1`–`4` | cycle / jump camera mode — **drone is the default** |
+| hover the top-right | the sidebar handle fades in |
+
+Sidebar sections: **Performance** (stats overlay, adaptive resolution, render
+scale, seven feature switches), **Buffer volume** (3×3 grid of neighbour
+toggles — all off by default — style wireframe/point cloud, opacity, none/all),
+**Case** (back wall, left wall, case boundaries, LoD), camera, scene, texture,
+palette, playback.
+
+### Frame budget
+
+The plate is still painted on Canvas2D; the WebGL2 pass is the compositor. What
+changed this turn is that everything expensive can be switched off at the
+source, and nothing is compiled into the shader unless it contributes:
+
+- Dead shader nodes are stripped at compile time (`ShaderGraph.isLive`).
+- Textures are allocated once and updated with `texSubImage2D`.
+- `preserveDrawingBuffer` is off unless `?capture=1`.
+- The field pass is skipped (blank field cached) when rain and puddles are off.
+- An adaptive governor moves the render scale 45–100 % to hold 60 fps.
+
+Node benchmark (1440×810, 60-frame average, features ablated one at a time):
+42.5 ms all on; 31.3 crowd off; 34.5 vehicles off; ~36.3 rain / puddles /
+reflections off; 26.7 at 75 % scale; 17.7 at 50 %; 17.0 with everything off.
 
 ### Camera controllers (modular)
 

@@ -45,12 +45,14 @@ function section(title, subtitle, open = true) {
 }
 
 export class Sidebar {
-  constructor({ scene, graph, renderer, state, director }) {
+  constructor({ scene, graph, renderer, state, director, stats, perf }) {
     this.scene = scene;
     this.graph = graph;
     this.renderer = renderer;
     this.state = state;
     this.director = director;
+    this.stats = stats || null;
+    this.perf = perf || null;
     this.root = null;
     this.open = false;
     this.rows = [];
@@ -205,7 +207,7 @@ export class Sidebar {
     const root = this.root;
     root.appendChild(el('h2', 'sb-heading', 'VALE · scene controls'));
     root.appendChild(el('p', 'sb-note',
-      'Tab to hide. C cycles the camera (cinematic → first person → third person → drone).'));
+      '\\ hides all UI. C cycles the camera. Tab opens this panel.'));
 
     // Camera ---------------------------------------------------------------
     const cam = section('Camera', 'Steady shots for the film, or take control.');
@@ -342,6 +344,47 @@ export class Sidebar {
     addNode('palette', 'accent', 'accent bloom');
     root.appendChild(pal);
 
+    // Performance ----------------------------------------------------------
+    const pf = section('Performance', 'What the frame is spending, and what to switch off.', true);
+    if (this.stats) {
+      pf.appendChild(this.toggleRow({
+        label: 'stats overlay (\\)',
+        value: this.stats.open,
+        onChange: (v) => this.stats.toggle(v),
+        get: () => this.stats.open,
+      }));
+    }
+    if (this.perf) {
+      pf.appendChild(this.toggleRow({
+        label: 'adaptive resolution',
+        value: this.perf.auto,
+        onChange: (v) => this.perf.setAuto(v),
+        get: () => this.perf.auto,
+      }));
+      pf.appendChild(this.select({
+        label: 'render scale',
+        value: String(this.perf.quality()),
+        options: [['1', '100 %'], ['0.85', '85 %'], ['0.75', '75 %'], ['0.65', '65 %'], ['0.55', '55 %'], ['0.45', '45 %']],
+        onChange: (v) => { this.perf.setAuto(false); this.perf.setQuality(Number(v)); },
+        get: () => String(this.perf.quality()),
+      }));
+    }
+    const feats = [
+      ['featCrowd', 'crowd'], ['featTraffic', 'vehicles'],
+      ['featRain', 'rain'], ['featPuddles', 'puddles + ripples'],
+      ['featReflections', 'reflections'], ['featSignals', 'signals'],
+      ['featFlicker', 'lamp flicker'],
+    ];
+    for (const [key, label] of feats) {
+      pf.appendChild(this.toggleRow({
+        label,
+        value: this.scene.params[key] === 1,
+        onChange: (v) => this.scene.setParam(key, v ? 1 : 0),
+        get: () => this.scene.params[key] === 1,
+      }));
+    }
+    root.appendChild(pf);
+
     // Case -----------------------------------------------------------------
     const cs = section('Case', 'The museum case around the tile.');
     cs.appendChild(this.toggleRow({
@@ -349,6 +392,18 @@ export class Sidebar {
       value: this.scene.params.caseFrame === 1,
       onChange: (v) => this.scene.setParam('caseFrame', v ? 1 : 0),
       get: () => this.scene.params.caseFrame === 1,
+    }));
+    cs.appendChild(this.toggleRow({
+      label: 'back wall',
+      value: (this.scene.params.walls & 1) === 1,
+      onChange: (v) => this.scene.setParam('walls', v ? (this.scene.params.walls | 1) : (this.scene.params.walls & ~1)),
+      get: () => (this.scene.params.walls & 1) === 1,
+    }));
+    cs.appendChild(this.toggleRow({
+      label: 'left wall',
+      value: (this.scene.params.walls & 2) === 2,
+      onChange: (v) => this.scene.setParam('walls', v ? (this.scene.params.walls | 2) : (this.scene.params.walls & ~2)),
+      get: () => (this.scene.params.walls & 2) === 2,
     }));
     cs.appendChild(this.select({
       label: 'LoD',
@@ -358,6 +413,64 @@ export class Sidebar {
       get: () => String(this.scene.params.lod),
     }));
     root.appendChild(cs);
+
+    // Buffer volume --------------------------------------------------------
+    const bf = section('Buffer volume', 'The 3×3 set: the eight neighbouring cells, drawn cheap.', false);
+    const grid = el('div', 'sb-grid');
+    const cells = [
+      ['nw', 'NW'], ['n', 'N'], ['ne', 'NE'],
+      ['w', 'W'], [null, '●'], ['e', 'E'],
+      ['sw', 'SW'], ['s', 'S'], ['se', 'SE'],
+    ];
+    cells.forEach(([id, text], i) => {
+      if (!id) {
+        const mid = el('span', 'sb-grid-hero', text);
+        mid.title = 'The hero tile, always rendered';
+        grid.appendChild(mid);
+        return;
+      }
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'sb-cell';
+      b.textContent = text;
+      b.dataset.cell = id;
+      const bit = 1 << i;
+      const on = () => (this.scene.params.bufferCells & bit) === bit;
+      const paint = () => b.classList.toggle('on', on());
+      b.addEventListener('click', () => {
+        this.scene.setParam('bufferCells', on()
+          ? (this.scene.params.bufferCells & ~bit)
+          : (this.scene.params.bufferCells | bit));
+        paint();
+      });
+      paint();
+      this.rows.push({ kind: 'cell', input: b, sync: paint });
+      grid.appendChild(b);
+    });
+    bf.appendChild(grid);
+    bf.appendChild(this.select({
+      label: 'neighbour style',
+      value: String(this.scene.params.bufferStyle),
+      options: [['0', 'wireframe'], ['1', 'point cloud']],
+      onChange: (v) => this.scene.setParam('bufferStyle', Number(v)),
+      get: () => String(this.scene.params.bufferStyle),
+    }));
+    bf.appendChild(this.slider({
+      label: 'neighbour opacity',
+      min: 0, max: 1, step: 0.01,
+      value: this.scene.params.bufferOpacity,
+      onInput: (v) => this.scene.setParam('bufferOpacity', v),
+      get: () => this.scene.params.bufferOpacity,
+    }));
+    bf.appendChild(this.buttonRow('none', () => {
+      this.scene.setParam('bufferCells', 0);
+      this.refresh();
+    }, 'ghost'));
+    bf.appendChild(this.buttonRow('all eight', () => {
+      this.scene.setParam('bufferCells', 255);
+      this.refresh();
+    }, 'ghost'));
+    root.appendChild(bf);
 
     // Playback -------------------------------------------------------------
     const pb = section('Playback');

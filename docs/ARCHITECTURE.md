@@ -205,6 +205,43 @@ camera drifts more than 2.5 px, when the LoD or `caseFrame` changes, and at the
 loop point. The cached layer is blitted with the sub-pixel delta, which is why
 the frame time dropped by more than half.
 
+## 8d. Frame budget and the compiled look graph
+
+`ShaderGraph` (`src/graph.js`) compiles the look into **one** fragment shader.
+The rule is: a node that cannot change the image must not exist in it.
+
+- `isLive(node)` — false when the node is disabled or when every key in its
+  `bypass` list is 0 (e.g. `hatch.bypass = ['strength']`,
+  `detail.bypass = ['contour','micro','spark']`, defined in `NODE_DEFS`).
+- `compile()` emits functions, uniforms and calls **only for live nodes**, so
+  setting a strength to 0 removes its texture reads and maths from the GPU.
+- `activity()` returns a bit string of the live set. `Renderer.render()`
+  compares it with `_activity` and rebuilds the program (once) when it changes.
+
+`src/renderer.js` is a full-screen quad over two textures:
+
+- The plate is a Canvas2D drawing; the field carries puddle/reflection masks.
+- Textures are allocated once per size and updated with `texSubImage2D` —
+  `texImage2D` reallocates VRAM every frame and was the single worst pattern in
+  the old renderer.
+- `preserveDrawingBuffer` is `false` unless `?capture=1`, because it forces the
+  browser to keep a copy of the drawing buffer alive every frame.
+- `bypass` (raw plate) and the 2D fallback blit the plate straight to a canvas.
+
+The scene (`src/scene.js`) draws in this order, each stage timed into
+`scene.profile` (EMA, shown by the stats overlay):
+
+1. buffer cells (neighbours, behind the hero volume)
+2. cached far layer → train → cached near layer
+3. signals + lamp flicker
+4. case frame members merged into the depth-sorted drawables
+5. puddles, reflections
+6. people + vehicles, sorted by projected depth
+7. rain, then the field texture
+
+`src/stats.js` is a self-contained overlay (no CDN): fps, ms, a 120-sample bar
+graph with 16.7/33.3 ms guides, per-stage bars and the live feature flags.
+
 ## 9. Runtime surfaces
 
 - `?finish=raw` / `?raw=1` — raw plate.

@@ -95,15 +95,18 @@ function glowAt(p, camera, point3, radius, tint, alpha) {
 // 1. The case: walls, floor slab, backdrop relief.
 // ---------------------------------------------------------------------------
 
-export function drawBackdrop(p, camera, detail = { wallDetail: 1 }) {
+// The closed walls of the volume: back wall + relief + left wall. These are
+// cached in their own layer so the elevated train can be drawn between the wall
+// and the buildings (it runs behind the block). `params.walls = 0` opens the
+// diorama up and drops them entirely.
+export function drawWalls(p, camera, detail = { wallDetail: 1 }, params = {}) {
   const { x0, x1, z0, z1, y1 } = TILE;
   const ctx = p.ctx;
+  // Bit 1 = back wall, bit 2 = left wall. 0 = open diorama (default).
+  const W = params.walls | 0;
+  if (!W) return;
 
-  // Ground slab top (under everything, closes gaps at the sidewalk joins).
-  p.projectPoly(camera, [
-    v3(x0, -0.01, z0), v3(x1, -0.01, z0), v3(x1, -0.01, z1), v3(x0, -0.01, z1),
-  ], { fill: '#0a0a0c', stroke: null, jitter: 0, alpha: 1 });
-
+  if (W & 1) {
   // Back wall with a vertical gradient so the box has an interior.
   const wallQuad = p.projectPoly(camera, [
     v3(x0, y1, z0), v3(x1, y1, z0), v3(x1, 0, z0), v3(x0, 0, z0),
@@ -185,7 +188,9 @@ export function drawBackdrop(p, camera, detail = { wallDetail: 1 }) {
       }
     }
   }
+  } // end back wall
 
+  if (W & 2) {
   // Left wall, dimmer: it is the other closed face of the globe.
   const leftQuad = p.projectPoly(camera, [
     v3(x0, y1, z0), v3(x0, y1, z1), v3(x0, 0, z1), v3(x0, 0, z0),
@@ -215,13 +220,19 @@ export function drawBackdrop(p, camera, detail = { wallDetail: 1 }) {
       color: BONE(0.035), width: 0.6, jitter: 0.5, seed: 650 + i, double: false,
     });
   }
-  // Top edges of both walls catch the light.
-  line3(p, camera, [x0, y1, z0], [x1, y1, z0], {
-    color: BONE(0.34), width: 1.1, jitter: 0.18, seed: 660, double: false,
-  });
-  line3(p, camera, [x0, y1, z0], [x0, y1, z1], {
-    color: BONE(0.22), width: 0.9, jitter: 0.18, seed: 661, double: false,
-  });
+  } // end left wall
+
+  // Top edges catch the light, each with its own wall.
+  if (W & 1) {
+    line3(p, camera, [x0, y1, z0], [x1, y1, z0], {
+      color: BONE(0.34), width: 1.1, jitter: 0.18, seed: 660, double: false,
+    });
+  }
+  if (W & 2) {
+    line3(p, camera, [x0, y1, z0], [x0, y1, z1], {
+      color: BONE(0.22), width: 0.9, jitter: 0.18, seed: 661, double: false,
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +252,20 @@ function groundHatch(p, camera, x0, z0, x1, z1, y, count, seed, color, alpha, ma
       jitter: 0.16, seed: seed + i * 11, double: false,
     });
   }
+}
+
+// Ground slab top (under everything, closes gaps at the sidewalk joins).
+export function drawGroundSlab(p, camera) {
+  const { x0, x1, z0, z1 } = TILE;
+  p.projectPoly(camera, [
+    v3(x0, -0.01, z0), v3(x1, -0.01, z0), v3(x1, -0.01, z1), v3(x0, -0.01, z1),
+  ], { fill: '#0a0a0c', stroke: null, jitter: 0, alpha: 1 });
+}
+
+// Kept for older call sites (tools, drawEnvironment).
+export function drawBackdrop(p, camera, detail = { wallDetail: 1 }, params = {}) {
+  drawGroundSlab(p, camera);
+  drawWalls(p, camera, detail, params);
 }
 
 export function drawStreet(p, camera, detail = { hatch: 1 }) {

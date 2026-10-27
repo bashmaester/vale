@@ -34,10 +34,15 @@ export class Renderer {
     this.fallback = false;
     this.lost = false;
     this.canvas = canvas;
+    // preserveDrawingBuffer forces the browser to copy the drawing buffer every
+    // frame (~1-2 ms at 1440p) and it is only needed for readback. Screenshot
+    // tools ask for it explicitly with ?capture=1.
+    const capture = typeof location !== 'undefined' && /[?&]capture=1/.test(location.search || '');
     try {
       this.gl = canvas.getContext('webgl2', {
         alpha: false, antialias: false, depth: false, stencil: false,
-        preserveDrawingBuffer: true, powerPreference: 'high-performance',
+        preserveDrawingBuffer: capture, powerPreference: 'high-performance',
+        desynchronized: true,
       });
     } catch (e) { this.gl = null; }
     if (!this.gl) { this._fallback(); return; }
@@ -60,19 +65,44 @@ export class Renderer {
 
   initGL() {
     const gl = this.gl;
+    if (!this._built) {
+      this._built = true;
+      this._initQuad();
+      this._initTextures();
+      gl.disable(gl.DEPTH_TEST);
+      gl.disable(gl.BLEND);
+      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    }
+    this._buildProgram();
+    this.resize(this.W, this.H);
+  }
+
+  // Compile the look graph into a fresh program and cache its uniform
+  // locations. Called only when a node crosses the on/off line.
+  _buildProgram() {
+    const gl = this.gl;
+    let program;
     try {
-      this.program = linkProgram(gl, VERTEX_SHADER, this.graph.compile());
+      program = linkProgram(gl, VERTEX_SHADER, this.graph.compile());
     } catch (e) {
       console.error(e);
       // Keep the film visible even if a node produces invalid GLSL.
       this._fallback();
-      return;
+      return false;
     }
-    gl.useProgram(this.program);
+    if (this.program) gl.deleteProgram(this.program);
+    this.program = program;
+    this._activity = this.graph.activity();
+    gl.useProgram(program);
     this.loc = {};
     for (const name of ['uInk', 'uField', 'uRes', 'uTime', ...Object.keys(this.graph.uniformValues())]) {
-      this.loc[name] = gl.getUniformLocation(this.program, name);
+      this.loc[name] = gl.getUniformLocation(program, name);
     }
+    return true;
+  }
+
+  _initQuad() {
+    const gl = this.gl;
     const quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
@@ -80,7 +110,10 @@ export class Renderer {
     gl.enableVertexAttribArray(a);
     gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
     this.quad = quad;
+  }
 
+  _initTextures() {
+    const gl = this.gl;
     const makeTex = (unit) => {
       const t = gl.createTexture();
       gl.activeTexture(gl.TEXTURE0 + unit);
@@ -93,10 +126,33 @@ export class Renderer {
     };
     this.texInk = makeTex(0);
     this.texField = makeTex(1);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.disable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-    this.resize(this.W, this.H);
+    this._inkAlloc = 0;
+    this._fieldAlloc = 0;
+  }
+
+  // Allocate the texture store once per size. Per-frame uploads then reuse it
+  // with texSubImage2D instead of reallocating two full frames of VRAM every
+  // single frame (which is what texImage2D does).
+  _allocTextures(W, H) {
+    const gl = this.gl;
+    // The field texture must match the canvas size: texSubImage2D cannot scale a
+    // DOM source, and a copy-through canvas every frame would cost more than it
+    // saves.
+    const fW = W, fH = H;
+    if (this._inkAlloc !== (W * H)) {
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, this.texInk);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, W, H, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      this._inkAlloc = W * H;
+      this._inkW = W; this._inkH = H;
+    }
+    if (this._fieldAlloc !== (fW * fH)) {
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, this.texField);
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, fW, fH, 0, gl.RGBA, gl.UNSIGNED_BYTE, null);
+      this._fieldAlloc = fW * fH;
+      this._fieldW = fW; this._fieldH = fH;
+    }
   }
 
   resize(W, H) {
@@ -107,15 +163,15 @@ export class Renderer {
       return;
     }
     this.canvas.width = W; this.canvas.height = H;
-    if (this.gl) this.gl.viewport(0, 0, W, H);
+    if (this.gl) {
+      this.gl.viewport(0, 0, W, H);
+      this._allocTextures(W, H);
+    }
   }
 
   recompile() {
-    if (this.fallback) return;
-    try {
-      if (this.program) this.gl.deleteProgram(this.program);
-      this.initGL();
-    } catch (e) { console.error(e); }
+    if (this.fallback || !this.gl) return;
+    try { this._buildProgram(); } catch (e) { console.error(e); }
   }
 
   render(plate, field, time) {
@@ -139,17 +195,23 @@ export class Renderer {
       this.ctx2d.drawImage(plate, 0, 0);
       return;
     }
-    if (this.lost) return;
+    if (this.lost || !this.program) return;
     const gl = this.gl;
+
+    // The look graph changed shape (a node was switched off or a strength hit
+    // zero): rebuild the program before drawing with it.
+    if (this.graph.activity() !== this._activity) this._buildProgram();
+
     gl.useProgram(this.program);
     gl.viewport(0, 0, this.W, this.H);
+    this._allocTextures(this.W, this.H);
 
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texInk);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, plate);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this.W, this.H, gl.RGBA, gl.UNSIGNED_BYTE, plate);
     gl.activeTexture(gl.TEXTURE1);
     gl.bindTexture(gl.TEXTURE_2D, this.texField);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, field);
+    gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, 0, this._fieldW, this._fieldH, gl.RGBA, gl.UNSIGNED_BYTE, field);
 
     gl.uniform1i(this.loc.uInk, 0);
     gl.uniform1i(this.loc.uField, 1);

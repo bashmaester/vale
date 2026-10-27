@@ -63,6 +63,7 @@ const params = (o) => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, {
 export const NODE_DEFS = [
   {
     id: 'source',
+    bypass: ['misreg', 'warp'],
     name: '01 · Plate / misregister',
     inputs: [],
     ui: { x: 24, y: 22, w: 162, h: 60 },
@@ -71,7 +72,6 @@ export const NODE_DEFS = [
       warp: { value: 0.45, min: 0, max: 2, label: 'gate weave' },
     }),
     code: (g, n) => `vec4 n_source(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   vec2 tx = 1.0/uRes;
   vec2 off = vec2(${g.u(n, 'misreg')} * tx.x, 0.0);
   vec4 r = texture(uInk, uv + off);
@@ -82,6 +82,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'carve',
+    bypass: ['strength'],
     name: '02 · Carve / gouge',
     inputs: ['source'],
     ui: { x: 212, y: 22, w: 162, h: 60 },
@@ -91,7 +92,6 @@ export const NODE_DEFS = [
       boil: { value: 0.30, min: 0, max: 2, label: 'line boil' },
     }),
     code: (g, n) => `vec4 n_carve(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   vec2 tx = 1.0/uRes;
   float l = luma(c.rgb);
   float lx = luma(texture(uInk, uv+vec2(tx.x,0.0)).rgb) - luma(texture(uInk, uv-vec2(tx.x,0.0)).rgb);
@@ -110,6 +110,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'detail',
+    bypass: ['contour', 'micro', 'spark'],
     name: '03 · Edge detail',
     inputs: ['carve'],
     ui: { x: 24, y: 106, w: 162, h: 60 },
@@ -121,7 +122,6 @@ export const NODE_DEFS = [
       spark: { value: 0.3, min: 0, max: 1.5, label: 'edge sparks' },
     }),
     code: (g, n) => `vec4 n_detail(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   vec2 tx = 1.0/uRes;
   float l = luma(c.rgb);
   float lx = luma(texture(uInk, uv+vec2(tx.x,0.0)).rgb) - luma(texture(uInk, uv-vec2(tx.x,0.0)).rgb);
@@ -142,6 +142,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'hatch',
+    bypass: ['strength'],
     name: '04 · Broken hatch',
     inputs: ['detail'],
     ui: { x: 212, y: 106, w: 162, h: 60 },
@@ -155,7 +156,6 @@ export const NODE_DEFS = [
       cross: { value: 0.22, min: 0, max: 1, label: 'cross hatch' },
     }),
     code: (g, n) => `vec4 n_hatch(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   float l = luma(c.rgb);
   vec2 hp = uv*uRes;
   float n1 = fbm(hp/90.0 + vec2(uTime*0.006,0.0));
@@ -183,6 +183,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'rain',
+    bypass: ['intensity'],
     name: '05 · Puddle mask (plate only)',
     // The procedural wet-glass overlay is gone. Rain and puddles are real
     // particles / ripples drawn into the ink plate by weather.js.
@@ -196,13 +197,13 @@ export const NODE_DEFS = [
       splash: { value: 0.0, min: 0, max: 1.5, label: 'disabled splash' },
     }),
     code: (g, n) => `vec4 n_rain(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   // Pass-through: all rain/puddle work happens on the 2D plate.
   return c;
 }`,
   },
   {
     id: 'palette',
+    bypass: ['posterize', 'bleed', 'dither', 'accent'],
     name: '06 · Ink separation',
     inputs: ['rain'],
     ui: { x: 212, y: 190, w: 162, h: 60 },
@@ -213,7 +214,6 @@ export const NODE_DEFS = [
       accent: { value: 0.7, min: 0, max: 2, label: 'accent bloom' },
     }),
     code: (g, n) => `vec4 n_palette(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   vec2 tx = 1.0/uRes;
   vec3 blur = (
     texture(uInk, uv+vec2(tx.x*2.0,0.0)).rgb +
@@ -236,6 +236,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'paper',
+    bypass: ['grain', 'fiber', 'speckle', 'vignette'],
     name: '07 · Paper / grain',
     inputs: ['palette'],
     ui: { x: 24, y: 274, w: 162, h: 60 },
@@ -246,7 +247,6 @@ export const NODE_DEFS = [
       vignette: { value: 0.26, min: 0, max: 1, label: 'vignette' },
     }),
     code: (g, n) => `vec4 n_paper(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   float g = (hash21(gl_FragCoord.xy + vec2(floor(uTime*6.0)))-0.5)*${g.u(n, 'grain')};
   float fib = (fbm(uv*uRes/80.0 + uTime*0.01)-0.5)*${g.u(n, 'fiber')};
   c.rgb += g + fib;
@@ -261,6 +261,7 @@ export const NODE_DEFS = [
   },
   {
     id: 'output',
+    bypass: ['exposure', 'contrast'],
     name: '08 · Output',
     inputs: ['paper'],
     ui: { x: 212, y: 274, w: 162, h: 60 },
@@ -269,7 +270,6 @@ export const NODE_DEFS = [
       contrast: { value: 1.12, min: 0.6, max: 1.8, label: 'contrast' },
     }),
     code: (g, n) => `vec4 n_output(vec4 c, vec2 uv, vec4 field){
-  if(${g.u(n, 'enabled')} < 0.5) return c;
   c.rgb = (c.rgb-0.5)*${g.u(n, 'contrast')}+0.5;
   c.rgb *= ${g.u(n, 'exposure')};
   return vec4(clamp(c.rgb,0.0,1.0),1.0);
