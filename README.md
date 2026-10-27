@@ -2,6 +2,8 @@
 
 A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
 
+> **Status (2026-10-27):** the current build is a working technical scaffold, **not an approved visual result**. The latest user feedback is “very underwhelming” and “almost none of my notes have landed.” Before making further visual changes, read `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`, then validate real browser screenshots against the supplied references.
+
 > Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
 
 ---

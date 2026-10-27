@@ -18,6 +18,12 @@ workflow. Successful runs on this branch so far include `40521585370`,
 `40521959240`, `40531284984`, `40531618858` and `40539760362`. Check
 `DEPLOY_STATUS.md` for the newest run.
 
+**Merge to main:** the current-state / handoff turn is merged from
+`arena/082e9ffd-vale` to `main` via PR `PR_NUMBER_TBD`. The local working branch
+stays `arena/082e9ffd-vale`; the merge is performed with `gh pr merge` on
+GitHub. Because the workflow also triggers on pushes to `main`, the merged
+state deploys to Pages from `main` as well.
+
 ## Workflow
 
 File: `.github/workflows/deploy-pages.yml`

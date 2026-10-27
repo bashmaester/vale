@@ -5,6 +5,10 @@ illustration. This turn concentrates on one built-out street corner: big cubic
 volumes first, then fixed street furniture and cars, then varied people, then
 rain and puddles.
 
+> **Status:** the architecture below is a working technical scaffold, not an
+> approved visual result. See `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`
+> before making further visual changes.
+
 ```
         ┌──────────────────────────────────────────────┐
         │ world.js — one corner: 2 road strips, 4       │

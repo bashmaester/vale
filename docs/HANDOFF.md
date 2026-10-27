@@ -1,186 +1,266 @@
 # VALE — session handoff
 
-**Purpose:** resume this project immediately if the conversation is interrupted.
-Read this first, then `ARCHITECTURE.md` and `CHANGELOG.md`. Fresh commit/build
-metadata is always in `BUILD.md` and `DEPLOY_STATUS.md` (generated on deploy).
+**Purpose:** resume this project in another session. The user’s latest
+assessment is that the result is “very underwhelming” and that “almost none” of
+their notes have landed. Treat this document as the source of truth for the
+next art-direction pass.
 
-**Last reviewed:** 2026-10-27, after the “build out the corner / raindrop and
-puddle sim” turn.
+**Last reviewed:** 2026-10-27, before merging the current branch to `main` via
+PR `PR_NUMBER_TBD`.
 
----
+**Read in this order:**
 
-## 1. The core direction (do not lose this)
-
-The user explicitly rejected the earlier recommendation to abandon 3D for a pure
-2D illustration. The chosen direction is:
-
-> **A 3D representation rendered as a 2D print.** Not a textured 3D render, not
-> a flat sprite animation. The world must be structurally believable when the
-> camera moves, but the output stays a high-contrast black / red / teal / white
-> linocut-style film.
-
-Active corrections from the user:
-
-- “a 3D-2D approach is much more interesting”
-- “focus on style, aesthetics and execution (via shaders, TSL, etc.)”
-- “mini modular (node-based) system where we can experiment with looks and parametric creations”
-- “we are not building a simulation but a representation that embodies the structure and feeling of the scene”
-- “people should not overlap but scatter meaningfully”
-- “vehicles can be a bit more than boxes and have wheels and silhouettes”
-- “humans should walk rather than slide”
-- “the world also has to make sense … cars not park on cross walk, objects not passing through each other”
-- “details a bit more expressed, hatching too uniform”
-- **Latest:** “this is better but all the elements need a lot more work. let’s focus on the set this time. just build out the corner. start with street and sidewalk. traffic lights only where they belong. add a few buildings. add a few cars where they belong. you are building a cubic volume scene / set. block out the big elements first then proceed smaller and add the people at the end. people look a lot better but could use more variety. REMOVE the procedural wet glass fake overlay. bring back the raindrop and puddle sim.”
-
-Aesthetic target: rainy Tokyo architectural sketch — tiny people with umbrellas
-and long shadows, essential-line vehicles, overhead train, heavy rain, puddles,
-visible print grain, sparse red and teal accents. The scene should feel like a
-hand-printed moving plate, not a game engine demo.
+1. `docs/CURRENT_STATE.md` — frank snapshot of what is actually built.
+2. `docs/HANDOFF.md` — this file: notes, gaps, next steps.
+3. `docs/ARCHITECTURE.md` — technical pipeline.
+4. `docs/CHANGELOG.md` — turn-by-turn history.
+5. `docs/CI.md` — deployment notes.
 
 ---
 
-## 2. Current state
+## 1. Reality check
 
-### Working
+The repository has a working technical scaffold:
 
-- One self-contained `index.html`: silent, autoplaying 20s loop, no external
-  assets, no audio, no visible UI during normal playback.
-- Source is modular ES modules under `src/`, bundled/inlined by `build.mjs`.
-- **One built-out corner.** `src/world.js` defines two crossing road strips,
-  four raised sidewalk boxes, and a detailed northeast corner. The other three
-  corners are simple receiving slabs.
-- **Staged cubic set construction** in `src/environment.js`: `drawBlockout()`
-  (roads + sidewalk volumes), `drawRoadMarkings()`, `drawBuildings()`,
-  `drawTrafficLights()`, `drawStreetFurniture()`, `drawWires()`, `drawTrack()`.
-- **Traffic lights only where they belong.** `SIGNAL_POSITIONS` has exactly four
-  poles at the four intersection corners. Each has a vehicle head and a smaller
-  pedestrian head drawn as oriented 3D quads.
-- **A few buildings.** Four cubic volumes on the northeast corner with visible
-  faces, window grids, awnings, roof parapets, rooftop boxes, accent stripes and
-  oriented `sign3D()` signs.
-- **A few cars.** Three legally parked cars at curbs and two moving cars in
-  separated lanes (five total), plus a five-car overhead train. Vehicles are
-  axis-aware so the vertical-road parked car is oriented correctly.
-- **More varied tiny people.** `src/crowd.js` has six archetypes, five coat
-  silhouettes, five head treatments, eight umbrella styles, long directional
-  shadows, many accessories, occasional companions, and per-person gait/stride.
-  About 92 crossers + 30 waiters.
-- **Raindrop / puddle simulation.** `src/weather.js` keeps 220 persistent
-  raindrop particles and 8 puddle sites. Drops fall in 3D, spawn expanding
-  ripple rings and splash spikes, and are projected as short streaks. Puddles
-  and ripples are drawn into the ink plate.
-- **No wet-glass overlay.** The `wet` canvas, additive reflection strokes,
-  footprint erasures, shader rain noise and broad wetness gradient are gone.
-  The shader `rain` node is a disabled pass-through. `field.r` is now only a
-  puddle mask.
-- **Slower secondary motion.** `timeline.motionT = 0.62 × t` still drives rain,
-  grain, line flicker, idle sway, gait cadence and shader time. The signal cycle
-  remains exactly 20 seconds.
-- **Camera / lab / CI** unchanged in capability: keyframed three-quarter camera,
-  user orbit/fly takeover, hidden `?lab=1` patch bay, Pages deployment.
+- one self-contained `index.html`,
+- silent autoplaying 20s loop,
+- hybrid 3D→2D projection pipeline,
+- node-based WebGL2 shader graph,
+- hidden lab and user camera,
+- GitHub Pages CI,
+- one built-out street corner with buildings, signals, cars, people, rain and
+  puddles.
 
-### Still rough / needs eyes
-
-- **No browser screenshot was possible in this sandbox.** Build, self-contained
-  validation, GLSL source checks and a DOM smoke test passed across all phases,
-  presets and camera modes — but visual tuning still needs a human pass. First
-  resumed action: open the live preview, check WAIT / CROSS / EMPTY / TRAFFIC,
-  then `?lab=1` and fly around the corner.
-- The set is intentionally sparse: one corner, four buildings, five cars. If the
-  user wants more, extend `BUILDING_LOTS`, `PARKING` and `SIGNAL_POSITIONS`
-  rather than scattering random props.
-- Camera framing was tuned by projecting key world points, not by looking at a
-  render. Check that the corner tower, shop row, signals and puddles all sit
-  comfortably in frame at 1440×810.
-- People variety is broad but still tiny marks; if they read as too busy, lower
-  `crowdDensity` or reduce accessory probability in `ARCHETYPES`.
-- Puddles are mostly on road/curb sites. If they need to spread onto the
-  sidewalk, add more `PUDDLE_SITES` in `weather.js`.
-- The disabled `rain` shader node remains in the graph for modularity. Do not
-  re-enable the old wet-glass code; if the node is removed, update `PRESETS`,
-  lab docs and node count.
+But the **visual result is not approved**. The user explicitly said it is
+“very underwhelming” and that “almost none” of their notes have landed. Do not
+assume that because a feature exists in code, it reads on screen. The next
+session must validate against the references with real browser screenshots.
 
 ---
 
-## 3. Important invariants
+## 2. Full summary of user notes
 
-1. `index.html` must remain **fully self-contained**. CI fails on `<script src>`,
-   `<link href>`, or `http(s)://` strings.
-2. Silent, UI-free by default. Lab and camera HUD are optional/authoring only.
-3. All artwork is drawn in code. No images, fonts, videos or network assets.
-4. The 20-second signal cycle is the single source of truth. `motionT` is a
-   secondary clock; it must not change the 20s duration.
-5. Build the set in stages: big volumes → road markings → buildings → fixed
-   props → cars → people → rain. Do not skip back to a flat plan.
-6. Traffic lights belong at `SIGNAL_POSITIONS` (four intersection corners). Do
-   not scatter random signals.
-7. Parked cars must pass `sanitizePark()` / `isParkable()`. Do not place them on
-   crosswalks or sidewalks.
-8. People are projected 3D world points. Do not regress to screen-space
-   billboards or detailed rigged skeletons.
-9. Signs are `sign3D()` oriented quads. Do not replace them with camera-facing
-   billboards.
-10. No procedural wet-glass overlay. Rain and puddles are the `Weather` particle
-    / ripple simulation drawn on the plate.
-11. The look graph compiles to one shader. Adding/removing a node means updating
-    `NODE_DEFS`, inputs, `ui`, presets and docs.
+### Original brief
+
+- Silent, autoplaying **20-second film** in one self-contained HTML file.
+- Rainy Tokyo crossing.
+- Palette: black, red, teal, white.
+- Rough carved lines and visible but controlled print grain.
+- One signal cycle: umbrellas waiting → crossing → draining away → briefly
+  empty street → returning traffic.
+- Footsteps break gouged wet reflections.
+- Train passes overhead.
+- All artwork code-generated.
+- No outside visual assets, no normal website UI, no audio.
+
+### Architecture / process corrections
+
+- Keep **hybrid 3D-2D**. The user explicitly rejected switching to pure 2D
+  Canvas/SVG as the main architecture.
+- Focus on style, aesthetics, execution, shaders / TSL-like modular looks and
+  parametric creation.
+- Build a representation of structure and feeling, not a simulation.
+- Keep a mini modular node-based shader graph.
+- Keep user camera / fly-around capability.
+- Keep CI deploying to GitHub Pages at the end of every turn.
+- Keep docs and handoff current for interrupted sessions.
+
+### Crowd / world corrections
+
+- People must not overlap; scatter meaningfully.
+- Vehicles should be more than boxes: wheels and silhouettes.
+- Humans must walk rather than slide.
+- World rules must prevent cars on crosswalks and interpenetration.
+- Hatching should be expressive and non-uniform.
+- Use “tiny people” architectural-sketch references:
+  small simple bodies, head dots/shapes, solid coats/pants, varied umbrella
+  silhouettes, ground shadows, occasional pairs/bags/dogs/strollers. Less detail
+  is fine if motion quality and feeling are right.
+- All animation was too fast; slow it down while keeping camera movement.
+- People should cross in more directions than diagonals only.
+- People need more variety.
+
+### Set corrections
+
+- Rebuild the set with a proper sidewalk street and believable but not
+  over-detailed street geometry.
+- Traffic lights only where they belong.
+- Add a few buildings.
+- Add a few cars where they belong.
+- Build a **cubic volume scene / set**. Block out big elements first, then
+  proceed smaller and add people at the end.
+- Focus on one corner rather than a giant scramble intersection.
+- Start with street and sidewalk.
+- Signs should be 3D and not always face the camera.
+
+### Wet / rain corrections
+
+- The procedural wet-glass fake overlay was too strong and broke the vibe.
+- Remove that overlay.
+- Rain and puddles look good and should remain.
+- Bring back a raindrop and puddle simulation, not a shader noise overlay.
+
+### Latest feedback
+
+- “this is very underwhelming.”
+- “almost none of my notes ahve landed.”
+- Document current state, write handoff, commit/push, merge to main, include a
+  summary of the notes.
 
 ---
 
-## 4. How to run / deploy
+## 3. What is technically in the repo now
+
+- `src/world.js` — corner layout: two road strips, four sidewalk blocks,
+  crosswalks, lanes, legal parking, four signal positions, four building lots,
+  weighted waiting zones and seven pedestrian flows.
+- `src/environment.js` — staged cubic set: road/sidewalk blockout, road
+  markings, buildings, traffic lights, street furniture, wires and track.
+- `src/traffic.js` — five vehicles (three parked, two moving) plus a five-car
+  overhead train; parked cars are sanitized to legal curbs.
+- `src/crowd.js` — ~122 tiny people with archetypes, coat/head/umbrella
+  variety, long shadows, accessories, companions and distance-driven gait.
+- `src/weather.js` — 220 persistent 3D raindrop particles, 8 puddle polygons,
+  ripple rings, splash spikes and ambient drips.
+- `src/scene.js` — only `plate` and `field` canvases. No wet-glass canvas.
+- `src/shaders.js` / `src/graph.js` — 8-node GLSL graph; the `rain` node is a
+  disabled pass-through.
+- `src/camera.js` / `src/camera-control.js` — three-quarter corner camera plus
+  user orbit/fly takeover.
+- `src/lab.js` — hidden patch bay.
+- `.github/workflows/deploy-pages.yml` — Pages CI.
+- `index.html` — generated self-contained deliverable.
+
+See `docs/CURRENT_STATE.md` for a frank table of “technical implementation vs
+visual confidence”.
+
+---
+
+## 4. What has not landed visually
+
+The following are implemented in code but are **not approved visually**:
+
+- The set still feels sparse and blocky rather than like a rich street corner.
+- Buildings, cars and signals may be too small, too simple or badly placed.
+- People may still read as noise or stick marks at final resolution.
+- Walking motion may not read as hand-animated.
+- Rain and puddles may be too subtle after removing the fake overlay.
+- The shader finish may flatten the carved-line / grain feeling.
+- Camera framing was chosen by projecting coordinates, not by looking at a
+  render.
+- Overall composition, scale, density, contrast and rhythm have not been
+  validated against the supplied references.
+
+Root cause: no browser screenshot validation was possible in this sandbox. All
+visual tuning was done by reasoning about code.
+
+---
+
+## 5. Next session: first actions
+
+1. Open the film in a real browser. Capture stills at WAIT, CROSS, EMPTY and
+   TRAFFIC. If no browser is available, solve that first.
+2. Put the supplied architectural-sketch references beside those stills.
+3. Compare:
+   - people scale / density / shadows,
+   - building scale and silhouette,
+   - street and sidewalk readability,
+   - umbrella shapes,
+   - rain and puddle readability,
+   - palette balance,
+   - carved line and grain quality.
+4. Re-art-direct from the references. It is acceptable to discard large parts
+   of `environment.js`, `camera.js`, `crowd.js` or `weather.js` if they block the
+   image.
+5. Keep the stable infrastructure: self-contained `index.html`, hybrid 3D→2D,
+   hidden lab, user camera, node shader graph and Pages CI.
+6. Rebuild the set in visible stages and validate each stage with a screenshot:
+   big volumes → road markings → buildings/signals/cars → people → rain/puddles
+   → shader finish.
+7. Tune a still frame first. Only then tune motion and the 20s cycle.
+8. Consider bypassing the shader graph temporarily in the lab to judge the raw
+   ink plate, then re-enable the print finish.
+
+---
+
+## 6. Invariants
+
+- One self-contained `index.html`, silent autoplay, no external assets.
+- Hybrid 3D→2D pipeline. Do not regress to pure 2D.
+- 20-second signal cycle with waiting → crossing → drain → empty → traffic.
+- Black / red / teal / white palette with rough carved lines and controlled
+  grain.
+- Hidden lab / camera HUD only; no normal website UI.
+- User camera takeover.
+- All artwork code-generated.
+- CI deploys to GitHub Pages on pushes.
+- Human docs stay current.
+- No procedural wet-glass overlay; rain/puddles should be a real simulation.
+- Traffic lights only at intersection corners.
+- Parked cars must pass `sanitizePark()` / `isParkable()`.
+- Signs are `sign3D()` oriented quads, not billboards.
+
+---
+
+## 7. Commands
 
 ```bash
 npm install
-npm run build          # regenerate self-contained index.html
-npm run docs           # regenerate deploy metadata + docs/index.html
-npm run dev            # build + serve on :8000
+npm run build           # regenerate self-contained index.html
+npm run docs            # regenerate deploy metadata + docs/index.html
+npm run dev             # build + serve on :8000
+npm run check           # esbuild bundle check
 ```
 
-Open:
+Useful URLs:
 
 - `index.html` — clean film
-- `index.html?lab=1` — node/scene/camera lab
+- `index.html?lab=1` — hidden lab
 - `index.html?lab=1&paused=1&t=7` — paused inspection frame
-- `index.html?cam=fly` — start in fly camera
+- `index.html?cam=fly` — user fly camera
 - `index.html?preset=riso` — alternate print look
 - `index.html?w=1920&h=1080` — higher internal resolution
 
-Deployment is automatic on `git push origin arena/082e9ffd-vale`. The workflow
-uploads `_site/` (film + `docs/`) through `actions/deploy-pages`.
-
-Live site: **https://bashmaester.github.io/vale/**
-
-- film: `https://bashmaester.github.io/vale/`
-- lab: `https://bashmaester.github.io/vale/?lab=1`
-- docs index: `https://bashmaester.github.io/vale/docs/index.html`
-- handoff: `https://bashmaester.github.io/vale/docs/HANDOFF.md`
-
-Successful Pages runs on this branch so far: `40521585370`, `40521959240`,
-`40531284984`, `40531618858`, `40539760362`. The corner-set turn deployed as
-commit `ed3f8e0`; check `DEPLOY_STATUS.md` for the newest run.
+Live site: https://bashmaester.github.io/vale/
 
 ---
 
-## 5. File map (quick)
+## 8. Branch / merge / deploy
+
+- Working branch: `arena/082e9ffd-vale`.
+- This handoff commit is pushed to that branch.
+- Merge to `main` is done via PR `PR_NUMBER_TBD` from
+  `arena/082e9ffd-vale` → `main` using `gh pr merge`, without switching the
+  local working branch.
+- Pages CI triggers on both the working branch and `main`.
+- Generated deploy metadata lives in `BUILD.md`, `DEPLOY_STATUS.md`,
+  `manifest.json` and `docs/index.html`; CI regenerates these on deploy.
+
+---
+
+## 9. File map
 
 ```
 index.html                  generated deliverable
 build.mjs                   inlines CSS+JS into index.html
 scripts/update-docs.mjs     deploy docs generator
 .github/workflows/...       Pages CI
-src/world.js                corner layout, sidewalks, crosswalks, flows, lanes,
-                            parking, signals, building lots
+docs/CURRENT_STATE.md       frank snapshot of what is actually built
+docs/HANDOFF.md             this file
+docs/ARCHITECTURE.md        system design
+docs/CHANGELOG.md           turn-by-turn changes
+docs/CI.md                  deployment notes
+src/world.js                corner layout and world rules
 src/collision.js            separation + poissonDisk
 src/camera.js               three-quarter corner camera rig
 src/camera-control.js       user orbit/fly camera
-src/environment.js          staged cubic set: roads, sidewalks, buildings,
-                            signals, furniture, wires, track
-src/traffic.js              five vehicles + train, legal curbs/lanes
-src/crowd.js                varied tiny 3D people, walk cycle, long shadows
-src/weather.js              raindrop particles, puddle ripples, field mask
-src/scene.js                plate/field orchestration, camera, separation
-src/shaders.js              GLSL node defs + presets (rain disabled)
-src/graph.js                shader graph compiler, enabled flags
+src/environment.js          staged cubic set
+src/traffic.js              five vehicles + train
+src/crowd.js                varied tiny 3D people
+src/weather.js              raindrop particles + puddle ripples
+src/scene.js                plate/field orchestration
+src/shaders.js              GLSL node defs + presets
+src/graph.js                shader graph compiler
 src/draw.js                 painter primitives incl. sign3D()
 src/lab.js                  optional patch bay
 src/main.js                 wiring + query params + loop
@@ -188,21 +268,9 @@ src/main.js                 wiring + query params + loop
 
 ---
 
-## 6. Suggested next steps
+## 10. Bottom line
 
-1. Visually verify in a browser; capture 4–6 representative frames.
-2. If the set still feels empty, add 1–2 more building volumes on the northeast
-   corner and one more parked car — but keep the “few big elements first” rule.
-3. Check that all four traffic lights read from the default camera; adjust pole
-   arm direction if any head faces away.
-4. Tune puddle count/size and raindrop density with `puddleAmount` and
-   `rainAmount` in the lab.
-5. If people variety is still too uniform, add more archetype accessories or
-   adjust `ARCHETYPES` weights.
-6. Optional: add a TSL/WebGPU adapter behind `ShaderGraph`; the GLSL graph is
-   the seam.
-7. Optional: record a 20s WebM/MP4 export for review while keeping `index.html`
-   asset-free.
-
-If the session dies mid-change: check `git status`, rebuild with `npm run build`,
-open `?lab=1`, and continue from the first “Still rough” item above.
+The current build is a technical prototype, not the film the user asked for.
+The next session should start from the references and the notes above, not from
+the assumption that the current look is correct. Real browser screenshots are
+the missing validation step.

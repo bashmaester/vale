@@ -2,6 +2,45 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 5: current-state documentation and handoff
+
+**User feedback:** “very underwhelming” and “almost none of my notes ahve
+landed”. No new visual changes were attempted this turn; the goal is to document
+the gap between the technical scaffold and the intended film, then merge the
+current branch to `main` so another session can restart from the references.
+
+### Added
+
+- `docs/CURRENT_STATE.md`: frank snapshot of what is actually built, a table of
+  “technical implementation vs visual confidence”, likely root causes and a
+  next-session plan.
+- `docs/HANDOFF.md` rewritten as a resume guide with the full chronological
+  summary of user notes, explicit “what has not landed visually” section,
+  invariants, commands, file map and merge instructions.
+
+### Changed
+
+- `README.md`: added a status warning that the current build is a technical
+  scaffold, not an approved visual result, with links to the current-state and
+  handoff docs.
+- `docs/CI.md`: note that this turn is merged to `main` via PR
+  `PR_NUMBER_TBD`.
+- `docs/CHANGELOG.md`: this entry.
+
+### Merged
+
+- Branch `arena/082e9ffd-vale` → `main` via PR `PR_NUMBER_TBD`.
+- Pages CI continues to deploy from both branches.
+
+### Important
+
+- The next session must validate with real browser screenshots against the
+  supplied architectural-sketch references before adding more features.
+- The visual result is not approved. Do not treat code presence as evidence that
+  a note landed.
+
+---
+
 ## 2026-10-27 — Turn 4: build out the corner, raindrop / puddle sim
 
 **Direction kept:** hybrid 3D→2D print. The user asked to focus on the set as a
