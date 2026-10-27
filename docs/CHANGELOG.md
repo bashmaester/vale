@@ -2,6 +2,85 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 14: cells that tile by edge, and a pavement you can walk round
+
+**User feedback:** a cell must tile with its neighbours — an EW-street tile either
+pairs with another EW street to extend the block, or meets a corner sidewalk;
+the E and W spacing was wrong (no pavement to turn on, and the gap to the next
+EW tile too small); and turning on **E** in the buffer panel lit the wrong
+diagonal (SW).
+
+### Changed
+
+- **The side street is 10.8 m across, not 7.2 m.** `SIDE_STREET` is now
+  `{ road: 3.0, walk: 2.4, x0: -12, x1: 12, blockX0: -9.6, blockX1: 9.6 }`. Paired
+  with a neighbour that is a 6.0 m carriageway with 2.4 m pavements each side —
+  wide enough for a car to pass a parked one, and wide enough that the gap reads
+  as a street rather than an alley. The block narrows from 22.8 m to 19.2 m and
+  the two rows were re-laid to fit, including a shop row that now clears the
+  crossing instead of sitting on it.
+- **The pavement is a ring.** `SIDEWALKS` gained four corner returns
+  (`EAST_N/EAST_S/WEST_N/WEST_S`), each drawn as a prism with a **rounded outer
+  corner** (`KERB_RADIUS = 1.5`, `cornerOutline` + `slabPrism`) so the kerb line
+  and the pavement edge are the same curve. That is the surface a pedestrian
+  turns on, and it is why the module reads as a finished block before its
+  neighbour is placed. The paving joints on the returns run with the side
+  street, not across it.
+- **Crossings at the ends of the block.** A zebra over each half street where
+  the pavement crosses it, plus the ramps; and a zebra across the main road at
+  each end of the block, which is the crossing that joins the front band to the
+  corner return. Without the pair the ring is decoration.
+- **Cells have a kind, and the kinds are what make a set tile.**
+  `cells.js` now takes `kind`:
+  - `street` — street both ways and a half NS street on both x edges (the
+    current module);
+  - `block` — **no** side street: the rows run out to both x edges and merge with
+    the neighbour's, and the lane dashes run edge to edge;
+  - `yard` — the side street stays but the block is an open lot: fence,
+    containers, bay stripes, a lamp.
+
+  `defaultKindFor(dx, dz)` is the edge rule — east/west continue the street,
+  north/south are block — so a tiled set is a street grid with a T junction at
+  each end, not nine copies of one intersection. `neighbourKind` forces one kind
+  everywhere for inspection.
+- **Layout presets** (`Scene.LAYOUTS`, `?layout=`): `auto`, `grid` (streets on
+  all four sides), `row` (E and W only), `block` field, `yard`. A preset sets
+  both which neighbours are on and what kind they are, which is the fastest way
+  to see how two tiles connect.
+- **The crowd turns corners.** A new `corner_e` flow walks the near pavement,
+  rounds the corner return and goes north up the east side street. It uses an
+  explicit waypoint path (`pathTable` / `alongPath`) resampled by arc length and
+  smoothed in space, walked at a constant 1.15 m/s — a single quadratic bezier
+  cut the corner straight across the road, and easing the crossing's parameter
+  over a corner read as jogging.
+- **Stroll bands.** A strolling flow now clamps its own z to its pavement band,
+  so the walk-on drift cannot carry somebody into the furniture line.
+
+### Fixed
+
+- **E toggled SW.** The buffer grid has a gap for the hero in the middle, so the
+  grid index was off by one from the bit index of `BUFFER_CELLS`. The bit is now
+  `1 << BUFFER_CELLS.findIndex(...)`.
+- **Parked cars were 2.6 m discs** in the crowd solver, which reached across the
+  pavement and shoved pedestrians around a car that was not there. Vehicles are
+  now a row of discs along their own axis (`half`, `across` on the traffic item).
+- **Furniture stood in the walking lane.** The vending machine, bins, benches,
+  planters, tree and the second lamp were at z 6.4–7.5, which is the middle of
+  the pavement; they are now against the shopfront line at z 7.85–8.1 and on the
+  corner return, with `STREET_PROPS` matching so the steering solve has nothing
+  to fight. Crossing queues and wait zones start at z 6.45, clear of the signal
+  and lamp posts at 6.1.
+- **Cracks were unclamped on the corner slabs**, which drew 2.2 m lines across
+  the side street.
+- Side-street centre lines sat on the inner kerb instead of the cell boundary,
+  so two halves did not join into one street.
+
+### Measured
+
+20 s loop sampled at 50 ms (640×360), counting only bodies above alpha 0.12:
+**0.0444 m average step, 0.457 m worst single step** — the worst is now a body
+threading a knot at a crossing, not a teleport.
+
 ## 2026-10-27 — Turn 13: a module with two frontages, and crowds that steer
 
 **User feedback:** every module must have buildings on **both** sides of its

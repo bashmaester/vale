@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 13, v0.1.6), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 14), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -40,10 +40,11 @@ Standing constraints carried from earlier sessions (do not break them):
 
 The scene now reads as **one module of a city**: a glass case with no hardware
 on its boundary, an east–west street with four blocks on the north frontage and
-two low shop blocks on the south frontage, a half street at each x edge, a
-crossing with signals, trees, parked and moving vehicles, an overhead train and a
-steering crowd. The same module is painted for the eight neighbouring cells, so
-the set tiles.
+two low shop blocks on the south frontage, a half street at each x edge with a
+pavement ring that turns the corners, a crossing with signals, trees, parked and
+moving vehicles, an overhead train and a steering crowd. Neighbouring cells are
+painted from the same rules with a **kind** (`street`, `block`, `yard`), so the
+set tiles as a street grid.
 
 Recent fixes that matter (all verified with stills):
 
@@ -73,6 +74,50 @@ Recent fixes that matter (all verified with stills):
 Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
 luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
+
+### Turn 14 — cells that tile by edge, a pavement you can walk round
+
+The module did not actually tile: the side street was too narrow to read as one,
+there was no pavement at the corners, and every neighbour was another
+intersection. Three things changed.
+
+1. **The side street is a real street.** `SIDE_STREET = { road: 3.0, walk: 2.4,
+   x0: -12, x1: 12, blockX0: -9.6, blockX1: 9.6 }`. Two cells side by side make a
+   6.0 m carriageway with 2.4 m pavements. The block is 19.2 m wide; the four
+   north lots and the two south lots were re-laid to fit, and the south row now
+   clears the crossing (x −5.2…−0.6) instead of sitting on it.
+2. **The pavement is a ring with rounded corners.** `SIDEWALKS` has the two
+   bands plus four corner returns; the returns are prisms built from
+   `cornerOutline()` with a 1.5 m radius (`KERB_RADIUS`), so the kerb and the
+   pavement edge are one curve. A zebra crosses each half street at the near
+   band and the main road at each end of the block, which is how a pedestrian
+   gets from the front band onto the return and round into the side street.
+3. **Cells have a kind.** `drawCell(..., kind)` where kind is `street`
+   (street both ways), `block` (no side street: rows merge with the neighbour,
+   dashes run edge to edge) or `yard` (open lot: fence, containers, bay
+   stripes). `defaultKindFor(dx, dz)` is the edge rule: E/W continue the street,
+   N/S are block. `Scene.LAYOUTS` / `?layout=` sets a whole pattern at once
+   (`auto`, `grid`, `row`, `block`, `yard`).
+
+The crowd gained a `corner_e` flow with an explicit waypoint path
+(`pathTable`/`alongPath`, arc-length, constant 1.15 m/s) so people actually walk
+the corner; a stroll also clamps itself to its pavement band.
+
+**Bugs fixed this turn:** the buffer grid's `E` button toggled SW (grid index vs.
+bit index — the grid has a gap for the hero); parked cars were 2.6 m discs in the
+crowd solver and reached across the pavement; the vending machine, bins, benches,
+planters, a tree and the second lamp stood in the walking lane; cracks were
+unclamped on the corner slabs; the side-street centre line sat on the inner kerb
+instead of the cell boundary.
+
+**Measured:** 0.0444 m mean step, 0.457 m worst visible step over the 20 s loop
+at 50 ms (only bodies above alpha 0.12 are counted — a correction at alpha 0 does
+not matter and chasing it distorts the solver).
+
+**Still open:** a diagonal neighbour cannot be drawn correctly by this module —
+a corner tile needs streets on two adjacent edges, and `cells.js` only knows how
+to carry a street on the x edges. `layout=grid` hides this by making every
+neighbour a street cell, but a real corner tile is the next piece of work.
 
 ### Turn 13 — a module with two frontages, and crowds that steer
 

@@ -8,18 +8,31 @@ UI during playback.
 
 The module is an **intersection**: an 11.8 m east–west street with a row of
 buildings on **both** sides — four blocks on the north frontage, two low shop
-blocks with a gap on the centre line on the south frontage — and a 3.6 m
-north–south **half street** down each x edge, so two modules side by side meet in
-a full 7.2 m street. Everything a cell contains is generated from the same rules,
-which is what lets the cells tile: the streets, kerbs, lane dashes, crossings,
-pavements and blocks carry straight through the seam (`src/cells.js`).
+blocks on the south frontage — and a **half north–south street** down each x
+edge. Each cell owns 3.0 m of carriageway and 2.4 m of pavement, so two cells
+side by side meet in a full 6.0 m street; the pavement is a **ring** with
+rounded corner returns, so a pedestrian can walk the block and turn into the
+side street.
 
-> **Status (2026-10-27, tag `v0.1.6`):** the module, the tileable cells, the
+Cells tile by **edge kind** (`src/cells.js`):
+
+| kind | side streets | what it is for |
+| --- | --- | --- |
+| `street` | both x edges | continues the street across the seam |
+| `block` | none | north/south of a street cell: the rows merge |
+| `yard` | both, open lot inside | a street edge meeting an empty lot |
+
+Set a whole pattern at once with `?layout=auto|grid|row|block|yard` (or the
+**layout** dropdown in the panel): `grid` tiles the module into a street grid,
+`block` closes the rows across every seam.
+
+> **Status (2026-10-27):** the module, the edge-aware tileable cells, the
 > palettes and the steering crowd are in; `npm run verify` (build · boot ·
 > renderer smoke · finite · determinism) is green and GitHub Pages deploys from
 > this branch. Read `docs/HANDOFF.md` first — it is the state of the work and the
-> list of what is still open. Visual validation is by the stills in `.shots/`
-> (`node tools/shot.mjs --t 3,9,17`).
+> list of what is still open (the biggest item is a true corner tile: a cell with
+> streets on two adjacent edges). Visual validation is by the stills in
+> `.shots/` (`node tools/shot.mjs --t 3,9,17`, `--layout grid`).
 
 ---
 

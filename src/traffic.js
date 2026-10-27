@@ -339,6 +339,12 @@ export class Traffic {
         this.parkedItems.push({
           spec, world: { x: spec.park.x, z: spec.park.z }, alpha: 0.95,
           radius: 2.4, group: 'vehicle', fixed: true, depth: 0, moving: false,
+          // Footprint for the crowd's steering: a capsule along the car's own
+          // axis, not a disc. A 2.6 m disc around a parked car reaches the far
+          // side of the pavement and pushes pedestrians around a car that is
+          // not there.
+          half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
+          across: (PROFILES[spec.type] || PROFILES.car).d / 2,
         });
       } else {
         const world = { x: movingCarX(spec, timeline.u), z: spec.lane };
@@ -347,6 +353,8 @@ export class Traffic {
         this.movingItems.push({
           spec, world, alpha,
           radius: 2.6, group: 'vehicle', fixed: false, moving: true, depth: 0,
+          half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
+          across: (PROFILES[spec.type] || PROFILES.car).d / 2,
         });
       }
     }

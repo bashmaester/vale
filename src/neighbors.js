@@ -14,7 +14,7 @@ import { v3 } from './math.js';
 import { TILE, TILE_COLORS as C } from './tile.js';
 import { BUILDING_LOTS, ROAD, CROSSWALKS } from './world.js';
 import { hash11, clamp } from './math.js';
-import { drawCell, CELL_W, CELL_D } from './cells.js';
+import { drawCell, CELL_W, CELL_D, defaultKindFor } from './cells.js';
 
 const BONE = (a) => `rgba(239,233,216,${a})`;
 
@@ -54,7 +54,7 @@ function boxWire(p, camera, cx, cy, cz, w, h, d, opts) {
  * @param style    'wire' | 'points'
  * @param alpha    0..1 global opacity
  */
-export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35) {
+export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35, kind = null) {
   if (alpha <= 0.01) return;
   const ox = cell.dx * CELL_W;
   const oz = cell.dz * CELL_D;
@@ -70,7 +70,7 @@ export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35) {
     // fading it would leave a visible tone step at the seam, which is exactly
     // what tiling has to avoid. `bufferOpacity` stays a control for the ghost
     // styles only.
-    drawCell(p, camera, d, cell.dx, cell.dz, 1);
+    drawCell(p, camera, d, cell.dx, cell.dz, 1, kind || defaultKindFor(cell.dx, cell.dz));
     return;
   }
   const seedBase = 9000 + (cell.dx + 1) * 31 + (cell.dz + 1) * 7;
@@ -148,7 +148,7 @@ export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35) {
 }
 
 /** Draw every enabled buffer cell. `mask` is a Set of cell ids. */
-export function drawBufferCells(p, camera, mask, style, alpha, only) {
+export function drawBufferCells(p, camera, mask, style, alpha, only, kindFor = null) {
   if (!mask || mask.size === 0) return;
   // Far cells first. A cell is opaque, so drawing a near one first would let
   // the cell behind it paint over its walls.
@@ -161,5 +161,5 @@ export function drawBufferCells(p, camera, mask, style, alpha, only) {
       return { c, depth: q && Number.isFinite(q.depth) ? q.depth : 1e6 };
     })
     .sort((a, b) => b.depth - a.depth);
-  for (const { c } of list) drawBufferCell(p, camera, c, style, alpha);
+  for (const { c } of list) drawBufferCell(p, camera, c, style, alpha, kindFor ? kindFor(c) : null);
 }

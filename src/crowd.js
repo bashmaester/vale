@@ -25,6 +25,11 @@ import {
   FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone, STREET_PROPS,
 } from './world.js';
 
+// Walking pace for the flows that turn a corner, in m/s. A little under the
+// crowd's mean: somebody walking round a corner is not in a hurry, and a
+// slower pace is what makes the turn read as a turn instead of a swerve.
+const CORNER_SPEED = 1.15;
+
 // Canopy colours. The palette is carried mostly by umbrellas, so they get the
 // saturated values while the coats stay near-black.
 const UMBRELLAS = [
@@ -86,6 +91,54 @@ function bezier2(p0, p1, p2, t) {
   };
 }
 
+// A rounded path through waypoints, walked at a constant pace.
+//
+// The waypoints are resampled by arc length and then smoothed, so the result is
+// monotone in the distance travelled — a body never stalls at a waypoint and
+// never jumps over one. Corners are rounded by smoothing in *space*, not by
+// easing the parameter: easing shortens the stride at every waypoint, which
+// reads as a stumble.
+function pathTable(pts) {
+  const RAW = 24;
+  const raw = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    for (let k = 0; k < RAW; k++) {
+      const f = k / RAW;
+      const x = lerp(a.x, b.x, f), z = lerp(a.z, b.z, f);
+      if (raw.length) total += Math.hypot(x - raw[raw.length - 1].x, z - raw[raw.length - 1].z);
+      raw.push({ x, z, s: total });
+    }
+  }
+  const last = pts[pts.length - 1];
+  total += Math.hypot(last.x - raw[raw.length - 1].x, last.z - raw[raw.length - 1].z);
+  raw.push({ x: last.x, z: last.z, s: total });
+  // Smooth, keeping the ends pinned: this is what rounds the corners.
+  const R = 6;
+  const sm = raw.map((p, i) => {
+    if (i < 2 || i > raw.length - 3) return { ...p };
+    let sx = 0, sz = 0, n = 0;
+    for (let k = -R; k <= R; k++) {
+      const q = raw[clamp(i + k, 0, raw.length - 1)];
+      sx += q.x; sz += q.z; n++;
+    }
+    return { x: sx / n, z: sz / n, s: p.s };
+  });
+  return { pts: sm, total };
+}
+
+function alongPath(table, dist) {
+  const { pts, total } = table;
+  const d = clamp(dist, 0, total);
+  let k = 1;
+  while (k < pts.length - 1 && pts[k].s < d) k++;
+  const a = pts[k - 1], b = pts[k];
+  const span = b.s - a.s;
+  const f = span < 1e-9 ? 0 : clamp((d - a.s) / span, 0, 1);
+  return { x: lerp(a.x, b.x, f), z: lerp(a.z, b.z, f) };
+}
+
 function chooseFlow(rng) {
   let r = rng.next();
   for (const f of FLOWS) {
@@ -130,7 +183,7 @@ function makePerson(rng, id, extra = {}) {
     // Which side of the pavement they keep. Two people on the same path with
     // different lanes pass each other instead of colliding, which is most of
     // what makes a crowd read as natural.
-    lane: rng.range(-0.42, 0.42),
+    lane: rng.range(-0.30, 0.30),
     ...extra,
   };
 }
@@ -175,8 +228,16 @@ export class Crowd {
     }
     for (let i = 0; i < specs.length; i++) {
       const { flow, start } = specs[i];
-      const end = { x: start.x + flow.delta.x, z: start.z + flow.delta.z };
-      const dir = norm3(v3(flow.delta.x, 0, flow.delta.z));
+      // A corner flow is a waypoint path, absolute in the cell: the pavement it
+      // turns on is in the same place for everyone. The first point is the
+      // walker's own start, so the fan of people still reads as a crowd, and
+      // the last leg gives the walk-on direction.
+      const via = flow.via ? [{ x: start.x, z: start.z }, ...flow.via.map((v) => ({ x: v.x, z: v.z }))] : null;
+      const end = via
+        ? { x: via[via.length - 1].x, z: via[via.length - 1].z }
+        : { x: start.x + flow.delta.x, z: start.z + flow.delta.z };
+      const lastA = via ? via[via.length - 2] : start;
+      const dir = norm3(v3(end.x - lastA.x, 0, end.z - lastA.z));
       const side = { x: -dir.z, z: dir.x };
       const bend = (flow.bend || 0) + rng.range(-0.9, 0.9);
       const ctrl = {
@@ -198,8 +259,21 @@ export class Crowd {
       this.crossers.push(makePerson(rng, i, {
         start, end, ctrl, dir, side, kind: flow.kind, flow: flow.id,
         approach, approachDir: { x: adx / al, z: adz / al },
-        pathLength: Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
+        // A single bezier from the near pavement to the side street cuts the
+        // corner straight across the road, which is the one thing a pedestrian
+        // never does; these flows carry absolute waypoints instead, walked at
+        // a constant pace through a rounded path.
+        table: via ? pathTable(via) : null,
+        pathLength: via
+          ? via.reduce((acc, p, k) => (k ? acc + Math.hypot(p.x - via[k - 1].x, p.z - via[k - 1].z) : 0), 0)
+          : Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
         delay: clamp((Math.abs(start.x) - 7) / 12, 0, 1) * 0.16 + rng.range(0, 0.30),
+        // A stroll keeps to its own pavement band for the whole walk. The band
+        // is what makes the pavement a place with lanes instead of an open
+        // plane: without it the bezier's bend and the walk-on drift carry
+        // people into the furniture line, and the solver then has to steer them
+        // out, which is the one job it does badly.
+        band: flow.kind === 'stroll' ? { z0: flow.bounds.z0 - 0.12, z1: flow.bounds.z1 + 0.12 } : null,
       }));
     }
 
@@ -312,7 +386,19 @@ export class Crowd {
       fixedProps.push({ world: { x: o.x, z: o.z }, radius: o.r, alpha: 1, fixed: true, group: 'prop' });
     }
     for (const o of obstacles) {
-      fixedProps.push({ world: { x: o.world.x, z: o.world.z }, radius: Math.max(0.6, o.radius || 0.8), alpha: 1, fixed: true, group: 'vehicle' });
+      // Vehicles are long: approximate one as a row of small discs along its
+      // own axis. A single big disc reaches across the pavement beside a parked
+      // car, which is where the worst crowd pops came from.
+      const half = o.half == null ? 1.6 : o.half;
+      const across = o.across == null ? 0.95 : Math.max(0.7, o.across);
+      const steps = Math.max(1, Math.ceil(half / across));
+      for (let k = 0; k <= steps; k++) {
+        const f = steps === 0 ? 0 : (k / steps) * 2 - 1;
+        fixedProps.push({
+          world: { x: o.world.x + f * half, z: o.world.z },
+          radius: across, alpha: 1, fixed: true, group: 'vehicle',
+        });
+      }
     }
     if (fixedProps.length) {
       // Only pedestrians move here, and only against the furniture: mixing the
@@ -391,13 +477,31 @@ export class Crowd {
         alpha: smoothstep(0.0, 0.03, u),
       };
     }
+    // A corner flow walks its own waypoints at a constant pace instead of the
+    // crossing's eased parameter. The eased curve is tuned for a straight 12 m
+    // crossing; on an 18 m path through a corner it peaked at 3.5 m/s and the
+    // body read as jogging, so this branch covers a fixed distance per second
+    // and simply stops at the end of the path when the loop phase runs out.
+    if (ped.table) {
+      const travelled = Math.max(0, (u - 0.18) * LOOP) * CORNER_SPEED;
+      const w = alongPath(ped.table, travelled);
+      const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
+      const done = travelled >= ped.table.total;
+      return {
+        x: w.x + ped.side.x * sw,
+        z: w.z + ped.side.z * sw,
+        moving: !done,
+        distance: travelled,
+        alpha: 1 - smoothstep(0.74, 0.80, u),
+      };
+    }
     const s = this.timeline.crossAt(ped.delay * ped.pace, u);
     if (s < 0.999) {
       const w = bezier2(ped.start, ped.ctrl, ped.end, s);
       const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
       return {
         x: w.x + ped.side.x * sw,
-        z: w.z + ped.side.z * sw,
+        z: clamp(w.z + ped.side.z * sw, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
         moving: true,
         distance: s * ped.pathLength,
         // Walk out into the far pavement, then dissolve before the wrap.
@@ -414,9 +518,10 @@ export class Crowd {
     const d0 = this.timeline.drainAt(Math.min(0.999, db));
     const d = Math.max(0, this.timeline.drainAt(u) - d0)
       * (ped.kind === 'stroll' ? 2.6 : 3.4);
+    const walkZ = ped.end.z + ped.dir.z * d;
     return {
       x: ped.end.x + ped.dir.x * d,
-      z: ped.end.z + ped.dir.z * d,
+      z: clamp(walkZ, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
       moving: d > 0.001 && u < 0.82,
       distance: ped.pathLength + d,
       alpha: 1 - smoothstep(0.755, 0.815, u),

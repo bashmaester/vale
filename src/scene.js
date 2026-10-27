@@ -1,5 +1,5 @@
 import { Painter } from './draw.js';
-import { Camera, v3 } from './math.js';
+import { Camera, v3, clamp } from './math.js';
 import { CameraRig } from './camera.js';
 import { CameraDirector } from './camera-director.js';
 import { Timeline } from './timeline.js';
@@ -15,6 +15,7 @@ import {
   drawFurniture, drawReflections, drawFlicker, collectFrame,
 } from './environment.js';
 import { drawBufferCells, BUFFER_CELLS, CELL_D } from './neighbors.js';
+import { defaultKindFor } from './cells.js';
 import { grade, paletteVersion, PLATE_CLEAR } from './palette.js';
 
 export const SCENE_PARAM_DEFS = {
@@ -52,6 +53,8 @@ export const SCENE_PARAM_DEFS = {
   bufferStyle: { value: 0, min: 0, max: 1, step: 1, label: 'buffer style (0 wire)' },
   bufferOpacity: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'buffer opacity' },
   bufferCells: { value: 0, min: 0, max: 255, step: 1, label: 'buffer cells (bitmask)' },
+  neighbourKind: { value: 0, min: 0, max: 3, step: 1, label: 'neighbour kind (0 auto)' },
+  layout: { value: 0, min: 0, max: 4, step: 1, label: 'layout preset (0 auto)' },
 };
 
 function defaults() {
@@ -135,6 +138,39 @@ export class Scene {
     ctx.fillStyle = grade(PLATE_CLEAR);
     ctx.fillRect(0, 0, this.W, this.H);
     ctx.restore();
+  }
+
+  // Which tile a neighbour is: 'street', 'block' or 'yard'. Auto follows the
+  // edge rule (east/west continue the street, north/south are more block), and
+  // the param forces one kind for every neighbour so a seam can be inspected.
+  // Layout presets: a whole neighbour pattern, so the ways cells connect can be
+  // inspected in one click instead of toggling eight buttons. Each preset also
+  // sets which cells are on — that is the point, a layout is a layout.
+  static LAYOUTS = [
+    // `auto` is the honest default: east and west continue the street, north
+    // and south are more block, which leaves a T junction at each end of the
+    // module. `grid` is the same module tiled into a full street grid — every
+    // neighbour carries its own street, so the block between them closes up.
+    { id: 'auto', label: 'auto — street E/W, block N/S', cells: 0b010111010, kind: 'auto' },
+    { id: 'grid', label: 'grid — streets on all four sides', cells: 0b111111111, kind: 'street' },
+    { id: 'row', label: 'row — E and W only', cells: 0b010101010, kind: 'street' },
+    { id: 'block', label: 'block field — no side streets', cells: 0b111111111, kind: 'block' },
+    { id: 'yard', label: 'yard — street with open lots', cells: 0b010111010, kind: 'yard' },
+  ];
+
+  applyLayout(i) {
+    const L = Scene.LAYOUTS[clamp(i | 0, 0, Scene.LAYOUTS.length - 1)];
+    this.params.layout = i | 0;
+    this.params.bufferCells = L.cells;
+    this.params.neighbourKind = L.kind === 'street' ? 1 : L.kind === 'block' ? 2 : L.kind === 'yard' ? 3 : 0;
+  }
+
+  neighbourKindFor(cell) {
+    const mode = this.params.neighbourKind | 0;
+    if (mode === 1) return 'street';
+    if (mode === 2) return 'block';
+    if (mode === 3) return 'yard';
+    return defaultKindFor(cell.dx, cell.dz);
   }
 
   // Bitmask → set of buffer cell ids (bit order matches BUFFER_CELLS).
@@ -283,7 +319,7 @@ export class Scene {
       // The cells behind the hero are part of its backdrop; the ones in front
       // of it are not, and must be drawn over it further down.
       drawBufferCells(this.pp, camera, cells, bufferStyle, this.params.bufferOpacity,
-        (c) => c.dz <= 0);
+        (c) => c.dz <= 0, (c) => this.neighbourKindFor(c));
     }
     tick('buffer');
 
@@ -343,7 +379,8 @@ export class Scene {
         const q = camera.project(v3(0, 1.5, TILE.z1 + CELL_D * 0.5));
         drawables.push({
           depth: q && Number.isFinite(q.depth) ? q.depth : 1e6,
-          draw: (p) => drawBufferCells(p, camera, nearer, bufferStyle, this.params.bufferOpacity),
+          draw: (p) => drawBufferCells(p, camera, nearer, bufferStyle, this.params.bufferOpacity,
+            null, (c) => this.neighbourKindFor(c)),
         });
       }
     }

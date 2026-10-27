@@ -21,7 +21,7 @@ import { TILE, SIDEWALK_Y, TILE_COLORS as C } from './tile.js';
 import { LOOP, loopNoise } from './loop.js';
 import {
   ROAD, SIDEWALKS, CROSSWALKS, LANES, SIGNAL_POSITIONS, BUILDING_LOTS,
-  SOUTH_LOTS, SOUTH_BLOCK, SIDE_STREET, KERB, LIGHT_SOURCES, PUDDLES,
+  SOUTH_LOTS, SOUTH_BLOCK, SIDE_STREET, KERB, KERB_RADIUS, LIGHT_SOURCES, PUDDLES,
 } from './world.js';
 
 const RNG = makeRng(20261027);
@@ -58,6 +58,62 @@ function rgbaOf(tint, a) {
 
 function line3(p, camera, a, b, opts = {}) {
   p.projectLine(camera, [v3(...a), v3(...b)], opts);
+}
+
+// A raised slab from an arbitrary plan outline: a prism with a flat top at
+// `y`. Used for the corner returns, whose outer corner is rounded rather than
+// square, so the pavement edge and the kerb line are the same curve.
+function slabPrism(p, camera, pts, y, opts) {
+  const n = pts.length;
+  // Sides first: a riser is a quad from the outline down to the ground.
+  for (let i = 0; i < n; i++) {
+    const a = pts[i], b = pts[(i + 1) % n];
+    p.projectPoly(camera, [
+      v3(a[0], y, a[1]), v3(b[0], y, b[1]),
+      v3(b[0], 0, b[1]), v3(a[0], 0, a[1]),
+    ], {
+      fill: opts.riser || 'rgba(20,20,24,0.96)', stroke: null,
+      jitter: 0.1, seed: (opts.seed || 1) + i,
+    });
+  }
+  p.projectPoly(camera, pts.map(([x, z]) => v3(x, y, z)), {
+    fill: opts.fill, stroke: opts.stroke || null, width: opts.width || 0.9,
+    jitter: 0.14, seed: opts.seed || 1,
+  });
+  // Repeat the top edge as a line loop: a stroke on the filled polygon loses
+  // itself against the slab tone, and the kerb has to read from every angle.
+  if (opts.edge !== false) {
+    for (let i = 0; i < n; i++) {
+      const a = pts[i], b = pts[(i + 1) % n];
+      p.projectLine(camera, [v3(a[0], y + 0.004, a[1]), v3(b[0], y + 0.004, b[1])], {
+        color: opts.stroke || BONE(0.4), width: opts.width || 0.9,
+        alpha: 0.85, jitter: 0.12, seed: (opts.seed || 1) + 40 + i, double: false,
+      });
+    }
+  }
+}
+
+// Plan outline of a pavement corner return, rounded at the outside corner.
+// `kx` is the side kerb (the cell boundary side of the pavement), `bx` the
+// building line, `cz` the front or back kerb of the main road, `sgn` +1 toward
+// +z. `R` is the kerb radius.
+function cornerOutline(kx, bx, cz, sgn, R) {
+  const out = kx > 0 ? 1 : -1;
+  // Corner centre: one radius back along both kerbs.
+  const cx = kx - out * R;
+  const cz2 = cz + sgn * R;
+  const pts = [[bx, cz]];
+  pts.push([cx, cz]);
+  for (let k = 1; k <= 3; k++) {
+    const a = (k / 3) * Math.PI * 0.5;
+    pts.push([cx + out * R * Math.sin(a), cz2 - sgn * R * Math.cos(a)]);
+  }
+  // The return runs out to the cell edge, where the neighbour's pavement
+  // picks it up.
+  const farZ = sgn > 0 ? TILE.z1 : TILE.z0;
+  pts.push([kx, farZ]);
+  pts.push([bx, farZ]);
+  return pts;
 }
 
 function faceOf(faces, name) {
@@ -265,7 +321,9 @@ export function drawStreet(p, camera, detail = { hatch: 1 }) {
   const { z1 } = TILE;
   const rx0 = ROAD.x0, rx1 = ROAD.x1, rz0 = ROAD.z0, rz1 = ROAD.z1;
   // The block between the two side streets: kerbs, aprons and paving stop here.
-  const bx0 = SIDE_STREET.x0, bx1 = SIDE_STREET.x1;
+  // `bx*` are the building lines; `kx*` the kerbs of the side carriages.
+  const bx0 = SIDE_STREET.blockX0, bx1 = SIDE_STREET.blockX1;
+  const kx0 = SIDE_STREET.x0, kx1 = SIDE_STREET.x1;
 
   // Asphalt with a subtle crown: overlapping bands rather than one flat fill.
   p.groundQuad(camera, rx0, rz0, rx1, rz1, { fill: '#101215', stroke: null, jitter: 0, y: 0.0 });
@@ -309,14 +367,15 @@ export function drawStreet(p, camera, detail = { hatch: 1 }) {
     });
   }
 
-  // Two raised sidewalks. The far one reads darker so the near one holds the eye.
+  // The raised pavement ring. Front and back are plain bands; the four corner
+  // returns are prisms with a rounded outer corner, so the kerb line and the
+  // pavement edge are the same curve and a pedestrian can walk round the block.
   for (const s of SIDEWALKS) {
+    if (s.corner) continue;
     const isFront = s.id === 'FRONT';
     const cx = (s.x0 + s.x1) / 2;
     const cz = (s.z0 + s.z1) / 2;
-    const w = s.x1 - s.x0;
-    const d = s.z1 - s.z0;
-    const faces = p.box(camera, [cx, SIDEWALK_Y / 2, cz], [w, SIDEWALK_Y, d], {
+    const faces = p.box(camera, [cx, SIDEWALK_Y / 2, cz], [s.x1 - s.x0, SIDEWALK_Y, s.z1 - s.z0], {
       fill: isFront ? '#232327' : '#17171a',
       stroke: BONE(isFront ? 0.50 : 0.36),
       width: isFront ? 1.05 : 0.85,
@@ -325,42 +384,88 @@ export function drawStreet(p, camera, detail = { hatch: 1 }) {
     });
     const top = faceOf(faces, 'top');
     if (top) {
-      // Slab tone variation.
       p.poly(top.quad, {
         fill: isFront ? 'rgba(44,44,49,0.34)' : 'rgba(32,32,36,0.30)',
         stroke: null, jitter: 0.8, seed: isFront ? 1610 : 1660,
       });
     }
   }
+  for (const [kx, bx] of [[SIDE_STREET.x0, SIDE_STREET.blockX0], [SIDE_STREET.x1, SIDE_STREET.blockX1]]) {
+    for (const [cz, sgn] of [[ROAD.z1, 1], [ROAD.z0, -1]]) {
+      const pts = cornerOutline(kx, bx, cz, sgn, KERB_RADIUS);
+      slabPrism(p, camera, pts, SIDEWALK_Y, {
+        fill: '#1e1e23', stroke: BONE(0.40), width: 0.95,
+        riser: 'rgba(22,22,26,0.97)', seed: 1670 + kx + cz,
+      });
+    }
+  }
 
   // The forecourt on the near block: the shops stand on the same raised level
   // as the pavement, so the seam between the two reads as a step, not a crack.
-  p.box(camera, [0, SIDEWALK_Y / 2, (SOUTH_BLOCK.z0 + SOUTH_BLOCK.z1) / 2],
-    [SIDE_STREET.x1 - SIDE_STREET.x0, SIDEWALK_Y, SOUTH_BLOCK.z1 - SOUTH_BLOCK.z0], {
+  p.box(camera, [(bx0 + bx1) / 2, SIDEWALK_Y / 2, (SOUTH_BLOCK.z0 + SOUTH_BLOCK.z1) / 2],
+    [bx1 - bx0, SIDEWALK_Y, SOUTH_BLOCK.z1 - SOUTH_BLOCK.z0], {
       fill: '#1d1d21', stroke: BONE(0.40), width: 0.9, alpha: 1,
       seed: 1680, jitter: 0.16, edgeAlpha: 0.7,
     });
 
   // Wet apron along the near kerb: the brightest ground in the shot, because
   // it is where the crowd's feet and the light reflections meet.
-  p.groundQuad(camera, bx0, ROAD.z1 - 1.5, bx1, ROAD.z1, {
+  p.groundQuad(camera, kx0, ROAD.z1 - 1.5, kx1, ROAD.z1, {
     fill: 'rgba(60,58,58,0.20)', stroke: null, jitter: 0.5, y: 0.010,
   });
 
-  // Kerb faces: a bright top edge and a darker riser, with stone ticks. They
-  // stop at the inner kerb of the north–south street, where the block ends.
+  // Kerb faces: a bright top edge and a darker riser, with stone ticks. The
+  // front and back kerbs run all the way to the side kerbs — they are the two
+  // kerb lines of the intersection, not of the block — and each corner is
+  // drawn as a chamfered return so the kerb turns instead of ending in a point.
   for (const [z, dir] of [[rz1, 1], [rz0, -1]]) {
-    line3(p, camera, [bx0, SIDEWALK_Y, z], [bx1, SIDEWALK_Y, z], {
+    line3(p, camera, [kx0, SIDEWALK_Y, z], [kx1, SIDEWALK_Y, z], {
       color: BONE(0.62), width: 1.5, alpha: 0.85, jitter: 0.14, seed: 1700 + z, double: false,
     });
-    line3(p, camera, [bx0, 0.015, z], [bx1, 0.015, z], {
+    line3(p, camera, [kx0, 0.015, z], [kx1, 0.015, z], {
       color: BONE(0.20), width: 1.0, alpha: 0.7, jitter: 0.2, seed: 1710 + z, double: false,
     });
-    for (let x = bx0 + 1.4; x < bx1; x += 1.55) {
+    for (let x = kx0 + 1.4; x < kx1; x += 1.55) {
       line3(p, camera, [x, 0.01, z], [x, SIDEWALK_Y - 0.01, z], {
         color: BONE(0.16), width: 0.55, alpha: 0.65,
         jitter: 0.12, seed: 1720 + x * 3 + dir, double: false,
       });
+    }
+  }
+
+  // Side kerbs: down each side street, either side of the main road.
+  for (const kx of [kx0, kx1]) {
+    const out = kx < 0 ? -1 : 1;
+    for (const [za, zb] of [[TILE.z0, rz0], [rz1, TILE.z1]]) {
+      line3(p, camera, [kx, SIDEWALK_Y, za], [kx, SIDEWALK_Y, zb], {
+        color: BONE(0.50), width: 1.2, alpha: 0.8, jitter: 0.14,
+        seed: 1730 + kx + za, double: false,
+      });
+      line3(p, camera, [kx, 0.015, za], [kx, 0.015, zb], {
+        color: BONE(0.16), width: 0.85, alpha: 0.65, jitter: 0.2,
+        seed: 1732 + kx + za, double: false,
+      });
+      // Stone ticks along the side kerb, the same pitch as the front one.
+      for (let z = za + 1.3; z < zb - 0.2; z += 1.55) {
+        line3(p, camera, [kx, 0.01, z], [kx, SIDEWALK_Y - 0.01, z], {
+          color: BONE(0.14), width: 0.5, alpha: 0.6, jitter: 0.12,
+          seed: 1734 + z * 3, double: false,
+        });
+      }
+    }
+    // Corner return: three chords rounding the kerb from the side street into
+    // the main road. Same outline as the slab above, so the bright edge sits
+    // exactly on the pavement edge.
+    for (const sgn of [-1, 1]) {
+      const cz = sgn > 0 ? rz1 : rz0;
+      const bxx = kx < 0 ? bx0 : bx1;
+      const pts = cornerOutline(kx, bxx, cz, sgn, KERB_RADIUS);
+      for (let k = 1; k < 4; k++) {
+        line3(p, camera, [pts[k][0], SIDEWALK_Y, pts[k][1]], [pts[k + 1][0], SIDEWALK_Y, pts[k + 1][1]], {
+          color: BONE(0.62), width: 1.5, alpha: 0.85, jitter: 0.1,
+          seed: 1740 + kx * 3 + sgn * 7 + k, double: false,
+        });
+      }
     }
   }
 
@@ -379,25 +484,35 @@ export function drawStreet(p, camera, detail = { hatch: 1 }) {
   }
 }
 
+// Paving joints for one slab of the ring. `s.axis` says which way the joints
+// run: 'x' for the front and back bands, 'z' for the corner returns, which
+// carry the side street's paving round the corner.
 function paving(p, camera, s, detail, seed) {
   const hatch = detail.hatch == null ? 1 : detail.hatch;
   const y = SIDEWALK_Y + 0.004;
   const front = s.id === 'FRONT';
-  const bandH = front ? 1.05 : 1.35;
-  const rows = Math.max(2, Math.round((s.z1 - s.z0) / bandH));
+  const corner = !!s.corner;
+  const alongZ = s.axis === 'z';
+  const uSpan = alongZ ? s.z1 - s.z0 : s.x1 - s.x0;   // along the joints
+  const vSpan = alongZ ? s.x1 - s.x0 : s.z1 - s.z0;   // across them
+  // P(u, v): u runs along the slab, v across it.
+  const P = (u, v) => (alongZ
+    ? v3(lerp(s.x0, s.x1, v), y, lerp(s.z0, s.z1, u))
+    : v3(lerp(s.x0, s.x1, u), y, lerp(s.z0, s.z1, v)));
+  const bandH = corner ? 1.2 : front ? 1.05 : 1.35;
+  const rows = Math.max(2, Math.round(vSpan / bandH));
   // Long, slightly wavy slab joints running along the street.
   for (let r = 1; r < rows; r++) {
-    const z = lerp(s.z0, s.z1, r / rows);
-    const xa = s.x0 + 0.4, xb = s.x1 - 0.4;
-    const segs = 3;
+    const v = r / rows;
+    const segs = corner ? 2 : 3;
     for (let k = 0; k < segs; k++) {
-      const x0 = lerp(xa, xb, k / segs);
-      const x1 = lerp(xa, xb, (k + 1) / segs);
       if (hash11(seed + r * 13.1 + k * 7.7) > (front ? 0.86 : 0.7)) continue;
+      const u0 = 0.03 + (k / segs) * 0.94;
+      const u1 = 0.03 + ((k + 1) / segs) * 0.94;
       p.projectLine(camera, [
-        v3(x0, y, z + (hash11(seed + r + k) - 0.5) * 0.14),
-        v3(lerp(x0, x1, 0.5), y, z + (hash11(seed + r * 2 + k) - 0.5) * 0.2),
-        v3(x1, y, z + (hash11(seed + r * 3 + k) - 0.5) * 0.14),
+        P(u0, v + (hash11(seed + r + k) - 0.5) * 0.03),
+        P((u0 + u1) / 2, v + (hash11(seed + r * 2 + k) - 0.5) * 0.05),
+        P(u1, v + (hash11(seed + r * 3 + k) - 0.5) * 0.03),
       ], {
         color: BONE(front ? 0.30 : 0.17), width: 0.65,
         alpha: 0.55 + hash11(seed + r * 5 + k) * 0.35,
@@ -406,110 +521,139 @@ function paving(p, camera, s, detail, seed) {
     }
   }
   // Sparse short cross joints, offset band to band.
-  const cols = Math.max(3, Math.round((s.x1 - s.x0) / (front ? 3.4 : 4.4)));
+  const cols = Math.max(2, Math.round(uSpan / (corner ? 2.0 : front ? 3.4 : 4.4)));
   for (let c = 1; c < cols; c++) {
     for (let r = 0; r < rows; r++) {
       if (hash11(seed + c * 9.3 + r * 2.1) > (front ? 0.55 : 0.4)) continue;
-      const x = lerp(s.x0, s.x1, c / cols) + (hash11(seed + r * 3) - 0.5) * 0.5;
-      const za = lerp(s.z0, s.z1, r / rows);
-      const zb = lerp(s.z0, s.z1, (r + 1) / rows);
-      p.projectLine(camera, [v3(x, y, za + 0.08), v3(x, y, zb - 0.08)], {
+      const u = c / cols + (hash11(seed + r * 3) - 0.5) * 0.06;
+      const v0 = r / rows + 0.02, v1 = (r + 1) / rows - 0.02;
+      p.projectLine(camera, [P(u, v0), P(u, v1)], {
         color: BONE(front ? 0.22 : 0.13), width: 0.5, alpha: 0.65,
         jitter: 0.2, seed: seed + c * 17 + r, double: false,
       });
     }
   }
-  // Wear marks and cracks.
-  const cracks = Math.round(16 * hatch);
+  // Wear marks and cracks. Kept inside the slab: an unclamped crack on a
+  // 2.4 m corner return is a line straight across the side street.
+  const cracks = Math.max(2, Math.round((corner ? 5 : 16) * hatch));
+  const du = Math.min(0.4, 2.2 / Math.max(0.5, uSpan));
   for (let i = 0; i < cracks; i++) {
-    const x = lerp(s.x0 + 1, s.x1 - 1, hash11(seed + i * 11.3));
-    const z = lerp(s.z0 + 0.5, s.z1 - 0.5, hash11(seed + i * 5.9));
-    const len = 0.8 + hash11(seed + i * 2.1) * 2.2;
+    const u = 0.08 + hash11(seed + i * 11.3) * (0.84 - du);
+    const v = 0.1 + hash11(seed + i * 5.9) * 0.8;
     p.projectLine(camera, [
-      v3(x, y, z), v3(x + len * 0.6, y, z + len * 0.2), v3(x + len, y, z - len * 0.3),
+      P(u, v), P(u + du * 0.6, v + 0.03), P(u + du, v - 0.04),
     ], {
       color: BONE(0.11), width: 0.45, alpha: 0.75,
       jitter: 0.3, seed: seed + i * 13, double: false,
     });
   }
   // A few damp patches, tinted to the nearest sign.
-  for (let i = 0; i < 4; i++) {
-    const x = lerp(s.x0 + 2, s.x1 - 2, hash11(seed + 60 + i * 4.7));
-    const z = lerp(s.z0 + 0.8, s.z1 - 0.8, hash11(seed + 70 + i * 3.1));
-    const rx = 0.9 + hash11(seed + 80 + i) * 1.4;
-    const rz = 0.35 + hash11(seed + 90 + i) * 0.5;
+  for (let i = 0; i < (corner ? 1 : 4); i++) {
+    const u = 0.12 + hash11(seed + 60 + i * 4.7) * 0.76;
+    const v = 0.15 + hash11(seed + 70 + i * 3.1) * 0.7;
+    const ru = 0.9 + hash11(seed + 80 + i) * 1.4;
+    const rv = 0.35 + hash11(seed + 90 + i) * 0.5;
     p.projectPoly(camera, [
-      v3(x - rx, y, z - rz), v3(x + rx * 0.82, y, z - rz * 0.7),
-      v3(x + rx, y, z + rz), v3(x - rx * 0.9, y, z + rz * 0.8),
+      P(u - ru / uSpan, v - rv / vSpan), P(u + ru / uSpan * 0.82, v - rv / vSpan * 0.7),
+      P(u + ru / uSpan, v + rv / vSpan), P(u - ru / uSpan * 0.9, v + rv / vSpan * 0.8),
     ], {
       fill: i % 3 === 0 ? TEAL(0.045) : BONE(0.03), stroke: null, jitter: 0.4, seed: seed + 100 + i,
     });
   }
 }
 
-// The north–south street down the side of the cell. Each cell owns a half;
-// when two cells meet, the two halves read as one street, which is the whole
-// point of the module.
+// The north–south street down the side of the cell. Each cell owns half of it:
+// 3.0 m of carriageway on this side of the boundary. Two cells meet in a 6.0 m
+// street with 2.4 m pavements, and the pavement ring in `drawStreet` wraps the
+// corner, so the two halves read as one street rather than as a gap between
+// blocks. The kerbs of this street are drawn with the main street's, because
+// they are the same intersection.
 export function drawSideStreet(p, camera, detail = { hatch: 1 }) {
   const { x0, x1, z0, z1 } = TILE;
-  const half = SIDE_STREET.half;
-  const strips = [[x0, x0 + half], [x1 - half, x1]];
+  const strips = [[x0, SIDE_STREET.x0], [SIDE_STREET.x1, x1]];
+  const hatch = detail.hatch == null ? 1 : detail.hatch;
   for (let si = 0; si < strips.length; si++) {
     const [sx0, sx1] = strips[si];
-    p.groundQuad(camera, sx0, z0, sx1, z1, {
-      fill: '#15181d', stroke: null, jitter: 0, y: 0.001,
-    });
-    // A wet band down the middle of the half-street, and wear along the kerb.
-    p.groundQuad(camera, (sx0 + sx1) / 2 - 1.2, z0 + 0.6, (sx0 + sx1) / 2 + 1.2, z1 - 0.6, {
-      fill: 'rgba(239,233,216,0.045)', stroke: null, jitter: 0.5, y: 0.008,
-    });
+    const cx = (sx0 + sx1) / 2;
     const inner = si === 0 ? sx1 : sx0;
-    // A courtesy crossing where the pavement continues over the half street:
-    // it is what makes the gap read as a side road rather than a hole in the
-    // block, and it is exactly where the neighbour's pavement picks up.
-    for (let b = 0; b < 5; b++) {
-      const zb = 6.35 + b * 0.34;
-      p.projectPoly(camera, [
-        v3(inner + 0.35, 0.022, zb), v3(inner + (si === 0 ? 3.4 : -3.4), 0.022, zb),
-        v3(inner + (si === 0 ? 3.4 : -3.4), 0.022, zb + 0.2), v3(inner + 0.35, 0.022, zb + 0.2),
-      ], {
-        fill: BONE(0.26), stroke: null, jitter: 0.3, seed: 1860 + si * 13 + b,
+    p.groundQuad(camera, sx0, z0, sx1, z1, {
+      fill: '#0f1116', stroke: null, jitter: 0, y: 0.001,
+    });
+    // Crown, and a wet band down the middle of the lane.
+    p.groundQuad(camera, cx - 0.85, z0 + 0.4, cx + 0.85, z1 - 0.4, {
+      fill: 'rgba(239,233,216,0.05)', stroke: null, jitter: 0.5, y: 0.008,
+    });
+    // Tyre wear: two faint runs, one either side of the crown.
+    for (const off of [-0.85, 0.85]) {
+      p.groundQuad(camera, cx + off - 0.28, z0 + 0.8, cx + off + 0.28, z1 - 0.8, {
+        fill: 'rgba(8,10,12,0.28)', stroke: null, jitter: 0.7, y: 0.007,
       });
     }
-    // Kerb along the block side, in two runs either side of the main street.
-    for (const [za, zb] of [[z0, ROAD.z0], [ROAD.z1, z1]]) {
-      line3(p, camera, [inner, SIDEWALK_Y, za], [inner, SIDEWALK_Y, zb], {
-        color: BONE(0.58), width: 1.4, alpha: 0.8, jitter: 0.14,
-        seed: 1800 + si * 17 + za, double: false,
-      });
-      line3(p, camera, [inner, 0.015, za], [inner, 0.015, zb], {
-        color: BONE(0.18), width: 0.9, alpha: 0.65, jitter: 0.2,
-        seed: 1810 + si * 17 + za, double: false,
-      });
-      for (let z = za + 1.2; z < zb; z += 1.5) {
-        line3(p, camera, [inner, 0.01, z], [inner, SIDEWALK_Y - 0.01, z], {
-          color: BONE(0.15), width: 0.55, alpha: 0.6, jitter: 0.12,
-          seed: 1820 + si * 23 + z, double: false,
+    // Centre line. The boundary of the cell IS the middle of the street, so
+    // each cell draws its own half of the line: paired with a neighbour the two
+    // halves join, and on its own the line sits on the cut edge, where the
+    // street is cut in half. World-periodic in z for the same reason the main
+    // road's dashes are periodic in x.
+    // The centre of the street IS the cell boundary (si 0 = west half, so the
+    // boundary is x1 of the tile; si 1 = east half, so it is x0).
+    const lineAt = si === 0 ? x0 : x1;
+    const inw = si === 0 ? 1 : -1;
+    for (let gz = Math.ceil(z0 / 4.5) * 4.5; gz < z1 - 0.5; gz += 4.5) {
+      const a = gz, b = Math.min(gz + 2.2, z1);
+      if (b - a < 0.4) continue;
+      const x0q = lineAt;
+      const x1q = lineAt + inw * 0.07;
+      p.projectPoly(camera, [
+        v3(x0q, 0.024, a), v3(x1q, 0.024, a),
+        v3(x1q, 0.024, b), v3(x0q, 0.024, b),
+      ], { fill: BONE(0.30), stroke: null, jitter: 0.14, seed: 1870 + si * 11 + gz, alpha: 0.85 });
+    }
+    // Zebra across the side street, at the near pavement: the ring of paving is
+    // only a ring if a pedestrian can get from the front band onto the corner
+    // return without stepping into the carriageway. Bars run along z, repeated
+    // across x — the mirror image of the main crossing.
+    {
+      const bars = 5;
+      for (let i = 0; i < bars; i++) {
+        const t = (i + 0.5) / bars;
+        const xb = lerp(sx0 + 0.55, sx1 - 0.55, t);
+        p.projectPoly(camera, [
+          v3(xb - 0.24, 0.022, ROAD.z1 + 0.35), v3(xb + 0.24, 0.022, ROAD.z1 + 0.35),
+          v3(xb + 0.24, 0.022, ROAD.z1 + 2.05), v3(xb - 0.24, 0.022, ROAD.z1 + 2.05),
+        ], {
+          fill: BONE(0.40 + hash11(1880 + si * 9 + i) * 0.12), stroke: null,
+          jitter: 0.26, seed: 1880 + si * 9 + i,
         });
       }
+      // Kerb ramp wedges onto each corner return.
+      for (const sg of [-1, 1]) {
+        const kxx = si === 0 ? x0 + 3.0 : x1 - 3.0;
+        p.projectPoly(camera, [
+          v3(inner, SIDEWALK_Y + 0.004, ROAD.z1 + 0.42),
+          v3(inner + sg * 0.9, SIDEWALK_Y + 0.004, ROAD.z1 + 0.42),
+          v3(inner + sg * 0.9, 0.02, ROAD.z1 + 1.9),
+          v3(inner, 0.02, ROAD.z1 + 1.9),
+        ], { fill: 'rgba(239,233,216,0.05)', stroke: BONE(0.24), width: 0.6, jitter: 0.3, seed: 1890 + si });
+      }
     }
-    // Corner kerbs where the side street meets the main one.
-    for (const [za, sgn] of [[ROAD.z0, -1], [ROAD.z1, 1]]) {
-      line3(p, camera, [x0 + (si === 0 ? 0 : half * 2), 0.02, za], [inner, 0.02, za], {
-        color: BONE(0.26), width: 0.9, alpha: 0.7, jitter: 0.2,
-        seed: 1830 + si * 11 + za, double: false,
-      });
-    }
-  }
-  // Wear and a couple of drain covers: enough to read as a used street.
-  if ((detail.hatch || 1) > 0.4) {
-    for (let i = 0; i < 6; i++) {
-      const sx = x0 + 1.4 + hash11(1900 + i) * (half - 2.8);
-      const zz = z0 + 2 + hash11(1910 + i) * (z1 - z0 - 4);
-      line3(p, camera, [sx, 0.012, zz], [sx + 1.6 + hash11(1920 + i) * 2.6, 0.012, zz + (hash11(1930 + i) - 0.5) * 0.5], {
-        color: BONE(0.05), width: 1.0, alpha: 0.6, jitter: 0.3,
-        seed: 1940 + i, double: false,
-      });
+    // Wear and drain covers: enough to read as a used street.
+    if (hatch > 0.4) {
+      for (let i = 0; i < 4; i++) {
+        const zz = z0 + 2 + hash11(1900 + si * 7 + i) * (z1 - z0 - 4);
+        const lx = sx0 + 0.6 + hash11(1910 + i) * 1.4;
+        line3(p, camera, [lx, 0.012, zz], [lx + 1.2 + hash11(1920 + i) * 1.4, 0.012, zz + 1.6 + hash11(1930 + i) * 2.2], {
+          color: BONE(0.05), width: 1.0, alpha: 0.6, jitter: 0.3,
+          seed: 1940 + si * 11 + i, double: false,
+        });
+      }
+      for (const [dz, sg] of [[1.0, -1], [-1.0, 1]]) {
+        p.projectPoly(camera, [
+          v3(inner + sg * 0.16, 0.02, (si === 0 ? -7.2 : 2.4) + dz * 0.5),
+          v3(inner + sg * 0.16, 0.02, (si === 0 ? -7.2 : 2.4) + dz * 0.5 + 0.7),
+          v3(inner + sg * 0.62, 0.02, (si === 0 ? -7.2 : 2.4) + dz * 0.5 + 0.7),
+          v3(inner + sg * 0.62, 0.02, (si === 0 ? -7.2 : 2.4) + dz * 0.5),
+        ], { fill: 'rgba(4,6,5,0.9)', stroke: BONE(0.26), width: 0.6, jitter: 0.2, seed: 1960 + si * 7 + dz });
+      }
     }
   }
 }
@@ -517,8 +661,16 @@ export function drawSideStreet(p, camera, detail = { hatch: 1 }) {
 export function drawPaving(p, camera, detail = { hatch: 1 }) {
   paving(p, camera, SIDEWALKS[1], detail, 1800);
   paving(p, camera, SIDEWALKS[0], detail, 1900);
+  // The corner returns: the same paving joints, turned through 90° so the
+  // slabs run with the side street.
+  let cs = 2200;
+  for (const s of SIDEWALKS) {
+    if (!s.corner) continue;
+    paving(p, camera, s, detail, cs);
+    cs += 100;
+  }
   paving(p, camera, {
-    id: 'SOUTH', x0: SIDE_STREET.x0, x1: SIDE_STREET.x1,
+    id: 'SOUTH', x0: SIDE_STREET.blockX0, x1: SIDE_STREET.blockX1,
     z0: SOUTH_BLOCK.z0, z1: SOUTH_BLOCK.z1,
   }, detail, 2100);
 
@@ -597,6 +749,31 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
     }
   }
 
+  // Corner crossings: the pavement ring is interrupted by the main road at
+  // each end of the block, so there is a zebra there too — that is the crossing
+  // a pedestrian uses to walk round the corner, and without it the corner
+  // returns are decoration. Bars run along z, repeated across x.
+  for (const [cx0, cx1] of [[SIDE_STREET.blockX1 + 0.35, SIDE_STREET.x1 - 0.35],
+    [SIDE_STREET.x0 + 0.35, SIDE_STREET.blockX0 - 0.35]]) {
+    const n = 7;
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) / n;
+      const z = lerp(cw.z0 + 0.3, cw.z1 - 0.3, t);
+      const a = 0.44 + hash11(360 + i) * 0.14;
+      p.projectPoly(camera, [
+        v3(cx0, y, z - 0.25), v3(cx1, y, z - 0.25),
+        v3(cx1, y, z + 0.25), v3(cx0, y, z + 0.25),
+      ], { fill: BONE(a), stroke: null, jitter: 0.3, seed: 364 + i });
+    }
+    // Kerb ramps at both ends of each corner crossing.
+    for (const [z, sgn] of [[ROAD.z1, 1], [ROAD.z0, -1]]) {
+      p.projectPoly(camera, [
+        v3(cx0 + 0.1, SIDEWALK_Y + 0.004, z + sgn * 0.02), v3(cx1 - 0.1, SIDEWALK_Y + 0.004, z + sgn * 0.02),
+        v3(cx1 - 0.1, 0.02, z + sgn * 0.72), v3(cx0 + 0.1, 0.02, z + sgn * 0.72),
+      ], { fill: 'rgba(239,233,216,0.05)', stroke: BONE(0.26), width: 0.6, jitter: 0.32, seed: 366 + sgn });
+    }
+  }
+
   // Stop lines: eastbound before the crossing on the near lane, westbound on
   // the far lane, each on its own side of the centre line.
   p.projectPoly(camera, [
@@ -611,7 +788,10 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
   // Centre line. Dashes are laid out on a WORLD grid (see cells.js): a cell
   // boundary always lands on a dash period, so a neighbour's line continues
   // this one across the seam instead of restarting mid-dash.
-  laneDashes(p, camera, { z: 0, color: BONE(0.34), width: 1.0, seed: 350, dash: 3.2, y: 0.026 });
+  laneDashes(p, camera, {
+    z: 0, color: BONE(0.34), width: 1.0, seed: 350, dash: 3.2, y: 0.026,
+    x0: SIDE_STREET.x0, x1: SIDE_STREET.x1,
+  });
   // The crossing is left clear.
   p.groundQuad(camera, cw.x0 - 0.2, -0.9, cw.x1 + 0.2, 0.9, {
     fill: 'rgba(12,14,16,0.55)', stroke: null, jitter: 0.5, y: 0.027,
@@ -620,11 +800,11 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
   // Kerb-side edge lines and broken lane dividers.
   for (const l of LANES) {
     const edgeZ = l.offset + l.dir * 1.75;
-    line3(p, camera, [ROAD.x0, y, edgeZ], [cw.x0 - 0.8, y, edgeZ], {
+    line3(p, camera, [SIDE_STREET.x0 + 0.15, y, edgeZ], [cw.x0 - 0.8, y, edgeZ], {
       color: BONE(0.26), width: 0.8, alpha: 0.8,
       jitter: 0.2, seed: 360 + l.offset, double: false,
     });
-    line3(p, camera, [cw.x1 + 0.8, y, edgeZ], [ROAD.x1, y, edgeZ], {
+    line3(p, camera, [cw.x1 + 0.8, y, edgeZ], [SIDE_STREET.x1 - 0.15, y, edgeZ], {
       color: BONE(0.26), width: 0.8, alpha: 0.8,
       jitter: 0.2, seed: 370 + l.offset, double: false,
     });
@@ -632,6 +812,7 @@ export function drawRoadMarkings(p, camera, timeline = { empty: () => 0 }) {
     laneDashes(p, camera, {
       z: l.offset, color: BONE(0.30), width: 0.85, seed: 375 + l.offset,
       dash: 2.6, y: 0.026,
+      x0: SIDE_STREET.x0, x1: SIDE_STREET.x1,
     });
     p.groundQuad(camera, cw.x0 - 0.2, l.offset - 0.5, cw.x1 + 0.2, l.offset + 0.5, {
       fill: 'rgba(12,14,16,0.5)', stroke: null, jitter: 0.4, y: 0.028,
@@ -1478,10 +1659,10 @@ function bicycle(p, camera, x, z, rot, seed) {
 
 export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null) {
   // Street lamps along both kerbs.
-  streetLamp(p, camera, -10.9, ROAD.z1 + 0.55, 1);
+  streetLamp(p, camera, -10.9, KERB.front + 0.19, 1);
   // A second lamp on the near-left sidewalk so that corner is not a black hole.
-  streetLamp(p, camera, -10.7, 7.4, 1);
-  streetLamp(p, camera, 10.6, ROAD.z1 + 0.55, -1);
+  streetLamp(p, camera, -10.8, 9.1, 1);
+  streetLamp(p, camera, 10.6, KERB.front + 0.19, -1);
   streetLamp(p, camera, -6.9, ROAD.z0 - 0.55, 1);
   streetLamp(p, camera, 4.6, ROAD.z0 - 0.55, -1);
 
@@ -1518,7 +1699,7 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
   }
 
   // Vending machine: the bright foreground note on the near right.
-  const vx = 10.5, vz = 6.9;
+  const vx = 10.72, vz = 8.02;
   const vfaces = p.box(camera, [vx, SIDEWALK_Y + 0.95, vz], [1.05, 1.9, 0.75], {
     fill: '#0e0f11', stroke: BONE(0.55), width: 0.9, alpha: 0.98,
     seed: 3400, jitter: 0.16, edgeAlpha: 0.8,
@@ -1655,17 +1836,17 @@ export function drawFurniture(p, camera, detail = { props: 1 }, timeline = null)
 
   // Trees: the strongest foreground silhouette.
   if (detail.trees > 0.4) {
-    tree(p, camera, 6.6, 7.4, 1.10, 3570, detail);
-    tree(p, camera, -10.0, 7.3, 1.00, 3590, detail);
+    tree(p, camera, 6.6, 7.55, 1.10, 3570, detail);
+    tree(p, camera, -10.0, 7.45, 1.00, 3590, detail);
   }
 
   // Front-left street furniture: the near corner was bare pavement.
   if (detail.props > 0.4) {
-    bench(p, camera, -9.6, 7.4, 0.06, 3602);
+    bench(p, camera, -9.6, 7.45, 0.06, 3602);
     bench(p, camera, -7.9, 7.5, Math.PI + 0.04, 3604);
-    bikeRack(p, camera, -8.8, 6.4, 3, 3610);
+    bikeRack(p, camera, -8.8, 7.6, 3, 3610);
     // Bin beside the bench.
-    p.box(camera, [-10.7, SIDEWALK_Y + 0.32, 7.5], [0.44, 0.64, 0.44], {
+    p.box(camera, [-10.7, SIDEWALK_Y + 0.32, 7.7], [0.44, 0.64, 0.44], {
       fill: '#0d130f', stroke: BONE(0.34), width: 0.6, alpha: 0.92,
       seed: 3618, jitter: 0.18, edgeAlpha: 0.6,
     });

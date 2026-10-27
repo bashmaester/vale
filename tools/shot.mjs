@@ -43,6 +43,13 @@ if (setArg) {
   }
 }
 
+// --layout row|corner|block|yard — apply a neighbour layout preset.
+const layoutArg = arg('layout', null);
+if (layoutArg) {
+  const i = Scene.LAYOUTS.findIndex((l) => l.id === layoutArg);
+  if (i >= 0) scene.applyLayout(i);
+}
+
 // Optional camera override for framing experiments:
 //   --eye 9,13,46 --target -4,3,-1 --fov 36
 const eyeArg = arg('eye', null);

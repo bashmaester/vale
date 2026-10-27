@@ -7,7 +7,8 @@
 //
 // Sections: Camera · Scene · Texture · Palette · Case · Playback.
 import { PRESETS } from './graph.js';
-import { SCENE_PARAM_DEFS } from './scene.js';
+import { Scene, SCENE_PARAM_DEFS } from './scene.js';
+import { BUFFER_CELLS } from './neighbors.js';
 import { PALETTES, setPalette, currentPalette } from './palette.js';
 
 const el = (tag, className, text) => {
@@ -513,7 +514,10 @@ export class Sidebar {
       b.className = 'sb-cell';
       b.textContent = text;
       b.dataset.cell = id;
-      const bit = 1 << i;
+      // Bit order is the *buffer list* order, not the grid order: the grid has
+      // a gap for the hero in the middle, so a grid index would address the
+      // wrong neighbour (E landed on SW).
+      const bit = 1 << BUFFER_CELLS.findIndex((c) => c.id === id);
       const on = () => (this.scene.params.bufferCells & bit) === bit;
       const paint = () => b.classList.toggle('on', on());
       b.addEventListener('click', () => {
@@ -527,6 +531,25 @@ export class Sidebar {
       grid.appendChild(b);
     });
     bf.appendChild(grid);
+    bf.appendChild(this.select({
+      label: 'layout',
+      value: '0',
+      options: Scene.LAYOUTS.map((l, i) => [String(i), l.label]),
+      onChange: (v) => { this.scene.applyLayout(Number(v)); this.refresh(); },
+      get: () => String(this.scene.params.layout | 0),
+    }));
+    bf.appendChild(this.select({
+      label: 'neighbour kind',
+      value: String(this.scene.params.neighbourKind),
+      options: [
+        ['0', 'auto (street E/W, block N/S)'],
+        ['1', 'all street'],
+        ['2', 'all block'],
+        ['3', 'all yard'],
+      ],
+      onChange: (v) => this.scene.setParam('neighbourKind', Number(v)),
+      get: () => String(this.scene.params.neighbourKind),
+    }));
     bf.appendChild(this.select({
       label: 'neighbour style',
       value: String(this.scene.params.bufferStyle),

@@ -2,20 +2,34 @@
 //
 // The hero cell is painted by environment.js at full fidelity. These functions
 // paint *any other* cell from the same rules — the same road edges, the same
-// sidewalk bands, the same lane grid — offset by a whole number of cells. That
+// pavement ring, the same lane grid — offset by a whole number of cells. That
 // is what makes the set tileable: a cell is not a backdrop for the hero, it is
 // another copy of the same city, and the street, the kerbs and the markings run
 // straight through the seam.
 //
+// A cell has a **kind**, which is the answer to "what is on my edges?":
+//
+//   street   an east–west street through the middle and a half north–south
+//            street on both x edges. Two of these side by side make one 6 m
+//            street with 2.4 m pavements, and the block runs on.
+//   block    no side street: the buildings run out to both x edges and merge
+//            with the neighbour's. This is what north and south of a street
+//            cell has to be, or every cell in the set would be an intersection.
+//   yard     the side street is there, but the block is an open lot — fence,
+//            containers, parking stripes — so a street edge meets something
+//            other than another block.
+//
+// The edge rule (see `defaultKindFor`) is why a tiled set reads as a city and
+// not as nine copies of the same module.
+//
 // Detail is chosen per cell from its distance to the camera, which is the hook
-// the LoD pass needs later: `detail` here is a fraction (1 = hero, 0.5 = mid,
-// 0.25 = far), not a full LoD record.
+// the LoD pass needs: `d` here is a fraction (1 = hero, 0.5 = mid, 0.25 = far).
 
-import { v3, lerp, hash11, quadLerp } from './math.js';
+import { v3, lerp, hash11, quadLerp, clamp } from './math.js';
 import { TILE, SIDEWALK_Y, TILE_COLORS as C, ROAD_EDGE } from './tile.js';
 import {
   ROAD, SIDEWALKS, CROSSWALKS, BUILDING_LOTS, SOUTH_LOTS,
-  SOUTH_BLOCK, SIDE_STREET,
+  SOUTH_BLOCK, SIDE_STREET, KERB_RADIUS,
 } from './world.js';
 
 const BONE = (a = 1) => `rgba(239,233,216,${a})`;
@@ -24,6 +38,18 @@ const RED = (a = 1) => `rgba(212,59,48,${a})`;
 
 export const CELL_W = TILE.x1 - TILE.x0;
 export const CELL_D = TILE.z1 - TILE.z0;
+
+export const CELL_KINDS = ['street', 'block', 'yard'];
+
+// Which kind a neighbour is when the set is left on "auto". The street runs
+// along x, so the cells to the east and west continue it and the cells to the
+// north and south are more block. The diagonals are block as well: a corner
+// needs a cell that carries both streets, and this module only carries one.
+export function defaultKindFor(dx, dz) {
+  if (dz === 0 && dx !== 0) return 'street';
+  if (dz === 0 && dx === 0) return 'street';
+  return 'block';
+}
 
 export function cellOrigin(dx, dz) {
   return { ox: dx * CELL_W, oz: dz * CELL_D };
@@ -38,12 +64,16 @@ export const DASH_LEN = 2.4;
 export function laneDashes(p, camera, opts = {}) {
   const {
     ox = 0, oz = 0, z, x0 = TILE.x0, x1 = TILE.x1, dash = DASH_LEN, period = DASH_PERIOD,
-    color = BONE(0.3), width = 0.9, seed = 1, y = 0.024, alpha = 0.85,
+    color = BONE(0.3), width = 0.9, seed = 1, y = 0.024, alpha = 0.85, inset = SIDE_STREET.road,
   } = opts;
-  const start = Math.ceil((x0 + ox) / period) * period;
+  // Dashes start and stop at the side kerbs, not at the cell edge: a dash
+  // painted across the north–south street would be a line through a junction.
+  // A `block` cell has no side street, so its dashes run edge to edge.
+  const X0 = x0 + ox + inset, X1 = x1 + ox - inset;
+  const start = Math.ceil(X0 / period) * period;
   let i = 0;
-  for (let gx = start; gx < x1 + ox - 0.4; gx += period, i++) {
-    const a = gx, b = Math.min(gx + dash, x1 + ox);
+  for (let gx = start; gx < X1 - 0.4; gx += period, i++) {
+    const a = gx, b = Math.min(gx + dash, X1);
     if (b - a < 0.3) continue;
     p.projectPoly(camera, [
       v3(a, y, z + oz - width * 0.055), v3(b, y, z + oz - width * 0.055),
@@ -58,63 +88,129 @@ function slab(p, camera, x0, x1, z0, z1, y, fill, opts = {}) {
   ], { fill, stroke: opts.stroke || null, width: opts.width || 0.7, jitter: opts.jitter == null ? 0.22 : opts.jitter, seed: opts.seed || 1 });
 }
 
-/** Ground, road, kerbs, sidewalks and markings for a cell. */
-export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
+// Plan outline of a pavement corner, rounded at the outside corner. Mirrors the
+// hero's corner (environment.cornerOutline) so the seam lands on the same line.
+function cornerPlan(kx, bx, cz, sgn, farZ) {
+  const out = kx > 0 ? 1 : -1;
+  const R = KERB_RADIUS;
+  const cx = kx - out * R;
+  const cz2 = cz + sgn * R;
+  const pts = [[bx, cz], [cx, cz]];
+  for (let k = 1; k <= 3; k++) {
+    const a = (k / 3) * Math.PI * 0.5;
+    pts.push([cx + out * R * Math.sin(a), cz2 - sgn * R * Math.cos(a)]);
+  }
+  pts.push([kx, farZ], [bx, farZ]);
+  return pts;
+}
+
+// Ground, road, kerbs, pavements and markings for a cell of any kind.
+export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7, kind = 'street') {
   const { x0, x1, z0, z1 } = TILE;
   const X0 = x0 + ox, X1 = x1 + ox, Z0 = z0 + oz, Z1 = z1 + oz;
   const rz0 = ROAD.z0 + oz, rz1 = ROAD.z1 + oz;
+  const street = kind !== 'block';
 
-  // The volume's floor slab, then the two raised pavements, then the road:
+  // The volume's floor slab, then the road, then the raised pavement ring:
   // drawn in that order so a seam has no cracks of background showing through.
   slab(p, camera, X0, X1, Z0, Z1, 0, C.floor, { seed, stroke: BONE(0.06) });
-  // The pavements belong to the block between the two half streets; outside
-  // that the north–south street runs straight through the cell, which is what
-  // joins this module to the one north or south of it.
-  const bx0 = X0 + SIDE_STREET.x0 - TILE.x0;
-  const bx1 = X0 + SIDE_STREET.x1 - TILE.x0;
-  slab(p, camera, X0, X1, Z0, Z1, 0.004, C.road, { seed: seed + 3 });
-  slab(p, camera, bx0, bx1, rz1, Z1, SIDEWALK_Y, C.sidewalk, { seed: seed + 1 });
-  slab(p, camera, bx0, bx1, Z0, rz0, SIDEWALK_Y, C.sidewalkBack, { seed: seed + 2 });
-  // The near block's forecourt, at the same level as the pavement.
-  const fz0 = SOUTH_BLOCK.z0 + oz, fz1 = SOUTH_BLOCK.z1 + oz;
-  slab(p, camera, bx0, bx1, fz0, fz1, SIDEWALK_Y, C.sidewalk, { seed: seed + 4 });
+  slab(p, camera, X0, X1, Z0, Z1, 0.004, street ? C.road : C.floor, { seed: seed + 3 });
+  if (street) {
+    // The two side carriageways, each this cell's half of a shared street.
+    slab(p, camera, X0, SIDE_STREET.x0 + ox, Z0, Z1, 0.006, '#0f1116', { seed: seed + 5 });
+    slab(p, camera, SIDE_STREET.x1 + ox, X1, Z0, Z1, 0.006, '#0f1116', { seed: seed + 6 });
+  }
+
+  // Pavement ring. A `block` cell has pavement right across, because there is no
+  // side street to stop it; a `street` cell has the bands plus the four corner
+  // returns, which is what lets a pedestrian turn into the side street.
+  const bands = street
+    ? [[SIDE_STREET.x0, SIDE_STREET.x1], [SIDE_STREET.x0, SIDE_STREET.x1]]
+    : [[x0, x1], [x0, x1]];
+  slab(p, camera, bands[0][0] + ox, bands[0][1] + ox, rz1, Z1,
+    SIDEWALK_Y, C.sidewalk, { seed: seed + 1, stroke: BONE(street ? 0.34 : 0.30) });
+  slab(p, camera, bands[1][0] + ox, bands[1][1] + ox, Z0, rz0,
+    SIDEWALK_Y, C.sidewalkBack, { seed: seed + 2, stroke: BONE(0.26) });
+  // The forecourt: the near block's shops stand on the same level as the
+  // pavement, so the seam between them is a step rather than a crack.
+  slab(p, camera, bands[1][0] + ox, bands[1][1] + ox, SOUTH_BLOCK.z0 + oz, SOUTH_BLOCK.z1 + oz,
+    SIDEWALK_Y, C.sidewalk, { seed: seed + 4 });
+
+  if (street) {
+    // Corner returns: the rounded ends of the ring.
+    for (const [kx, bx] of [[SIDE_STREET.x0, SIDE_STREET.blockX0], [SIDE_STREET.x1, SIDE_STREET.blockX1]]) {
+      for (const [cz, sgn] of [[ROAD.z1, 1], [ROAD.z0, -1]]) {
+        const pts = cornerPlan(kx, bx, cz, sgn, sgn > 0 ? z1 : z0);
+        const poly = pts.map(([px, pz]) => v3(px + ox, SIDEWALK_Y, pz + oz));
+        p.projectPoly(camera, poly, {
+          fill: C.sidewalk, stroke: BONE(0.34), width: 0.8, jitter: 0.14, seed: seed + 9 + kx + cz,
+        });
+      }
+    }
+  }
 
   // Kerb faces: a lit edge is what reads as a height difference at this size.
+  const kx0 = SIDE_STREET.x0 + ox, kx1 = SIDE_STREET.x1 + ox;
   p.projectPoly(camera, [
-    v3(bx0, SIDEWALK_Y, rz1), v3(bx1, SIDEWALK_Y, rz1),
-    v3(bx1, 0, rz1), v3(bx0, 0, rz1),
+    v3(kx0, SIDEWALK_Y, rz1), v3(kx1, SIDEWALK_Y, rz1),
+    v3(kx1, 0, rz1), v3(kx0, 0, rz1),
   ], { fill: 'rgba(46,46,52,0.95)', stroke: null, jitter: 0.12, seed: seed + 4 });
   p.projectPoly(camera, [
-    v3(bx0, SIDEWALK_Y, rz0), v3(bx1, SIDEWALK_Y, rz0),
-    v3(bx1, 0, rz0), v3(bx0, 0, rz0),
+    v3(kx0, SIDEWALK_Y, rz0), v3(kx1, SIDEWALK_Y, rz0),
+    v3(kx1, 0, rz0), v3(kx0, 0, rz0),
   ], { fill: 'rgba(34,34,40,0.95)', stroke: null, jitter: 0.12, seed: seed + 5 });
-  // Inner kerbs of the north–south street, each side of the main road.
-  for (const kx of [bx0, bx1]) {
-    for (const [za, zb] of [[Z0, rz0], [rz1, Z1]]) {
-      p.projectPoly(camera, [
-        v3(kx, SIDEWALK_Y, za), v3(kx, SIDEWALK_Y, zb),
-        v3(kx, 0, zb), v3(kx, 0, za),
-      ], { fill: 'rgba(40,40,46,0.92)', stroke: null, jitter: 0.12, seed: seed + 6 + kx + za });
+  // The side kerb, in two runs either side of the main road.
+  if (street) {
+    for (const kx of [kx0, kx1]) {
+      for (const [za, zb] of [[Z0, rz0], [rz1, Z1]]) {
+        p.projectPoly(camera, [
+          v3(kx, SIDEWALK_Y, za), v3(kx, SIDEWALK_Y, zb),
+          v3(kx, 0, zb), v3(kx, 0, za),
+        ], { fill: 'rgba(40,40,46,0.92)', stroke: null, jitter: 0.12, seed: seed + 6 + kx + za });
+      }
+    }
+  }
+
+  // Crossings over the side street, mirroring the hero's: bars run along z and
+  // repeat across x, at the near pavement band. Two street cells side by side
+  // therefore carry one crossing over the whole 6 m street.
+  if (street) {
+    for (const [sx0, sx1] of [[x0, SIDE_STREET.x0], [SIDE_STREET.x1, x1]]) {
+      for (let i = 0; i < 5; i++) {
+        const t = (i + 0.5) / 5;
+        const xb = lerp(sx0 + 0.55, sx1 - 0.55, t) + ox;
+        p.projectPoly(camera, [
+          v3(xb - 0.24, 0.022, rz1 + 0.35), v3(xb + 0.24, 0.022, rz1 + 0.35),
+          v3(xb + 0.24, 0.022, rz1 + 2.05), v3(xb - 0.24, 0.022, rz1 + 2.05),
+        ], {
+          fill: BONE(0.40 + hash11(seed + 70 + i) * 0.12), stroke: null,
+          jitter: 0.26, seed: seed + 70 + i,
+        });
+      }
     }
   }
 
   // Paving joints: coarse on a far cell, one line every 2 m up close.
   const pav = d > 0.55 ? 2.2 : d > 0.3 ? 3.4 : 5.0;
-  for (let x = bx0 + pav; x < bx1 - 0.2; x += pav) {
+  const jx0 = bands[0][0] + ox, jx1 = bands[0][1] + ox;
+  for (let x = jx0 + pav; x < jx1 - 0.2; x += pav) {
     p.projectLine(camera, [v3(x, SIDEWALK_Y + 0.004, rz1 + 0.3), v3(x, SIDEWALK_Y + 0.004, Z1 - 0.2)],
       { color: BONE(0.045), width: 0.55, alpha: 0.8, jitter: 0.14, seed: seed + x * 1.7, double: false });
     p.projectLine(camera, [v3(x, SIDEWALK_Y + 0.004, Z0 + 0.2), v3(x, SIDEWALK_Y + 0.004, rz0 - 0.3)],
       { color: BONE(0.04), width: 0.5, alpha: 0.7, jitter: 0.14, seed: seed + x * 2.3, double: false });
   }
 
-  // Centre line and lane dividers, world-periodic so they cross the seam.
+  // Centre line and lane dividers, world-periodic so they cross the seam. A
+  // block cell has no side street, so the lines run edge to edge and join the
+  // neighbour's lines into one continuous street.
+  const inset = kind === 'block' ? 0 : SIDE_STREET.road;
   laneDashes(p, camera, {
-    ox, oz, z: 0, color: BONE(d > 0.3 ? 0.32 : 0.2), width: 1.0, seed: seed + 11,
+    ox, oz, z: 0, color: BONE(d > 0.3 ? 0.32 : 0.2), width: 1.0, seed: seed + 11, inset,
   });
   for (const zz of [-ROAD_EDGE.back * 0.44, ROAD_EDGE.back * 0.44]) {
     laneDashes(p, camera, {
       ox, oz, z: zz, color: BONE(d > 0.3 ? 0.26 : 0.16), width: 0.85, seed: seed + 20 + zz,
-      dash: DASH_LEN * 1.35,
+      dash: DASH_LEN * 1.35, inset,
     });
   }
 
@@ -168,11 +264,19 @@ export function drawCellGround(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   }
 }
 
-// The near side of the module: the low shop row, drawn the same way in every
-// cell so a tiled set has buildings on both sides of every street.
-function cellShops(p, camera, d, ox, oz, seed) {
-  for (let i = 0; i < SOUTH_LOTS.length; i++) {
-    const b = SOUTH_LOTS[i];
+// The near side of the module: the low shop row. In a `block` cell the row runs
+// out to both edges so it meets its neighbour's; in a `street` cell it stops at
+// the corner, where the pavement takes over.
+function cellShops(p, camera, d, ox, oz, seed, kind) {
+  const lots = SOUTH_LOTS.slice();
+  if (kind === 'block') {
+    // Fill the ends so the row is continuous across the seam.
+    const west = { id: 's_fill_w', x: SIDE_STREET.blockX0 - 2.4, z: 9.55, w: 4.6, d: 1.9, h: 2.2, cols: 2, accent: 'teal' };
+    const east = { id: 's_fill_e', x: SIDE_STREET.blockX1 + 2.4, z: 9.55, w: 4.6, d: 1.9, h: 2.5, cols: 2, accent: 'red' };
+    lots.unshift(west); lots.push(east);
+  }
+  for (let i = 0; i < lots.length; i++) {
+    const b = lots[i];
     const h1 = hash11(seed + i * 4.1), h2 = hash11(seed + i * 8.7);
     const h = b.h * (0.85 + h1 * 0.35);
     const x = b.x + ox + (h2 - 0.5) * 0.8;
@@ -208,15 +312,19 @@ function cellShops(p, camera, d, ox, oz, seed) {
   }
 }
 
-/**
- * The block on the far pavement: four lots, each jittered per cell so the
- * neighbours are siblings rather than clones.
- */
-export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
+// The block on the far pavement. In a `street` cell: four lots between the two
+// side streets. In a `block` cell: the same lots plus fillers out to each edge,
+// so the block runs on across the seam.
+export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7, kind = 'street') {
   const detail = d;
+  const lots = BUILDING_LOTS.slice();
+  if (kind === 'block') {
+    lots.unshift({ id: 'fill_w', x: SIDE_STREET.blockX0 - 2.6, z: -11.8, w: 4.8, d: 4.4, h: 9.4, cols: 3, rows: 4, accent: 'teal', roofTank: false });
+    lots.push({ id: 'fill_e', x: SIDE_STREET.blockX1 + 2.6, z: -11.8, w: 4.8, d: 4.4, h: 11.2, cols: 3, rows: 5, accent: 'red', roofTank: true });
+  }
   // Painter's algorithm: the lots are drawn far to near, so a tall block never
   // paints its windows through the wall of the one in front of it.
-  const order = BUILDING_LOTS.map((b, i) => {
+  const order = lots.map((b, i) => {
     const h4 = hash11(seed + i * 11.3);
     const z = b.z + oz + (h4 - 0.5) * 0.8;
     const q = camera.project(v3(b.x + ox, b.h * 0.5, z));
@@ -224,7 +332,7 @@ export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
   }).sort((a, b2) => b2.depth - a.depth);
   for (const ord of order) {
     const i = ord.i;
-    const b = BUILDING_LOTS[i];
+    const b = lots[i];
     const h1 = hash11(seed + i * 3.1), h2 = hash11(seed + i * 7.7);
     const h3 = hash11(seed + i * 5.9), h4 = hash11(seed + i * 11.3);
     const w = b.w * (0.86 + h1 * 0.3);
@@ -261,8 +369,8 @@ export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
     });
 
     if (detail > 0.2) {
-      const cols = Math.max(2, Math.round(b.cols * (detail > 0.5 ? 1 : 0.6)));
-      const rows = Math.max(2, Math.round(b.rows * (detail > 0.5 ? 1 : 0.55)));
+      const cols = Math.max(2, Math.round((b.cols || 3) * (detail > 0.5 ? 1 : 0.6)));
+      const rows = Math.max(2, Math.round((b.rows || 4) * (detail > 0.5 ? 1 : 0.55)));
       const wins = [];
       for (let r = 0; r < rows; r++) {
         for (let c2 = 0; c2 < cols; c2++) {
@@ -299,31 +407,83 @@ export function drawCellBlock(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
     }
   }
   // The near row goes last: it stands between the camera and everything above.
-  cellShops(p, camera, d, ox, oz, seed + 300);
+  cellShops(p, camera, d, ox, oz, seed + 300, kind);
+}
+
+// An open lot: what a street edge can meet besides another block. A fence along
+// the pavement, containers, parking stripes. Deliberately low so the street it
+// borders stays legible.
+function cellYard(p, camera, d, ox, oz, seed) {
+  const bx0 = SIDE_STREET.blockX0 + ox, bx1 = SIDE_STREET.blockX1 + ox;
+  const z0 = TILE.z0 + oz + 1.2, z1 = ROAD.z0 + oz - 0.4;
+  // Asphalt, a shade lighter than the street, and painted bay lines.
+  slab(p, camera, bx0, bx1, z0, z1, SIDEWALK_Y + 0.002, 'rgba(26,26,30,0.96)', { seed: seed + 1 });
+  for (let i = 0; i < 6; i++) {
+    const x = lerp(bx0 + 1.2, bx1 - 1.2, i / 5);
+    p.projectPoly(camera, [
+      v3(x - 0.05, SIDEWALK_Y + 0.006, z1 - 3.4), v3(x + 0.05, SIDEWALK_Y + 0.006, z1 - 3.4),
+      v3(x + 0.05, SIDEWALK_Y + 0.006, z1 - 0.8), v3(x - 0.05, SIDEWALK_Y + 0.006, z1 - 0.8),
+    ], { fill: BONE(0.16), stroke: null, jitter: 0.2, seed: seed + 10 + i });
+  }
+  // Fence along the pavement edge, with a gate gap on the centre line.
+  for (let i = 0; i < 9; i++) {
+    const x = lerp(bx0 + 0.4, bx1 - 0.4, i / 8);
+    if (Math.abs(x - (bx0 + bx1) / 2) < 1.1) continue;
+    p.projectLine(camera, [v3(x, SIDEWALK_Y, z1 + 0.1), v3(x, SIDEWALK_Y + 1.15, z1 + 0.1)], {
+      color: BONE(0.34), width: 0.8, alpha: 0.85, jitter: 0.12, seed: seed + 20 + i, double: false,
+    });
+  }
+  p.projectLine(camera, [v3(bx0 + 0.3, SIDEWALK_Y + 1.1, z1 + 0.1), v3(bx1 - 0.3, SIDEWALK_Y + 1.1, z1 + 0.1)], {
+    color: BONE(0.3), width: 0.7, alpha: 0.85, jitter: 0.14, seed: seed + 31, double: false,
+  });
+  // Containers, a skip, and a low back wall against the rear.
+  const boxes = [
+    [bx0 + 3.0, 1.3, z0 + 1.4, 3.2, 2.6, 2.2, 'rgba(30,44,46,0.98)'],
+    [bx0 + 7.4, 1.1, z0 + 2.6, 2.6, 2.2, 2.0, 'rgba(44,30,30,0.98)'],
+  ];
+  if (d > 0.35) boxes.push([bx1 - 3.4, 0.85, z0 + 1.9, 2.2, 1.7, 1.8, 'rgba(34,34,40,0.98)']);
+  for (let i = 0; i < boxes.length; i++) {
+    const [x, hh, z, w, h, dep, fill] = boxes[i];
+    p.box(camera, [x, SIDEWALK_Y + h / 2, z], [w, h, dep], {
+      fill, stroke: BONE(0.36), width: 0.7, jitter: 0.16, seed: seed + 40 + i,
+    });
+  }
+  // A lamp so the lot is not a hole in the light.
+  if (d > 0.4) {
+    p.projectLine(camera, [v3(bx1 - 1.0, SIDEWALK_Y, z1 - 2.0), v3(bx1 - 1.0, SIDEWALK_Y + 5.4, z1 - 2.0)], {
+      color: BONE(0.36), width: 0.9, alpha: 0.8, jitter: 0.12, seed: seed + 50, double: false,
+    });
+    const q = camera.project(v3(bx1 - 1.0, SIDEWALK_Y + 5.5, z1 - 2.0));
+    if (q) p.ellipse(q.x, q.y, Math.max(1.2, q.scale * 0.12), Math.max(0.8, q.scale * 0.07), {
+      fill: 'rgba(239,233,216,0.7)', stroke: false,
+    });
+  }
 }
 
 /** Street furniture, cut down to what survives at a distance. */
-export function drawCellProps(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
+export function drawCellProps(p, camera, d = 1, ox = 0, oz = 0, seed = 7, kind = 'street') {
   if (d < 0.18) return;
-  const lampZ = ROAD.z1 + 0.55 + oz;
-  for (const lx of [-12.2, -1.6, 9.4]) {
-    const x = lx + ox;
-    p.projectLine(camera, [v3(x, SIDEWALK_Y, lampZ), v3(x, 6.4, lampZ)], {
-      color: BONE(0.4), width: 1.0, alpha: 0.85, jitter: 0.14, seed: seed + lx, double: false,
-    });
-    p.projectLine(camera, [v3(x, 6.4, lampZ), v3(x + 1.4, 6.4, lampZ)], {
-      color: BONE(0.34), width: 0.8, alpha: 0.8, jitter: 0.12, seed: seed + lx + 1, double: false,
-    });
-    const q = camera.project(v3(x + 1.4, 6.3, lampZ));
-    if (q && d > 0.35) {
-      p.ellipse(q.x, q.y, Math.max(1.2, q.scale * 0.14), Math.max(0.8, q.scale * 0.08), {
-        fill: 'rgba(239,233,216,0.75)', stroke: false,
+  if (kind !== 'yard') {
+    const lampZ = ROAD.z1 + 0.55 + oz;
+    for (const lx of [-8.6, -1.6, 7.4]) {
+      const x = lx + ox;
+      p.projectLine(camera, [v3(x, SIDEWALK_Y, lampZ), v3(x, 6.4, lampZ)], {
+        color: BONE(0.4), width: 1.0, alpha: 0.85, jitter: 0.14, seed: seed + lx, double: false,
       });
+      p.projectLine(camera, [v3(x, 6.4, lampZ), v3(x + 1.4, 6.4, lampZ)], {
+        color: BONE(0.34), width: 0.8, alpha: 0.8, jitter: 0.12, seed: seed + lx + 1, double: false,
+      });
+      const q = camera.project(v3(x + 1.4, 6.3, lampZ));
+      if (q && d > 0.35) {
+        p.ellipse(q.x, q.y, Math.max(1.2, q.scale * 0.14), Math.max(0.8, q.scale * 0.08), {
+          fill: 'rgba(239,233,216,0.75)', stroke: false,
+        });
+      }
     }
   }
   if (d > 0.32) {
     // Trees on the near pavement: a trunk and three strokes of canopy.
-    for (const tx of [-5.2, 6.8]) {
+    for (const tx of [-4.6, 5.4]) {
       const x = tx + ox, z = ROAD.z1 + 2.6 + oz;
       p.projectLine(camera, [v3(x, SIDEWALK_Y, z), v3(x, 1.9, z)], {
         color: BONE(0.3), width: 0.9, alpha: 0.85, jitter: 0.12, seed: seed + tx * 1.3, double: false,
@@ -340,7 +500,7 @@ export function drawCellProps(p, camera, d = 1, ox = 0, oz = 0, seed = 7) {
 }
 
 /** A complete neighbour cell. `d` is its share of the hero's detail. */
-export function drawCell(p, camera, d, dx, dz, opacity = 1) {
+export function drawCell(p, camera, d, dx, dz, opacity = 1, kind = 'street') {
   if (opacity <= 0.01) return;
   const { ox, oz } = cellOrigin(dx, dz);
   const seed = 5000 + (dx + 1) * 137 + (dz + 1) * 71;
@@ -348,8 +508,15 @@ export function drawCell(p, camera, d, dx, dz, opacity = 1) {
   // fades the whole cell without touching any of the call sites inside it.
   const prev = p.alphaMul;
   p.alphaMul = prev * opacity;
-  drawCellGround(p, camera, d, ox, oz, seed);
-  drawCellBlock(p, camera, d, ox, oz, seed + 500);
-  drawCellProps(p, camera, d, ox, oz, seed + 900);
+  drawCellGround(p, camera, d, ox, oz, seed, kind);
+  if (kind === 'yard') {
+    // An open lot instead of the far block, and a low fence line where the near
+    // row would be: the street edge meets something other than a wall of
+    // buildings, which is half of what makes a tiled set read as a city.
+    cellYard(p, camera, d, ox, oz, seed + 700);
+  } else {
+    drawCellBlock(p, camera, d, ox, oz, seed + 500, kind);
+  }
+  drawCellProps(p, camera, d, ox, oz, seed + 900, kind);
   p.alphaMul = prev;
 }

@@ -40,12 +40,33 @@ Everything inside the tile is generated every frame. Nothing is loaded.
 
 The back wall (z = −14) and left wall (x = −15) are closed; +z and +x are the
 open, cut-away faces. The camera sits in the open corner, so the volume reads as
-a theatre set. The cell is an **intersection**: the east–west street runs through
-the middle with a building row on each side, and a 3.6 m half street runs down
-each x edge — two cells side by side therefore meet in a 7.2 m north–south
-street, and the block between them is closed off by the shop row. That is what
-makes the layout tile: the same module repeats, and cars can turn from one
-street into the next. `groundYAt(x, z)` gives the walking surface including kerb
+a theatre set. The cell is an **intersection**: the east–west street runs
+through the middle with a building row on each side, and a half north–south
+street runs down each x edge. Each cell owns 3.0 m of carriageway and 2.4 m of
+pavement, so two cells side by side meet in a 6.0 m street with a walk either
+side — wide enough for a car to pass a parked one. The block between the
+pavements is 19.2 m (`SIDE_STREET.blockX0..blockX1`).
+
+The pavement is a **ring**: a band along each side of the block plus a corner
+return at each end, with a 1.5 m radius on the outer corner (`KERB_RADIUS`),
+so the kerb line and the pavement edge are one curve. A pedestrian can walk the
+whole block without stepping off it, and cross the side street at the zebra
+where the ring meets it.
+
+**Cells tile by edge, not by copy.** `src/cells.js` paints a cell of a given
+`kind`:
+
+| kind | side streets | what it is for |
+| --- | --- | --- |
+| `street` | both x edges | continues the street; two side by side make a full NS street |
+| `block` | none — rows run out to both edges | north/south of a street cell, so rows merge across the seam |
+| `yard` | both, open lot inside | a street edge meeting something other than a block |
+
+`defaultKindFor(dx, dz)` is the rule (E/W street, N/S block), and
+`Scene.LAYOUTS` / `?layout=` applies a whole pattern. A city is a street grid
+with T junctions, not nine copies of one intersection — that distinction is what
+the kinds encode. A true **corner** tile (streets on two adjacent edges) is not
+implemented yet: `cells.js` can only carry the street on the x edges. `groundYAt(x, z)` gives the walking surface including kerb
 ramps; every foot, puddle and prop uses it.
 
 **Procedural LoD is a property of the tile, not of each asset.** `LOD_LEVELS`
@@ -167,10 +188,19 @@ Procedural people, last on the set:
   each single-group — people against the furniture in `STREET_PROPS` (and the
   parked cars), then people against people. A single `clampToWorld` at the end,
   plus a guard that will not let someone who started on a pavement be pushed
-  off it. Measured over the 20 s loop at 50 ms steps (640×360): **0.0451 m
-  average step, 0.796 m worst single step** — from 5.455 m before the rework.
-  The residual is a single-frame correction where a body threads between two
-  props; the mean is a walking pace, which is the real test.
+  off it. Measured over the 20 s loop at 50 ms steps (640×360), counting only
+  bodies above alpha 0.12: **0.0444 m average step, 0.457 m worst single step**.
+  The mean is a walking pace, which is the real test.
+- **Steering is the last resort, not the first.** The furniture stands against
+  the shopfront line rather than in the walking band, vehicles are a row of
+  discs along their own axis rather than one big disc, strolling flows clamp
+  themselves to their pavement band, and crossing queues start clear of the kerb
+  poles. The solver then has little to do — which is why the numbers above are
+  calm. A solver that has to work hard is a solver that pops.
+- Flows that turn a corner carry absolute waypoints and are walked by
+  `pathTable`/`alongPath`: resampled by arc length, smoothed in space, constant
+  pace. A single quadratic bezier cuts a corner across the road, and easing the
+  crossing parameter through a turn reads as a stumble.
 - Pedestrians keep a **lane** along their flow (`lane` ±0.42 applied along the
   flow's side vector, never the current heading), and the scatter keeps clear of
   the furniture, so most conflicts never happen. The walk-in is a short
