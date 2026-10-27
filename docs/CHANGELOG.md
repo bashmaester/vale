@@ -2,6 +2,74 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 4: build out the corner, raindrop / puddle sim
+
+**Direction kept:** hybrid 3D→2D print. The user asked to focus on the set as a
+cubic volume scene, block out big elements first, add people last with more
+variety, remove the wet-glass overlay, and bring back raindrop/puddle simulation.
+
+### Added
+
+- `src/world.js` rewritten around one built-out corner: `ROAD_H`, `ROAD_V`,
+  `CORNER`, `WAIT_ZONES` with weights, `SIGNAL_POSITIONS`, `PARKING`,
+  `BUILDING_LOTS`, axis-aware `LANES`, `isOnRoad()`, `weightedWaitZone()`.
+- `src/environment.js` rewritten as staged construction: `drawBlockout()`,
+  `drawRoadMarkings()`, `drawBuildings()`, `drawTrafficLights()`,
+  `drawStreetFurniture()`, `drawWires()`, `drawTrack()`.
+- Four cubic building volumes on the northeast corner with window grids,
+  awnings, roof parapets, rooftop boxes, accent stripes and `sign3D()` signs.
+- Four traffic-light poles at the four intersection corners only, each with a
+  vehicle head and a smaller pedestrian head.
+- `src/weather.js` rewritten as a real raindrop / puddle simulation: 220
+  persistent 3D raindrop particles, 8 irregular puddle polygons, expanding
+  ripple rings, splash spikes and ambient drips.
+- `SCENE_PARAM_DEFS`: `rainSpeed`, `puddleAmount`; removed `wetness`,
+  `reflectionStrength`, `footstepStrength`.
+- More people variety: six archetypes, five coat shapes, five head treatments,
+  eight umbrella styles, long directional shadows, many accessories and
+  occasional companions.
+
+### Changed
+
+- `src/scene.js`: removed the `wet` canvas and `wp` painter entirely. Render
+  order is now set → puddles → traffic → crowd → rain, with only `plate` and
+  `field` canvases.
+- `src/traffic.js`: reduced from 12 vehicles to 5 (3 parked + 2 moving), added
+  axis-aware vehicle orientation, aligned parked cars to legal curb slots,
+  removed wet reflections.
+- `src/crowd.js`: reduced from ~200 to ~122 figures, removed footprint/wet
+  methods, added archetypes/accessories/long shadows/groups and updated flows to
+  the corner layout.
+- `src/camera.js` / `src/camera-control.js`: new three-quarter corner view from
+  `[-28, 28, 48]` looking at `[0, 1, -3]`, with subtle drift.
+- `src/shaders.js`: the `rain` node is now a disabled pass-through named
+  `05 · Puddle mask (plate only)`. All presets disable it. `field.r` is used
+  only for puddle masks, not a broad wetness gradient.
+- `src/graph.js`: `ShaderGraph` respects `enabled: false` in node definitions,
+  presets and reset.
+- `README.md`, `docs/HANDOFF.md`, `docs/ARCHITECTURE.md`, `docs/CI.md`: updated
+  for the corner set, rain sim and no wet overlay.
+- `.gitignore`: ignore `image-search/` and `.smoke.mjs` scratch files.
+
+### Removed
+
+- Procedural wet-glass shader overlay.
+- Additive wet reflection strokes, train/vehicle light smears and broad wetness
+  gradient.
+- Footprint `destination-out` erasures and `footstepStrength` parameter.
+- Faint diagonal scramble guide markings; the set now has four straight crosswalks.
+
+### Known / unverified
+
+- No browser screenshot available in the sandbox. A DOM smoke test passed across
+  all phases, presets and camera modes; visual tuning still needs a human pass.
+- Camera framing was verified by projecting key world points, not by looking at
+  a render.
+- The disabled `rain` shader node remains in the 8-node graph for modularity.
+  Re-enabling it does nothing; the real rain is on the plate.
+
+---
+
 ## 2026-10-27 — Turn 3: tiny people, slower motion, street set, quiet wet
 
 **Direction kept:** hybrid 3D→2D print. The user asked to retrace from the

@@ -183,27 +183,21 @@ export const NODE_DEFS = [
   },
   {
     id: 'rain',
-    name: '05 · Rain / reflections',
+    name: '05 · Puddle mask (plate only)',
+    // The procedural wet-glass overlay is gone. Rain and puddles are real
+    // particles / ripples drawn into the ink plate by weather.js.
+    enabled: false,
     inputs: ['hatch'],
     ui: { x: 24, y: 190, w: 162, h: 60 },
     params: params({
-      intensity: { value: 0.30, min: 0, max: 1.5, label: 'rain intensity' },
-      speed: { value: 0.62, min: 0, max: 3, label: 'rain speed' },
-      reflect: { value: 0.22, min: 0, max: 2, label: 'reflection gouges' },
-      splash: { value: 0.14, min: 0, max: 1.5, label: 'splash specks' },
+      intensity: { value: 0.0, min: 0, max: 1.5, label: 'disabled overlay' },
+      speed: { value: 0.0, min: 0, max: 3, label: 'disabled speed' },
+      reflect: { value: 0.0, min: 0, max: 2, label: 'disabled reflection' },
+      splash: { value: 0.0, min: 0, max: 1.5, label: 'disabled splash' },
     }),
     code: (g, n) => `vec4 n_rain(vec4 c, vec2 uv, vec4 field){
   if(${g.u(n, 'enabled')} < 0.5) return c;
-  float t = uTime*${g.u(n, 'speed')};
-  vec2 p = vec2(uv.x*uRes.x/9.0 + uv.y*uRes.y/22.0, uv.y*uRes.y/3.0 - t*92.0);
-  float streak = smoothstep(0.72, 0.93, fbm(p*0.34)) * ${g.u(n, 'intensity')};
-  c.rgb += PAL_INK*streak*0.07;
-  float rc = uv.y*uRes.y*0.22 + sin(uv.x*18.0 + t*1.7)*1.2 + fbm(vec2(uv.x*7.0, t*0.3))*2.2;
-  float refl = pow(0.5+0.5*sin(rc), 10.0);
-  refl *= field.r*${g.u(n, 'reflect')};
-  c.rgb = mix(c.rgb, PAL_TEAL*0.72 + PAL_INK*0.28, refl*0.09);
-  float splash = step(0.9978, hash21(floor(uv*uRes/5.0)+floor(t*5.0))) * field.r;
-  c.rgb += splash*${g.u(n, 'splash')}*0.28;
+  // Pass-through: all rain/puddle work happens on the 2D plate.
   return c;
 }`,
   },
@@ -291,12 +285,12 @@ export const PRESETS = {
       carve: { strength: 0.72, scale: 13, boil: 0.30 },
       detail: { contour: 0.58, scale: 9, warp: 0.7, micro: 0.42, spark: 0.3 },
       hatch: { angle: -0.62, spacing: 7.5, strength: 0.34, warp: 0.55, jitter: 0.45, breakup: 0.38, cross: 0.22 },
-      rain: { intensity: 0.30, speed: 0.62, reflect: 0.22, splash: 0.14 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
       palette: { posterize: 0.88, bleed: 0.18, dither: 0.055, accent: 0.7 },
       paper: { grain: 0.085, fiber: 0.055, speckle: 0.5, vignette: 0.42 },
       output: { exposure: 1.02, contrast: 1.12 },
     },
-    scene: { wetness: 0.65, rainAmount: 1.0, reflectionStrength: 0.6 },
+    scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },
   },
   riso: {
     label: 'Risograph',
@@ -305,12 +299,12 @@ export const PRESETS = {
       carve: { strength: 0.38, scale: 20, boil: 0.22 },
       detail: { contour: 0.32, scale: 14, warp: 1.0, micro: 0.22, spark: 0.18 },
       hatch: { angle: -0.3, spacing: 11, strength: 0.2, warp: 0.35, jitter: 0.25, breakup: 0.2, cross: 0.08 },
-      rain: { intensity: 0.24, speed: 0.55, reflect: 0.28, splash: 0.10 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
       palette: { posterize: 0.7, bleed: 0.42, dither: 0.09, accent: 1.1 },
       paper: { grain: 0.14, fiber: 0.08, speckle: 0.8, vignette: 0.3 },
       output: { exposure: 1.05, contrast: 1.02 },
     },
-    scene: { wetness: 0.8, rainAmount: 0.8, reflectionStrength: 0.75 },
+    scene: { rainAmount: 0.85, rainSpeed: 0.9, puddleAmount: 1.15 },
   },
   newsprint: {
     label: 'Newsprint',
@@ -319,12 +313,12 @@ export const PRESETS = {
       carve: { strength: 0.5, scale: 9, boil: 0.18 },
       detail: { contour: 0.75, scale: 6, warp: 0.4, micro: 0.65, spark: 0.45 },
       hatch: { angle: 0.6, spacing: 5.5, strength: 0.48, warp: 0.25, jitter: 0.2, breakup: 0.5, cross: 0.35 },
-      rain: { intensity: 0.20, speed: 0.48, reflect: 0.16, splash: 0.08 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
       palette: { posterize: 0.94, bleed: 0.3, dither: 0.12, accent: 0.35 },
       paper: { grain: 0.19, fiber: 0.13, speckle: 1.1, vignette: 0.55 },
       output: { exposure: 0.98, contrast: 1.25 },
     },
-    scene: { wetness: 0.6, rainAmount: 0.7, reflectionStrength: 0.5 },
+    scene: { rainAmount: 0.75, rainSpeed: 0.85, puddleAmount: 0.85 },
   },
   blueprint: {
     label: 'Blueprint',
@@ -333,11 +327,11 @@ export const PRESETS = {
       carve: { strength: 0.6, scale: 16, boil: 0.26 },
       detail: { contour: 0.65, scale: 11, warp: 0.8, micro: 0.5, spark: 0.35 },
       hatch: { angle: 0.15, spacing: 8.5, strength: 0.28, warp: 0.7, jitter: 0.6, breakup: 0.3, cross: 0.28 },
-      rain: { intensity: 0.34, speed: 0.68, reflect: 0.26, splash: 0.16 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
       palette: { posterize: 0.82, bleed: 0.22, dither: 0.06, accent: 1.2 },
       paper: { grain: 0.1, fiber: 0.06, speckle: 0.5, vignette: 0.38 },
       output: { exposure: 1.04, contrast: 1.08 },
     },
-    scene: { wetness: 0.72, rainAmount: 1.15, reflectionStrength: 0.65 },
+    scene: { rainAmount: 1.15, rainSpeed: 1.05, puddleAmount: 1.1 },
   },
 };

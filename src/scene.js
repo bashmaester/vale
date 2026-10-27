@@ -10,11 +10,10 @@ import { Weather } from './weather.js';
 export const SCENE_PARAM_DEFS = {
   crowdDensity: { value: 1.0, min: 0.3, max: 2.0, step: 0.01, label: 'crowd density' },
   walkSpeed: { value: 1.0, min: 0.3, max: 2.0, step: 0.01, label: 'walk tempo' },
-  rainAmount: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'rain amount' },
+  rainAmount: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'raindrop amount' },
+  rainSpeed: { value: 1.0, min: 0.2, max: 2.0, step: 0.01, label: 'raindrop speed' },
+  puddleAmount: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'puddle / ripple amount' },
   wind: { value: 0.6, min: -1.0, max: 2.0, step: 0.01, label: 'wind / tilt' },
-  wetness: { value: 0.65, min: 0.0, max: 1.6, step: 0.01, label: 'wetness' },
-  reflectionStrength: { value: 0.6, min: 0.0, max: 2.0, step: 0.01, label: 'reflection depth' },
-  footstepStrength: { value: 0.75, min: 0.0, max: 2.0, step: 0.01, label: 'footstep gouge' },
   cameraShake: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'gate weave' },
   flySpeed: { value: 1.0, min: 0.2, max: 3.0, step: 0.01, label: 'fly speed' },
   cameraEase: { value: 8.0, min: 2.0, max: 20.0, step: 0.1, label: 'camera ease' },
@@ -37,14 +36,10 @@ export class Scene {
     this.W = W; this.H = H;
     this.params = defaults();
     this.plate = makeCanvas(W, H, false);
-    this.wet = makeCanvas(W, H, true);
     this.field = makeCanvas(W, H, false);
     this.pp = new Painter(this.plate.getContext('2d'), W, H);
-    this.wp = new Painter(this.wet.getContext('2d'), W, H);
     this.fp = new Painter(this.field.getContext('2d'), W, H);
-    // Use the same contexts for consistency.
     this.pp.ctx = this.plate.getContext('2d');
-    this.wp.ctx = this.wet.getContext('2d');
     this.fp.ctx = this.field.getContext('2d');
 
     this.timeline = new Timeline(20);
@@ -57,9 +52,9 @@ export class Scene {
 
   setViewport(W, H) {
     this.W = W; this.H = H;
-    for (const c of [this.plate, this.wet, this.field]) { c.width = W; c.height = H; }
-    this.pp.W = this.wp.W = this.fp.W = W;
-    this.pp.H = this.wp.H = this.fp.H = H;
+    for (const c of [this.plate, this.field]) { c.width = W; c.height = H; }
+    this.pp.W = this.fp.W = W;
+    this.pp.H = this.fp.H = H;
     this.weather.W = W; this.weather.H = H;
     this.cameraRig.setViewport(W, H);
   }
@@ -91,55 +86,35 @@ export class Scene {
     ctx.fillRect(0, 0, this.W, this.H);
     ctx.restore();
   }
-  _clearWet() {
-    const ctx = this.wp.ctx;
-    ctx.save();
-    ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, this.W, this.H);
-    ctx.restore();
-  }
-  _compositeWet() {
-    const ctx = this.pp.ctx;
-    ctx.save();
-    ctx.globalCompositeOperation = 'screen';
-    // Wet reflections are a quiet glaze now, not a noisy overlay.
-    ctx.globalAlpha = 0.26;
-    ctx.drawImage(this.wet, 0, 0);
-    ctx.restore();
-  }
 
   render(t, dt = 0.016) {
     const timeline = this.timeline;
     timeline.update(t);
-    // The signal cycle stays 20s; secondary motion uses the calmer clock.
     this.params.motionT = timeline.motionT;
     this.params.motionScale = timeline.motionScale;
 
     const autoCamera = this.cameraRig.update(timeline.u, this.params);
     const camera = this.cameraController.apply(autoCamera, dt, this.params);
     const boil = Math.floor(timeline.motionT * 7.5);
-    this.pp.setBoil(boil); this.wp.setBoil(boil); this.fp.setBoil(boil);
+    this.pp.setBoil(boil); this.fp.setBoil(boil);
 
+    // 1) Set: big volumes, road markings, buildings, fixed props.
     this._clearPlate();
     drawEnvironment(this.pp, camera, timeline, this.params);
 
-    // Traffic resolves first; the crowd then separates against real vehicle hulls.
+    // 2) Simulated puddles live on the ground, below cars and people.
+    this.weather.update(dt, timeline, this.params);
+    this.weather.drawPuddles(this.pp, camera, timeline, this.params);
+
+    // 3) Cars, then people. Traffic resolves first so walkers avoid hulls.
     this.traffic.update(camera, timeline, this.params);
     const obstacles = this.traffic.activeItems();
     this.crowd.update(camera, timeline, this.params, obstacles);
-
-    // Wet plate is built before the ink figures: reflections, then gouged footsteps.
-    this._clearWet();
-    this.weather.drawReflections(this.wp, timeline, this.params);
-    this.traffic.drawReflections(this.wp, camera, timeline, this.params);
-    this.crowd.drawFootprints(this.wp, timeline, this.params);
-    this._compositeWet();
-
-    this.crowd.drawFlowLines(this.pp, camera, timeline, this.params);
     this.traffic.draw(this.pp, camera, timeline, this.params);
     this.crowd.draw(this.pp, camera, timeline, this.params);
-    this.weather.drawRain(this.pp, timeline, this.params);
+
+    // 4) Rain is drawn last, over the whole set.
+    this.weather.drawRain(this.pp, camera, timeline, this.params);
 
     this.weather.drawField(this.fp, timeline, this.crowd, this.traffic, camera, this.params);
     return { plate: this.plate, field: this.field };

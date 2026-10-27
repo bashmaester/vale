@@ -9,7 +9,7 @@ export class ShaderGraph {
       ...d,
       index: i,
       params: clone(d.params),
-      enabled: true,
+      enabled: d.enabled !== false,
       ui: { ...d.ui },
     }));
     this.order = this.topoSort();
@@ -100,8 +100,14 @@ ${calls}
     const p = PRESETS[name];
     if (!p) return false;
     for (const [id, vals] of Object.entries(p.graph || {})) {
-      for (const [k, v] of Object.entries(vals)) this.setParam(id, k, v);
+      const n = this.getNode(id);
+      if (n && typeof vals.enabled === 'boolean') n.enabled = vals.enabled;
+      for (const [k, v] of Object.entries(vals)) {
+        if (k === 'enabled') continue;
+        this.setParam(id, k, v);
+      }
     }
+    this.revision++;
     return p;
   }
 
@@ -137,7 +143,7 @@ ${calls}
 
   reset() {
     this.nodes.forEach((n, i) => {
-      n.enabled = true;
+      n.enabled = this.defs[i].enabled !== false;
       for (const [k, p] of Object.entries(n.params)) n.params[k].value = this.defs[i].params[k].value;
       n.ui = { ...this.defs[i].ui };
     });

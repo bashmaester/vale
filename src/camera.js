@@ -1,14 +1,15 @@
 import { Camera, lerp, smootherstep, mix3, v3 } from './math.js';
 
-// A small keyframed camera rig. Movement is deliberately restrained:
-// the image should feel like a printed plate, not a flying 3D camera.
+// A restrained three-quarter view of one built-out corner. The camera keeps
+// moving, but the set stays volumetric: we see the tops and two faces of the
+// sidewalk block and buildings rather than a flat plan.
 const KEYS = [
-  { u: 0.00, eye: [0, 23.5, 25.0], target: [0, 0.2, -1.0], fov: 50, roll: -0.012 },
-  { u: 0.18, eye: [-0.8, 22.6, 24.0], target: [0, 0.4, -1.2], fov: 49, roll: -0.006 },
-  { u: 0.46, eye: [1.8, 21.3, 22.4], target: [0.4, 0.2, -1.4], fov: 47.5, roll: 0.010 },
-  { u: 0.68, eye: [0.4, 22.0, 23.2], target: [0, 0.2, -1.0], fov: 49, roll: 0.004 },
-  { u: 0.84, eye: [-0.5, 23.0, 24.6], target: [0, 0.2, -0.8], fov: 50, roll: -0.010 },
-  { u: 1.00, eye: [0, 23.5, 25.0], target: [0, 0.2, -1.0], fov: 50, roll: -0.012 },
+  { u: 0.00, eye: [-28.0, 28.0, 48.0], target: [0.0, 1.0, -3.0], fov: 52, roll: -0.008 },
+  { u: 0.18, eye: [-27.0, 27.4, 47.0], target: [0.4, 1.0, -3.2], fov: 51.5, roll: -0.004 },
+  { u: 0.46, eye: [-25.6, 26.6, 45.4], target: [0.9, 0.9, -3.6], fov: 50.5, roll: 0.006 },
+  { u: 0.68, eye: [-26.4, 27.0, 46.2], target: [0.6, 0.9, -3.4], fov: 51.2, roll: 0.003 },
+  { u: 0.84, eye: [-27.4, 27.7, 47.4], target: [0.2, 1.0, -3.1], fov: 51.8, roll: -0.006 },
+  { u: 1.00, eye: [-28.0, 28.0, 48.0], target: [0.0, 1.0, -3.0], fov: 52, roll: -0.008 },
 ];
 
 export class CameraRig {
@@ -30,10 +31,10 @@ export class CameraRig {
     const fov = lerp(a.fov, b.fov, t);
     const roll = lerp(a.roll, b.roll, t);
     // Gentle gate weave / hand-crank drift.
-    const s = shake * 0.10;
-    eye.x += Math.sin(u * Math.PI * 2 * 3.1) * s;
-    eye.y += Math.sin(u * Math.PI * 2 * 2.3 + 1.7) * s * 0.45;
-    target.x += Math.cos(u * Math.PI * 2 * 1.7) * s * 0.35;
+    const s = shake * 0.08;
+    eye.x += Math.sin(u * Math.PI * 2 * 2.1) * s;
+    eye.y += Math.sin(u * Math.PI * 2 * 1.6 + 1.7) * s * 0.4;
+    target.x += Math.cos(u * Math.PI * 2 * 1.4) * s * 0.3;
     this.camera.set(eye, target, fov, roll);
     return this.camera;
   }

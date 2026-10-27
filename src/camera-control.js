@@ -16,10 +16,10 @@ export class CameraController {
     this.blend = 1;
     this.hudEnabled = true;
     this.hudTimer = 0;
-    this.autoEye = v3(0, 23.5, 25);
-    this.autoTarget = v3(0, 0.2, -1);
-    this.autoFov = 50;
-    this.autoRoll = -0.012;
+    this.autoEye = v3(-28, 28, 48);
+    this.autoTarget = v3(0, 1, -3);
+    this.autoFov = 52;
+    this.autoRoll = -0.008;
     this.eye = { ...this.autoEye };
     this.target = { ...this.autoTarget };
     this.desiredEye = { ...this.eye };

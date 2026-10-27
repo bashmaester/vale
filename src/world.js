@@ -1,67 +1,93 @@
-// Shared world rules: a believable two-street crossing with four corner
-// sidewalks, straight crosswalks, diagonal scramble paths and legal lanes.
+// Shared world rules for a single built-out street corner.
+// Big volumes first: two road strips, four sidewalk blocks, one detailed
+// northeast corner. Smaller props, cars and people are layered on top.
 import { clamp } from './math.js';
 
-export const ROAD = { x0: -30, x1: 30, z0: -23, z1: 25 };
-export const INTERSECTION = { x0: -9.6, x1: 9.6, z0: -8.6, z1: 8.6 };
+export const ROAD = { x0: -30, x1: 30, z0: -30, z1: 30 };
+export const ROAD_H = { x0: -30, x1: 30, z0: -8, z1: 8 };   // cars drive ±x
+export const ROAD_V = { x0: -8, x1: 8, z0: -30, z1: 30 };    // cars drive ±z
+export const INTERSECTION = { x0: -8, x1: 8, z0: -8, z1: 8 };
 
-// Four sidewalk blocks around a cross intersection.
+// Four sidewalk blocks. Only NE is fully built out; the others are simple
+// receiving slabs so the crossing still reads as a real intersection.
 export const SIDEWALKS = [
-  { id: 'NW', x0: -30, x1: -9.6, z0: -23, z1: -8.6 },
-  { id: 'NE', x0: 9.6, x1: 30, z0: -23, z1: -8.6 },
-  { id: 'SW', x0: -30, x1: -9.6, z0: 8.6, z1: 25 },
-  { id: 'SE', x0: 9.6, x1: 30, z0: 8.6, z1: 25 },
+  { id: 'NW', x0: -30, x1: -8, z0: -30, z1: -8, detail: 0.25 },
+  { id: 'NE', x0: 8, x1: 30, z0: -30, z1: -8, detail: 1.0 },
+  { id: 'SW', x0: -30, x1: -8, z0: 8, z1: 30, detail: 0.35 },
+  { id: 'SE', x0: 8, x1: 30, z0: 8, z1: 30, detail: 0.35 },
 ];
 
-// Waiting crowds gather near the curb ramps, not in the road.
+export const CORNER = SIDEWALKS.find((s) => s.id === 'NE');
+
+// Waiting crowds gather mostly on the built-out corner, with a few on the
+// opposite curbs. weight biases Poisson sampling toward the set.
 export const WAIT_ZONES = [
-  { id: 'SW', x0: -21.5, x1: -10.6, z0: 9.4, z1: 17.5 },
-  { id: 'SE', x0: 10.6, x1: 21.5, z0: 9.4, z1: 17.5 },
-  { id: 'NW', x0: -21.5, x1: -10.6, z0: -17.5, z1: -9.4 },
-  { id: 'NE', x0: 10.6, x1: 21.5, z0: -17.5, z1: -9.4 },
+  { id: 'NE', weight: 0.46, x0: 9.5, x1: 17.5, z0: -16.0, z1: -9.5 },
+  { id: 'NW', weight: 0.20, x0: -17.5, x1: -9.5, z0: -16.0, z1: -9.5 },
+  { id: 'SW', weight: 0.19, x0: -17.5, x1: -9.5, z0: 9.5, z1: 16.0 },
+  { id: 'SE', weight: 0.15, x0: 9.5, x1: 17.5, z0: 9.5, z1: 16.0 },
 ];
 
-// Straight crossings dominate; diagonals remain part of the scramble.
-// Bounds are sidewalk waiting areas; delta carries people to the far sidewalk.
+// A few legible routes rather than a full scramble. Straight crossings first,
+// diagonals second, plus a short stroll along the built-out sidewalk.
 export const FLOWS = [
-  { id: 'E', kind: 'straight', weight: 0.16,
-    bounds: { x0: -20.5, x1: -11.0, z0: 9.6, z1: 12.2 }, delta: { x: 31.0, z: 0 } },
-  { id: 'W', kind: 'straight', weight: 0.15,
-    bounds: { x0: 11.0, x1: 20.5, z0: -12.2, z1: -9.6 }, delta: { x: -31.0, z: 0 } },
-  { id: 'S', kind: 'straight', weight: 0.15,
-    bounds: { x0: 9.6, x1: 12.2, z0: -20.5, z1: -11.0 }, delta: { x: 0, z: 31.0 } },
-  { id: 'N', kind: 'straight', weight: 0.14,
-    bounds: { x0: -12.2, x1: -9.6, z0: 11.0, z1: 20.5 }, delta: { x: 0, z: -31.0 } },
-  { id: 'SW_NE', kind: 'diagonal', weight: 0.10,
-    bounds: { x0: -20.5, x1: -11.5, z0: 9.6, z1: 17.0 }, delta: { x: 32.0, z: -29.0 } },
-  { id: 'NE_SW', kind: 'diagonal', weight: 0.10,
-    bounds: { x0: 11.5, x1: 20.5, z0: -17.0, z1: -9.6 }, delta: { x: -32.0, z: 29.0 } },
+  { id: 'NE_S', kind: 'straight', weight: 0.20,
+    bounds: { x0: 9.8, x1: 15.5, z0: -14.5, z1: -10.0 }, delta: { x: -6.5, z: 24.0 }, bend: 1.6 },
+  { id: 'NE_W', kind: 'straight', weight: 0.17,
+    bounds: { x0: 9.8, x1: 15.5, z0: -14.5, z1: -10.0 }, delta: { x: -24.0, z: 1.5 }, bend: -2.4 },
+  { id: 'NE_SW', kind: 'diagonal', weight: 0.15,
+    bounds: { x0: 9.8, x1: 16.5, z0: -16.5, z1: -10.0 }, delta: { x: -27.0, z: 26.0 }, bend: 0.8 },
+  { id: 'SW_NE', kind: 'diagonal', weight: 0.12,
+    bounds: { x0: -16.5, x1: -9.8, z0: 10.0, z1: 16.5 }, delta: { x: 27.0, z: -26.0 }, bend: -0.8 },
   { id: 'NW_SE', kind: 'diagonal', weight: 0.10,
-    bounds: { x0: -20.5, x1: -11.5, z0: -17.0, z1: -9.6 }, delta: { x: 32.0, z: 29.0 } },
+    bounds: { x0: -16.5, x1: -9.8, z0: -16.5, z1: -10.0 }, delta: { x: 27.0, z: 26.0 }, bend: 0.7 },
   { id: 'SE_NW', kind: 'diagonal', weight: 0.10,
-    bounds: { x0: 11.5, x1: 20.5, z0: 9.6, z1: 17.0 }, delta: { x: -32.0, z: -29.0 } },
+    bounds: { x0: 9.8, x1: 16.5, z0: 10.0, z1: 16.5 }, delta: { x: -27.0, z: -26.0 }, bend: -0.7 },
+  { id: 'CORNER_STROLL', kind: 'stroll', weight: 0.16,
+    bounds: { x0: 11.0, x1: 23.0, z0: -23.0, z1: -11.0 }, delta: { x: -7.0, z: 5.0 }, bend: 0.4 },
 ];
 
 // Crosswalk footprints, kept in sync with environment.js drawing.
 export const CROSSWALKS = {
-  south: { x0: -8.3, x1: 8.3, z0: 8.8, z1: 12.2 },
-  north: { x0: -8.3, x1: 8.3, z0: -12.2, z1: -8.8 },
-  west: { x0: -12.2, x1: -8.8, z0: -8.3, z1: 8.3 },
-  east: { x0: 8.8, x1: 12.2, z0: -8.3, z1: 8.3 },
-  diagonalHalfWidth: 3.4,
-  diagonalReach: 11.5,
-  centerRadius: 7.5,
+  west: { x0: -8.0, x1: -4.6, z0: -8, z1: 8 },
+  east: { x0: 4.6, x1: 8.0, z0: -8, z1: 8 },
+  north: { x0: -8, x1: 8, z0: -8.0, z1: -4.6 },
+  south: { x0: -8, x1: 8, z0: 4.6, z1: 8.0 },
+  diagonalHalfWidth: 2.8,
+  diagonalReach: 10.0,
+  centerRadius: 5.4,
 };
 
-// Left/right lanes on the horizontal street. dir = +1 drives west→east on
-// the north half; dir = -1 drives east→west on the south half.
+// Two lanes per road. offset is the fixed coordinate perpendicular to travel.
 export const LANES = [
-  { id: 'H1', z: -6.9, dir: 1 },
-  { id: 'H2', z: -4.6, dir: 1 },
-  { id: 'H3', z: -2.3, dir: 1 },
-  { id: 'H4', z: 2.3, dir: -1 },
-  { id: 'H5', z: 4.6, dir: -1 },
-  { id: 'H6', z: 6.9, dir: -1 },
+  { id: 'H_E', axis: 'x', offset: -3.2, dir: 1 },
+  { id: 'H_W', axis: 'x', offset: 3.2, dir: -1 },
+  { id: 'V_S', axis: 'z', offset: -3.2, dir: 1 },
+  { id: 'V_N', axis: 'z', offset: 3.2, dir: -1 },
+];
+
+// Legal curbside parking slots. axis matches vehicle orientation.
+export const PARKING = [
+  { id: 'north_curb', axis: 'x', x: -18.5, z: -5.9, dir: 1 },
+  { id: 'south_curb', axis: 'x', x: 18.5, z: 5.9, dir: -1 },
+  { id: 'east_curb', axis: 'z', x: 5.9, z: -18.5, dir: 1 },
+  { id: 'west_curb', axis: 'z', x: -5.9, z: 18.5, dir: -1 },
+];
+
+// Traffic lights belong at the four intersection corners, nowhere else.
+export const SIGNAL_POSITIONS = [
+  { id: 'NW', x: -8.9, z: -8.9, toward: { x: 1, z: 1 }, yaw: 0 },
+  { id: 'NE', x: 8.9, z: -8.9, toward: { x: -1, z: 1 }, yaw: Math.PI / 2 },
+  { id: 'SW', x: -8.9, z: 8.9, toward: { x: 1, z: -1 }, yaw: -Math.PI / 2 },
+  { id: 'SE', x: 8.9, z: 8.9, toward: { x: -1, z: -1 }, yaw: Math.PI },
+];
+
+// Building volumes on the NE corner. x/z are centers, y is derived from h.
+export const BUILDING_LOTS = [
+  { id: 'corner_tower', x: 12.5, z: -13.0, w: 7.0, d: 8.0, h: 11.0, face: 'south', accent: 'red', cols: 3, rows: 4 },
+  { id: 'shop_row', x: 21.0, z: -12.0, w: 8.0, d: 7.0, h: 6.2, face: 'south', accent: 'teal', cols: 4, rows: 2 },
+  { id: 'mid_block', x: 13.0, z: -23.0, w: 7.0, d: 8.0, h: 9.0, face: 'west', accent: null, cols: 3, rows: 3 },
+  { id: 'kiosk', x: 24.0, z: -22.0, w: 6.0, d: 6.0, h: 5.0, face: 'west', accent: 'red', cols: 2, rows: 2 },
 ];
 
 export function rectContains(r, x, z, margin = 0) {
@@ -72,12 +98,18 @@ export function isOnSidewalk(x, z, margin = 0) {
   return SIDEWALKS.some((s) => rectContains(s, x, z, margin));
 }
 
+export function isOnRoad(x, z, margin = 0) {
+  const inH = rectContains(ROAD_H, x, z, margin);
+  const inV = rectContains(ROAD_V, x, z, margin);
+  return inH || inV;
+}
+
 export function isOnCrosswalk(x, z, margin = 0) {
   const C = CROSSWALKS;
-  if (rectContains(C.south, x, z, margin)) return true;
-  if (rectContains(C.north, x, z, margin)) return true;
   if (rectContains(C.west, x, z, margin)) return true;
   if (rectContains(C.east, x, z, margin)) return true;
+  if (rectContains(C.north, x, z, margin)) return true;
+  if (rectContains(C.south, x, z, margin)) return true;
   if (Math.abs(x + z) / Math.SQRT2 < C.diagonalHalfWidth + margin &&
       Math.abs(x) < C.diagonalReach + margin && Math.abs(z) < C.diagonalReach + margin) return true;
   if (Math.abs(x - z) / Math.SQRT2 < C.diagonalHalfWidth + margin &&
@@ -87,24 +119,22 @@ export function isOnCrosswalk(x, z, margin = 0) {
 }
 
 export function isParkable(x, z, margin = 0) {
-  return x > ROAD.x0 + 1 && x < ROAD.x1 - 1 &&
-         z > ROAD.z0 + 1 && z < ROAD.z1 - 1 &&
+  return isOnRoad(x, z, margin) &&
          !isOnSidewalk(x, z, margin) &&
-         !isOnCrosswalk(x, z, margin + 1.4);
+         !isOnCrosswalk(x, z, margin + 1.2) &&
+         !rectContains(INTERSECTION, x, z, margin + 0.8);
 }
 
-// Nudge a would-be illegal parked car to the nearest legal road slot.
+// Nudge a would-be illegal parked car to the nearest legal curb slot.
 export function sanitizePark(x, z, margin = 0) {
-  let px = x, pz = z;
-  for (let i = 0; i < 10 && !isParkable(px, pz, margin); i++) {
-    px += (px >= 0 ? 1 : -1) * 1.8;
-    if (Math.abs(px) > 25.5) px = (px >= 0 ? 25.5 : -25.5);
+  if (isParkable(x, z, margin)) return { x, z };
+  let best = PARKING[0];
+  let bestD = Infinity;
+  for (const p of PARKING) {
+    const d = (p.x - x) ** 2 + (p.z - z) ** 2;
+    if (d < bestD && isParkable(p.x, p.z, margin)) { bestD = d; best = p; }
   }
-  if (!isParkable(px, pz, margin)) {
-    px = px >= 0 ? 24.5 : -24.5;
-    pz = clamp(pz, -7, 7);
-  }
-  return { x: px, z: pz };
+  return { x: best.x, z: best.z };
 }
 
 export function clampToWorld(p, margin = 1) {
@@ -112,4 +142,13 @@ export function clampToWorld(p, margin = 1) {
     x: clamp(p.x, ROAD.x0 + margin, ROAD.x1 - margin),
     z: clamp(p.z, ROAD.z0 + margin, ROAD.z1 - margin),
   };
+}
+
+export function weightedWaitZone(rng) {
+  let r = rng.next();
+  for (const z of WAIT_ZONES) {
+    if (r < z.weight) return z;
+    r -= z.weight;
+  }
+  return WAIT_ZONES[WAIT_ZONES.length - 1];
 }

@@ -1,6 +1,6 @@
 # VALE — rainy crossing
 
-A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo scramble crossing is built as a real 3D scene, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
+A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
 
 > Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
 
@@ -54,28 +54,28 @@ signal-cycle timeline ─┘                                   │
 
 ### 1. 3D scene graph
 
-`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe the crossing in world space (`x` right, `y` up, `z` toward the viewer):
+`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe one built-out corner in world space (`x` right, `y` up, `z` toward the viewer):
 
-- two crossing roads, four raised sidewalk blocks, straight zebra crossings on every approach, faint diagonal scramble guides, stop lines, curbs, lane dividers and direction arrows;
-- low buildings with windows, awnings, wires, elevated track and signals; signs are oriented 3D quads that foreshorten instead of billboarding;
-- about 158 crossers plus 42 waiters drawn as tiny architectural-sketch people: head dots, solid coats, short legs, ground shadows, varied umbrellas, hats, bags, dogs, strollers and children — all projected from 3D world points;
-- eight walking routes (four straight crossings plus four diagonal scrambles) and a slower secondary motion clock so the crowd walks instead of sprints;
-- six vehicles with wheels, cabins, windshields, truck/van/bus/taxi silhouettes, split into legal left/right lanes so opposing streams never share asphalt;
-- a six-car train passing overhead;
-- rain, puddles, quiet wet reflections and gouged footprints;
+- two crossing road strips and four raised sidewalk **boxes**; only the northeast corner is fully built out, the other three are simple receiving slabs;
+- four straight zebra crossings, stop lines, lane dividers, direction arrows, manhole covers and tactile paving;
+- four cubic building volumes on the corner with windows, awnings, roof parapets and oriented 3D signs; wires and an elevated track behind them;
+- traffic lights only at the four intersection corners, with vehicle and pedestrian heads on proper poles;
+- three parked cars at legal curbs and two moving cars in separated lanes — five vehicles total, not a traffic jam;
+- about 92 crossers plus 30 waiters drawn as varied tiny architectural-sketch people: archetypes, coat shapes, head shapes, long shadows, umbrellas, bags, dogs, bicycles, strollers, companions and more — all projected from 3D world points;
+- a five-car train passing overhead;
+- persistent raindrop particles and puddle ripples, drawn into the plate rather than faked with a shader overlay;
 - grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
 
-`src/camera.js` is a small keyframed rig. It pushes in during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the figures change perspective — but the output is still a flat plate.
+`src/camera.js` is a small keyframed rig. It holds a three-quarter view of the built-out corner, pushes in slightly during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the volumes change perspective — but the output is still a flat plate.
 
 ### 2. 2D printing plates
 
-`src/scene.js` renders three offscreen canvases each frame:
+`src/scene.js` renders two offscreen canvases each frame:
 
-- **`plate`** — the main ink image: black paper, white/teal/red line work.
-- **`wet`** — reflections built with additive strokes, then broken by dark footprint shapes (`destination-out`) before being screened onto the plate.
-- **`field`** — a data texture: `R` = wetness/reflection zone, `G` = crowd/motion density, `B` = train/signal accent bloom.
+- **`plate`** — the main ink image: black paper, white/teal/red line work. Set, puddles, cars, people and rain are drawn here in that order.
+- **`field`** — a data texture: `R` = puddle mask, `G` = crowd/motion density, `B` = train/signal accent bloom.
 
-`src/draw.js` is the hand-drawn rasterizer: rough polylines with line boil, jittered polygons, projected 3D boxes, oriented `sign3D()` quads, abstract glyphs and splashes. Static geometry is still projected every frame so the camera can move.
+There is no wet-glass plate. `src/weather.js` keeps a persistent raindrop particle system and puddle ripple simulation; drops fall in 3D, land, and spawn expanding rings and splash spikes. `src/draw.js` is the hand-drawn rasterizer: rough polylines with line boil, jittered polygons, projected 3D boxes, oriented `sign3D()` quads, abstract glyphs and splashes. Static geometry is still projected every frame so the camera can move.
 
 ### 3. Node-based look graph
 
@@ -87,7 +87,7 @@ signal-cycle timeline ─┘                                   │
 | `02 · Carve / gouge` | edge-aware lino cuts, boiling tool marks, white scratches |
 | `03 · Edge detail` | tangent-following contour cuts, micro scratches, edge sparks |
 | `04 · Broken hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
-| `05 · Rain / reflections` | subtle stretched rain noise and faint wet-streak reflections |
+| `05 · Puddle mask (plate only)` | disabled pass-through; rain/puddles are simulated on the plate |
 | `06 · Ink separation` | bleed, dither, four-color posterization, accent bloom |
 | `07 · Paper / grain` | grain, fiber, speckle, vignette, projector flicker |
 | `08 · Output` | exposure and contrast |
@@ -112,14 +112,14 @@ This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to on
 
 | Time | Phase | Visual state |
 | --- | --- | --- |
-| 0.0–3.2s | `WAIT` | dense umbrellas at four corners, red signals, parked vehicles |
-| 3.2–4.4s | `SIGNAL` | teal lamps rise, umbrellas lean into the crossing |
-| 4.4–13.6s | `CROSS` | eight routes (straight + diagonal) surge slowly; train passes; footsteps break reflections |
-| 13.6–16.4s | `DRAIN` | crowd thins toward the far sidewalks, reflections begin to reform |
-| 16.4–18.0s | `EMPTY` | road almost clear; zebra, rain and quiet wet reflections dominate |
-| 18.0–20.0s | `TRAFFIC` | vehicles cross in legal lanes, headlights smear, umbrellas gather again for the loop |
+| 0.0–3.2s | `WAIT` | umbrellas gathered mostly on the built-out corner, red signals, parked cars |
+| 3.2–4.4s | `SIGNAL` | teal lamps rise, people lean into the two crossings |
+| 4.4–13.6s | `CROSS` | straight and diagonal routes cross slowly; train passes; raindrops ripple puddles |
+| 13.6–16.4s | `DRAIN` | crowd thins toward the far sidewalks, ripples keep expanding |
+| 16.4–18.0s | `EMPTY` | road almost clear; zebra, raindrops and puddles dominate |
+| 18.0–20.0s | `TRAFFIC` | two cars cross in legal lanes, headlights cut through rain, umbrellas gather again |
 
-The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps. Secondary animation (rain boil, grain, line flicker, idle sway and gait cadence) uses `timeline.motionT = 0.62 × t`; the signal cycle itself remains exactly 20 seconds.
+The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps. Secondary animation (rain, grain, line flicker, idle sway and gait cadence) uses `timeline.motionT = 0.62 × t`; the signal cycle itself remains exactly 20 seconds.
 
 ---
 
@@ -139,7 +139,7 @@ src/template.html                HTML shell
 src/style.css                    fullscreen film + hidden lab + camera HUD
 src/math.js                      noise, easing, RNG, perspective camera
 src/draw.js                      rough-stroke painter, 3D boxes, sign3D()
-src/world.js                     sidewalks, crosswalks, 8 flows, lanes, parking rules
+src/world.js                     corner layout, sidewalks, crosswalks, flows, lanes, parking
 src/collision.js                 separation + Poisson-disk blue noise
 src/shaders.js                   GLSL node definitions + presets
 src/graph.js                     node graph compiler / uniforms / serialization
@@ -147,11 +147,11 @@ src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
 src/camera.js                    keyframed camera rig
 src/camera-control.js            user orbit / fly camera
 src/timeline.js                  one signal cycle
-src/environment.js               street set, sidewalks, buildings, oriented signs
-src/crowd.js                     tiny 3D people, walk cycle, footprints
-src/traffic.js                   detailed vehicles + train + light reflections
-src/weather.js                   rain, wet reflections, field data texture
-src/scene.js                     orchestrates plates, camera, modules, separation
+src/environment.js               cubic corner set: roads, sidewalks, buildings, signals
+src/crowd.js                     varied tiny 3D people, walk cycle, long shadows
+src/traffic.js                   five vehicles + train, legal curbs and lanes
+src/weather.js                   raindrop particles, puddle ripples, field data texture
+src/scene.js                     orchestrates plate/field, camera, modules, separation
 src/lab.js                       optional node/scene/camera/timeline editor
 src/main.js                      wiring, query params, animation loop
 ```
@@ -177,4 +177,4 @@ issues and next steps. See `docs/CI.md` for troubleshooting.
 
 ## Design intent
 
-The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are tiny architectural-sketch marks with umbrellas — still projected from 3D world points and a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. Rain and puddles are atmosphere; wet reflection noise is deliberately quiet. Shared world rules keep cars in legal lanes, off crosswalks and apart from people. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.
+The references are not simulations: they are **representations that embody the structure and feeling** of a place. This turn builds one corner as a cubic volume set first — roads, sidewalks, buildings, signals, cars — then adds a varied crowd and finally real raindrop/puddle simulation. People are tiny architectural-sketch marks projected from 3D world points with a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. There is no procedural wet-glass overlay; rain and puddles are actual particles and ripples. Shared world rules keep cars in legal lanes, off crosswalks and apart from people. The shader graph flattens everything back into a consistent black/red/teal/white print.
