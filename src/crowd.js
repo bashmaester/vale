@@ -338,6 +338,18 @@ export class Crowd {
     });
     for (const r of raw) {
       const c = clampToWorld(r.world, 0.9);
+      // Someone steering around a neighbour must not be pushed off the kerb:
+      // if they started on a pavement, they stay on it. Crossing people are
+      // already on the road and are left alone.
+      if (isOnSidewalk(r.base.x, r.base.z) && !isOnSidewalk(c.x, c.z)) {
+        const dx = c.x - r.base.x, dz = c.z - r.base.z;
+        let k = 1;
+        for (let step = 0.85; step > 0.05; step -= 0.1) {
+          if (isOnSidewalk(r.base.x + dx * step, r.base.z + dz * step)) { k = step; break; }
+        }
+        c.x = r.base.x + dx * k;
+        c.z = r.base.z + dz * k;
+      }
       r.world.x = c.x; r.world.z = c.z;
     }
 
@@ -474,7 +486,7 @@ export class Crowd {
     // Screen size drives every detail size. This is the scale trap the earlier
     // build fell into: heads and lines were sub-pixel and people became an X.
     const bodyPx = Math.max(4, (qFootL.y + qFootR.y) / 2 - qHead.y);
-    const headR = Math.max(1.0, bodyPx * 0.082);
+    const headR = Math.max(1.0, bodyPx * 0.074);
     const lineW = clamp(bodyPx * 0.042, 0.55, 2.1);
     const foot = {
       x: (qFootL.x + qFootR.x) / 2,

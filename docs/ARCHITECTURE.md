@@ -148,11 +148,13 @@ Procedural people, last on the set:
 - 34 × `density` crossers and 18 × `density` waiters, six archetypes
   (commuter, student, elder, child, tourist, worker) with their own scale,
   coat shape, head shape, umbrella probability, gait and lean.
-- One filled silhouette per person — shoulders → hips → outer ankles → crotch,
-  i.e. a leg split — plus a small head disc and, when moving, two arm strokes.
-  Accessories (bag, briefcase, backpack, cane, balloon, …) appear only at L0.
+- One filled coat silhouette per person — shoulders → hem — with the two legs
+  drawn underneath it as separate strokes, plus a small head disc and, when
+  moving, two arm strokes. Proportions are those of a 1.72 m adult: hip at
+  0.86–1.02, shoulder at 1.42, head at 1.58. Accessories (bag, briefcase,
+  backpack, cane, balloon, …) appear only at L0.
 - **Every pixel size derives from the projected body height** (`bodyPx`):
-  `headR = max(1.0, bodyPx * 0.082)`, `lineW = clamp(bodyPx * 0.042, .55, 2.1)`.
+  `headR = max(1.0, bodyPx * 0.074)`, `lineW = clamp(bodyPx * 0.042, .55, 2.1)`.
   This is the lesson from the failed version: world-unit sizes went sub-pixel
   and turned every figure into a wireframe X.
 - Umbrellas are domes: rim ring + mid ring + apex, with the rim plane tilted
@@ -163,7 +165,12 @@ Procedural people, last on the set:
   `lateral`: a push that points backwards along someone's heading is turned into
   a sideways slide, which is what walking past somebody looks like. Two passes,
   each single-group — people against the furniture in `STREET_PROPS` (and the
-  parked cars), then people against people. A single `clampToWorld` at the end.
+  parked cars), then people against people. A single `clampToWorld` at the end,
+  plus a guard that will not let someone who started on a pavement be pushed
+  off it. Measured over the 20 s loop at 50 ms steps (640×360): **0.0451 m
+  average step, 0.796 m worst single step** — from 5.455 m before the rework.
+  The residual is a single-frame correction where a body threads between two
+  props; the mean is a walking pace, which is the real test.
 - Pedestrians keep a **lane** along their flow (`lane` ±0.42 applied along the
   flow's side vector, never the current heading), and the scatter keeps clear of
   the furniture, so most conflicts never happen. The walk-in is a short

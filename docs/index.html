@@ -26,7 +26,7 @@ footer{padding:20px clamp(18px,5vw,64px);border-top:1px solid #26332c;color:#617
 <body>
 <header>
   <h1>VALE / DOCS &amp; HANDOFF</h1>
-  <div class="meta">branch arena/bab4bc10-vale · commit d0ce00a7 · built 2026-10-27T20:17:21.912Z · index.html 189,973 bytes</div>
+  <div class="meta">branch arena/bab4bc10-vale · commit 1ac16689 · built 2026-10-27T20:28:14.224Z · index.html 190,650 bytes</div>
 </header>
 <main>
   <a class="film" href="../index.html">▶ open the self-contained film</a>
@@ -45,17 +45,32 @@ such tile, presented inside a glass case — four panes and a lid, no posts or
 rails — so the modularity is visible without any</p></a>
     <a class="card" href="CHANGELOG.md"><h2>CHANGELOG</h2><p>Dates use the user’s local timezone (America/New_York).</p></a>
     <a class="card" href="CI.md"><h2>CI / PAGES</h2><p>The working agreement is:</p></a>
-    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit d0ce00a7 on arena/bab4bc10-vale, built 2026-10-27T20:17:21.912Z.</p></a>
+    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit 1ac16689 on arena/bab4bc10-vale, built 2026-10-27T20:28:14.224Z.</p></a>
     <a class="card" href="DEPLOY_STATUS.md"><h2>DEPLOY STATUS</h2><p>Fresh deployment metadata for this Pages build.</p></a>
   </div>
   <h2 class="sec">README (live copy)</h2>
-  <pre># VALE — rainy crossing
+  <pre># VALE — one module of a rainy city
 
-A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
+A silent, autoplaying 20-second film in **one self-contained `index.html`**. One
+**module** of a rainy city is built as a real 3D volume, projected into a 2D
+“printing plate”, then finished by a node-based GLSL print pipeline. No outside
+visual assets, no fonts, no network requests, no audio, and no visible website
+UI during playback.
 
-&gt; **Status (2026-10-27):** the current build is a working technical scaffold, **not an approved visual result**. The latest user feedback is “very underwhelming” and “almost none of my notes have landed.” Before making further visual changes, read `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`, then validate real browser screenshots against the supplied references.
+The module is an **intersection**: an 11.8 m east–west street with a row of
+buildings on **both** sides — four blocks on the north frontage, two low shop
+blocks with a gap on the centre line on the south frontage — and a 3.6 m
+north–south **half street** down each x edge, so two modules side by side meet in
+a full 7.2 m street. Everything a cell contains is generated from the same rules,
+which is what lets the cells tile: the streets, kerbs, lane dashes, crossings,
+pavements and blocks carry straight through the seam (`src/cells.js`).
 
-&gt; Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
+&gt; **Status (2026-10-27, tag `v0.1.6`):** the module, the tileable cells, the
+&gt; palettes and the steering crowd are in; `npm run verify` (build · boot ·
+&gt; renderer smoke · finite · determinism) is green and GitHub Pages deploys from
+&gt; this branch. Read `docs/HANDOFF.md` first — it is the state of the work and the
+&gt; list of what is still open. Visual validation is by the stills in `.shots/`
+&gt; (`node tools/shot.mjs --t 3,9,17`).
 
 ---
 

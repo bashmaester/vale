@@ -38,10 +38,12 @@ Standing constraints carried from earlier sessions (do not break them):
 
 ## 2. Where the work stands
 
-The scene now reads as a **diorama in a case**: plinth, corner posts, cut-face
-caps, engraved label, four blocks at the back, one road, two sidewalks, a
-crossing, traffic signals, trees, vehicles, an overhead train, a rain-swept
-crowd.
+The scene now reads as **one module of a city**: a glass case with no hardware
+on its boundary, an east–west street with four blocks on the north frontage and
+two low shop blocks on the south frontage, a half street at each x edge, a
+crossing with signals, trees, parked and moving vehicles, an overhead train and a
+steering crowd. The same module is painted for the eight neighbouring cells, so
+the set tiles.
 
 Recent fixes that matter (all verified with stills):
 
@@ -125,8 +127,10 @@ Four things changed under the film, and one of them is structural:
    palette version.
 
 Keybinds: `Tab` panel, `\` stats, `H` hide all UI, `C` camera. The drone opens
-on `v3(10.2, 19.0, 35.6) → v3(-1, 2.2, -2.6)` (fov 38.5), which is the framing
-the module was composed for.
+on `v3(10.2, 21.0, 34.0) → v3(-1, 1.8, -2.8)` (fov 39), which is the framing the
+two-sided module was composed for: high enough to see the crowd over the near
+shop row. `tools/shot.mjs` with no `--eye` renders the *cinematic* rig, not this
+pose, so pass the eye/target explicitly when judging the film's default frame.
 
 ### Turn 11 — frame budget, GPU-side look graph, walls, 3×3 buffer
 

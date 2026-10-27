@@ -457,13 +457,25 @@ export function drawSideStreet(p, camera, detail = { hatch: 1 }) {
   for (let si = 0; si < strips.length; si++) {
     const [sx0, sx1] = strips[si];
     p.groundQuad(camera, sx0, z0, sx1, z1, {
-      fill: '#0e1013', stroke: null, jitter: 0, y: 0.001,
+      fill: '#15181d', stroke: null, jitter: 0, y: 0.001,
     });
     // A wet band down the middle of the half-street, and wear along the kerb.
     p.groundQuad(camera, (sx0 + sx1) / 2 - 1.2, z0 + 0.6, (sx0 + sx1) / 2 + 1.2, z1 - 0.6, {
-      fill: 'rgba(239,233,216,0.035)', stroke: null, jitter: 0.5, y: 0.008,
+      fill: 'rgba(239,233,216,0.045)', stroke: null, jitter: 0.5, y: 0.008,
     });
     const inner = si === 0 ? sx1 : sx0;
+    // A courtesy crossing where the pavement continues over the half street:
+    // it is what makes the gap read as a side road rather than a hole in the
+    // block, and it is exactly where the neighbour's pavement picks up.
+    for (let b = 0; b < 5; b++) {
+      const zb = 6.35 + b * 0.34;
+      p.projectPoly(camera, [
+        v3(inner + 0.35, 0.022, zb), v3(inner + (si === 0 ? 3.4 : -3.4), 0.022, zb),
+        v3(inner + (si === 0 ? 3.4 : -3.4), 0.022, zb + 0.2), v3(inner + 0.35, 0.022, zb + 0.2),
+      ], {
+        fill: BONE(0.26), stroke: null, jitter: 0.3, seed: 1860 + si * 13 + b,
+      });
+    }
     // Kerb along the block side, in two runs either side of the main street.
     for (const [za, zb] of [[z0, ROAD.z0], [ROAD.z1, z1]]) {
       line3(p, camera, [inner, SIDEWALK_Y, za], [inner, SIDEWALK_Y, zb], {

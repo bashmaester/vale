@@ -36,7 +36,9 @@ avoidance still looks "funny and unnatural".
   lane offset along their flow, street furniture is an explicit obstacle list
   (`STREET_PROPS`), placement keeps clear of the furniture, and the walk-in is a
   short 1.6–4.6 m at walking pace instead of a sprint from the cell edge. Average
-  step is 0.045 m per frame at 20 fps (≈0.9 m/s) with no teleports.
+  step is 0.0451 m per frame (a 20 s sweep at 50 ms, 640×360), down from
+  5.455 m; the worst single step is 0.796 m, and it is a single-frame correction
+  where a body threads between two props, not a teleport.
 - **The side streets carry their own markings:** asphalt through the full cell
   depth, kerbs along the inner edge with stone ticks, and a wet band.
 
@@ -47,9 +49,10 @@ avoidance still looks "funny and unnatural".
   coat hem with two legs below it instead of one triangle down to the ankles —
   and the pale coats are opaque.
 - The camera framings were recomposed for the module: the drone opens on
-  `(10.2, 19.0, 35.6) → (−1, 2.2, −2.6)`, the tripod shot is now axial down the
-  street where both frontages read, and the crane, orbit and detail shots were
-  raised above the near row.
+  `(10.2, 21.0, 34.0) → (−1, 1.8, −2.8)` at fov 39 — high enough to see the
+  crowd over the near shop row — the tripod shot is axial down the street where
+  both frontages read, and the crane, orbit and detail shots were raised above
+  the near row.
 - The south row and the forecourt now sit on the raised slab, so the near block
   reads as a pavement rather than a floating shelf.
 - Crowd walk-on no longer starts 20 m away at sprint speed; the drain no longer

@@ -1,10 +1,25 @@
-# VALE — rainy crossing
+# VALE — one module of a rainy city
 
-A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
+A silent, autoplaying 20-second film in **one self-contained `index.html`**. One
+**module** of a rainy city is built as a real 3D volume, projected into a 2D
+“printing plate”, then finished by a node-based GLSL print pipeline. No outside
+visual assets, no fonts, no network requests, no audio, and no visible website
+UI during playback.
 
-> **Status (2026-10-27):** the current build is a working technical scaffold, **not an approved visual result**. The latest user feedback is “very underwhelming” and “almost none of my notes have landed.” Before making further visual changes, read `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`, then validate real browser screenshots against the supplied references.
+The module is an **intersection**: an 11.8 m east–west street with a row of
+buildings on **both** sides — four blocks on the north frontage, two low shop
+blocks with a gap on the centre line on the south frontage — and a 3.6 m
+north–south **half street** down each x edge, so two modules side by side meet in
+a full 7.2 m street. Everything a cell contains is generated from the same rules,
+which is what lets the cells tile: the streets, kerbs, lane dashes, crossings,
+pavements and blocks carry straight through the seam (`src/cells.js`).
 
-> Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
+> **Status (2026-10-27, tag `v0.1.6`):** the module, the tileable cells, the
+> palettes and the steering crowd are in; `npm run verify` (build · boot ·
+> renderer smoke · finite · determinism) is green and GitHub Pages deploys from
+> this branch. Read `docs/HANDOFF.md` first — it is the state of the work and the
+> list of what is still open. Visual validation is by the stills in `.shots/`
+> (`node tools/shot.mjs --t 3,9,17`).
 
 ---
 

@@ -282,10 +282,10 @@ export class DroneMode extends CameraMode {
   // cinematic rig established: high, three-quarter, whole volume in frame.
   enter() {
     const d = this.dir;
-    d.fov = 38.5;
+    d.fov = 39;
     if (this.touched) return;
-    d.eye = v3(10.2, 19.0, 35.6);
-    d.target = v3(-1.0, 2.2, -2.6);
+    d.eye = v3(10.2, 21.0, 34.0);
+    d.target = v3(-1.0, 1.8, -2.8);
     const yp = yawPitchFromDir(norm3(sub3(d.target, d.eye)));
     d.yaw = yp.yaw;
     d.pitch = yp.pitch;
