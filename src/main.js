@@ -44,17 +44,30 @@ window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
 if (q.has('lab')) lab.open();
 
 let last = performance.now();
+let lastError = '';
 function frame(now) {
   const dt = Math.min((now - last) / 1000, 0.05);
   last = now;
   if (!state.paused) state.time += dt * state.speed;
   const t = state.time;
-  const { plate, field } = scene.render(t, dt);
-  // Secondary shader noise uses the same calmer clock as rain and grain boil.
-  const shaderTime = scene.timeline.motionT;
-  renderer.render(plate, field, shaderTime);
-  lab.render(t, scene.timeline);
-  requestAnimationFrame(frame);
+  try {
+    const { plate, field } = scene.render(t, dt);
+    // Secondary shader noise uses the same calmer clock as rain and grain boil.
+    const shaderTime = scene.timeline.motionT;
+    renderer.render(plate, field, shaderTime);
+    lab.render(t, scene.timeline);
+  } catch (err) {
+    // One bad frame must not stop the loop (or the page would stay black and
+    // look like a build failure). Report once, keep the clock running.
+    const msg = err && err.message ? err.message : String(err);
+    if (msg !== lastError) {
+      lastError = msg;
+      window.__valeError = msg;
+      console.error('VALE frame error:', err);
+    }
+  } finally {
+    requestAnimationFrame(frame);
+  }
 }
 requestAnimationFrame(frame);
 

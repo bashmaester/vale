@@ -63,6 +63,7 @@ function faceOf(faces, name) {
 
 // Screen-space glow. Used only for emitters (lamps, signs, shopfronts).
 function glow(p, x, y, r, rgb, a) {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
   if (a <= 0.002 || r <= 0.5) return;
   const c = p.ctx;
   const g = c.createRadialGradient(x, y, 0, x, y, r);
@@ -941,7 +942,7 @@ export function drawBuildings(p, camera, detail = { windows: 1 }, timeline = nul
     if (b.verticalSign && b.accent) {
       drawSignBox(p, camera, {
         x: b.x - b.w / 2 + 0.62, y: 3.0, z: b.z + b.d / 2 + 0.46,
-      }, 0.62, 3.1, 0.62, b.accent, detail, seed + 200);
+      }, 0, 0.62, 3.1, 0.62, b.accent, detail, seed + 200);
     }
 
     // Horizontal fascia sign above the awning.
@@ -1560,7 +1561,7 @@ export function drawReflections(p, camera, timeline, detail = { puddleDetail: 1 
     const s = SIGNAL_POSITIONS[i];
     const hz = s.z + s.toward.z * s.arm;
     const q = camera.project(v3(s.x, 0.04, hz));
-    if (q) {
+    if (q && Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.scale)) {
       const c = p.ctx;
       const g = c.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.scale * 2.4);
       g.addColorStop(0, 'rgba(43,184,174,0.14)');

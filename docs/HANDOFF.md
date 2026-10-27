@@ -98,6 +98,27 @@ Fixes in place:
 Lesson: a build that "succeeds" can still ship a syntactically invalid page.
 The boot test is the guard.
 
+## 2c. The NaN bug (fixed later the same day)
+
+After the build was fixed the page still threw on frame 1:
+`createRadialGradient … non-finite`. A blade-sign call passed one extra leading
+argument, so the box depth became the string `"teal"`, the projection produced
+`NaN`, and the glow gradient threw. Headless canvas coerces `NaN` to `0`, so
+stills and boot tests all looked healthy.
+
+Guards now in place:
+
+- `tools/finite.mjs` (`npm run finite`) wraps every Canvas2D entry point and
+  fails on non-finite coordinates or negative radii across the loop at three
+  viewport sizes.
+- `main.js` catches per-frame errors, logs once, and keeps the loop alive.
+- Glow/gradient helpers refuse non-finite geometry instead of forwarding it.
+- CI runs `npm run verify`-equivalent steps: check, build, boot, finite.
+
+**Rule for future work:** `@napi-rs/canvas` is more forgiving than a browser.
+Any numeric bug that reaches the canvas must be caught by the finite check, not
+by the stills.
+
 ## 3. Do not repeat these
 
 - **No browser in the sandbox.** `apt` cannot reach the Debian mirror, the

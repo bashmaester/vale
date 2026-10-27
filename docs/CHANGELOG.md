@@ -336,3 +336,37 @@ use to build tiles from).”
 
 **Verified:** default, `?finish=raw` and `?cam=fly&lab=1` all boot clean; the
 extracted inline script passes `node --check`; the served page is 200 / ~127 KiB.
+
+## 2026-10-27 — Turn 8: the NaN that blanked the page
+
+**Symptom:** `?finish=raw` threw
+`TypeError: Failed to execute 'createRadialGradient' … non-finite` and the
+canvas stayed blank.
+
+**Root cause:** the vertical blade sign was called with a stray leading argument:
+
+```js
+drawSignBox(p, camera, side, 0.62, 3.1, 0.62, b.accent, detail, seed + 200);
+//                          ^ stray: d received "teal"
+```
+
+so `side.z + d * 0.4` became `NaN`, the projection returned `NaN` coordinates,
+and the glow gradient threw. Headless `@napi-rs/canvas` silently coerces `NaN`
+to `0`, so every still and every boot test passed while the browser died on
+frame 1.
+
+**Fixed**
+
+- Corrected the `drawSignBox` call (y = 0, w = 0.62, h = 3.1, d = 0.62).
+- `glow()`, the signal glow pool, vehicle lamp glows and the weather field blobs
+  now refuse non-finite geometry instead of handing it to the canvas.
+- `main.js` guards the frame loop: a single bad frame is logged once
+  (`window.__valeError`) and the loop keeps running, so one error can never
+  freeze the page black again.
+- `tools/finite.mjs` (`npm run finite`): wraps every Canvas2D entry point and
+  fails on non-finite coordinates or negative radii across the whole loop at
+  three viewport sizes. Wired into CI.
+- `npm run verify` = check → build → boot → finite.
+
+**Verified:** the finite check is clean across 0–20 s at 1440×810, 900×506 and
+640×360; boot still passes; build 127.4 KiB.

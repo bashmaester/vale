@@ -14,7 +14,8 @@
     "lod": "node tools/lod.mjs",
     "smoke": "node tools/smoke.mjs",
     "boot": "node tools/boot-smoke.mjs",
-    "verify": "npm run check && npm run build && npm run boot"
+    "verify": "npm run check && npm run build && npm run boot && npm run finite",
+    "finite": "node tools/finite.mjs"
   },
   "devDependencies": {
     "@napi-rs/canvas": "^0.1.80",

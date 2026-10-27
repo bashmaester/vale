@@ -225,6 +225,7 @@ export class Weather {
     ctx.globalCompositeOperation = 'lighter';
 
     const blob = (x, y, r, rgb, a) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
       if (r <= 0 || a <= 0) return;
       const g = ctx.createRadialGradient(x, y, 0, x, y, r);
       g.addColorStop(0, `rgba(${rgb},${a})`);

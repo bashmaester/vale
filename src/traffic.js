@@ -265,7 +265,7 @@ export function drawVehicle(p, camera, item) {
   const lampY = prof.type === 'bus' ? 0.9 : 0.70;
   for (const lat of [prof.d * 0.34, -prof.d * 0.34]) {
     const nose = camera.project(mirror([axisPoint(world, spec, 0.99 * prof.w * 0.5, lat, lampY)])[0]);
-    if (nose) {
+    if (nose && Number.isFinite(nose.x) && Number.isFinite(nose.y)) {
       const r = Math.max(1, nose.scale * 0.085);
       p.ellipse(nose.x, nose.y, r * 1.3, r * 0.8, {
         fill: BONE(0.92), stroke: BONE(0.8), width: 0.55, alpha,
@@ -283,7 +283,7 @@ export function drawVehicle(p, camera, item) {
       }
     }
     const rear = camera.project(mirror([axisPoint(world, spec, -0.99 * prof.w * 0.5, lat, lampY)])[0]);
-    if (rear) {
+    if (rear && Number.isFinite(rear.x) && Number.isFinite(rear.y)) {
       const rr = Math.max(1, rear.scale * 0.075);
       if (!item.moving) {
         const c = p.ctx;

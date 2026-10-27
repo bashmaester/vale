@@ -47,6 +47,11 @@ jobs:
       - name: Boot smoke test (built bundle)
         run: npm run boot
 
+      # Browsers throw on non-finite canvas arguments where headless canvas
+      # silently coerces them, so NaN geometry must be caught in CI.
+      - name: Numeric sanity check
+        run: npm run finite
+
       - name: Validate no external assets
         run: |
           if grep -Eq '<script[^>]+src=|<link[^>]+href=|https?://' index.html; then
