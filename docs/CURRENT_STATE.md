@@ -10,8 +10,8 @@ drives the sample, not the deliverable.
 
 ## 1. What the build is
 
-One self-contained `index.html` (125.5 KiB), silent, autoplaying, no external
-assets. It renders one tile of a rainy street corner inside a physical-looking
+One self-contained `index.html` (141.5 KiB / 144,903 B), silent, autoplaying,
+no external assets. It renders one tile of a rainy street corner inside a physical-looking
 case: plinth, four corner posts, wall-thickness caps on the cut faces, engraved
 label. Everything inside the case is generated from code every frame.
 
@@ -25,9 +25,49 @@ Runtime switches:
 | *(none)* | the film: 1440×810 (or viewport), 20 s loop, no UI |
 | `?finish=raw` / `?raw=1` | bypass the shader, show the raw ink plate |
 | `?lab=1` | hidden lab: node graph, params, camera tab, LoD forcing, export |
-| `?cam=orbit` / `?cam=fly` | user camera takeover, `?hud=0` hides help |
+| `?ui=1` / `?panel=1` | opens the scene-control sidebar (hidden by default) |
+| `?cam=cinematic\|fps\|third\|drone` | starts in a camera mode (`orbit`/`fly`/`auto`/`user` are aliases) |
+| `?shot=rig\|tripod\|crane\|orbit\|detail` | picks a cinematic shot |
+| `?hud=0` | hides the camera help line |
 
-`window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION }`.
+`window.VALE = { graph, scene, renderer, lab, sidebar, state, W, H, DURATION }`.
+
+### Camera controllers (modular)
+
+`src/camera-modes.js` — `CameraMode` base (`enter/exit/update/onWheel/reset/place`)
+plus four controllers:
+
+| Mode | Key | What it does |
+| --- | --- | --- |
+| `CinematicMode` | `V` | the authored `CameraRig`, plus steady shots `rig`, `tripod`, `crane`, `orbit`, `detail` (`[` / `]` steps) |
+| `FpsMode` | `2` | eye height 1.66 m, walk 3.2 m/s, run 6.4, gentle bob, clamped inside the tile |
+| `ThirdPersonMode` | `3` | ground character with damped facing, orbit distance 1.8–12 m, wheel zoom |
+| `DroneMode` | `4` | free flight, `Q`/`E` down/up, `Shift` boost, wheel sets speed |
+
+`src/camera-director.js` owns the shared state (`eye/target/fov/roll/yaw/pitch/keys`),
+all window-level input (pointer look, wheel, keys; right-drag is ignored), the HUD,
+and `setMode / cycle / setShot / place / apply`. A new controller is one class plus
+one entry in `MODES`; no input code changes. `C` cycles, `1`–`4` jump directly.
+
+### Case frame and depth sorting
+
+`environment.collectFrame(p, camera, params)` returns frame members as
+`{ depth, draw, group }`. The back shell, cut faces, plinth and label are grouped
+`far` and drawn before the set; the near posts, rails and corner ticks are merged
+into the scene's depth-sorted drawable list (same `Camera.project().depth`
+convention as vehicles and people), so a post in front of a car occludes it and
+one behind it is hidden. `params.caseFrame = 0` removes the case entirely —
+verified by A/B stills (with rain disabled so the comparison is stable).
+
+### Sidebar (`src/sidebar.js`)
+
+Hidden by default; `Tab` or the ☰ handle opens it. Sections: **Camera** (mode,
+shot, HUD), **Scene** (crowd density, walk tempo, rain amount/speed, puddles,
+wind), **Texture** (smudge toggle, master plate-texture fader, hatch, contour,
+grain, fiber, vignette, "No smudge", "Reset"), **Palette** (preset, posterize,
+bleed, accent), **Case** (boundaries toggle, LoD), **Playback** (play/pause,
+restart, speed). 24 rows, each with a `sync()` that re-reads the live value, so
+external changes (lab, preset, keyboard) flow back into the panel.
 
 ---
 
@@ -102,9 +142,10 @@ expected.
 
 ## 4. Measured state (this build)
 
-- `npm run check` passes; `npm run build` → 125.5 KiB self-contained file.
-- Luminance at 1440×810 across the loop: **dark 52.7–62.8 %**, mid 32.2–40.4 %,
-  bright 5.0–6.9 %. 900×506: dark 49.9–60.7 %. 640×360: dark 47.3–58.8 %.
+- `npm run verify` (check → build → boot → finite) passes; `npm run build` →
+  141.5 KiB self-contained file.
+- Luminance this build: 900×506 **dark 46.8–60.3 %**, mid 32.5–42.1 %, bright
+  6.8–11.2 %; 640×360 dark 46.8–58.4 %. (Earlier 1440×810: dark 52.7–62.8 %.)
   (Historical failure mode was 94 % dark; do not reintroduce heavy posterize +
   vignette.)
 - Camera: `CameraRig` keys fitted against the full object extents
@@ -121,15 +162,25 @@ any startup error, so a corrupted or non-parsing bundle can no longer ship (the
 2026-10-27 blank deploy was a `$&` substitution bug in the build plus a TDZ error
 in `main.js`; both fixed, both now covered).
 
+## 4c. What this turn added
+
+- Modular camera modes + director, replacing the old orbit/fly controller
+  (`src/camera-control.js` deleted; nothing imports it).
+- Case-frame depth sorting with a `caseFrame` visibility toggle.
+- Sidebar panel with a smudge toggle and a relative master texture fader.
+- `PRESETS.linocut` softened at the preset level (hatch 0.20 → 0.11, contour
+  0.40 → 0.24, fiber 0.045 → 0.026, vignette 0.16 → 0.11). Editing node defaults
+  alone does nothing at runtime — `applyPreset` overwrites them at boot.
+
 ## 5. Honest weaknesses
 
 1. **No real browser verification.** The sandbox has no browser (apt, the
    Playwright CDN and puppeteer's Chrome download are all blocked), so the
    ink plate is judged from `@napi-rs/canvas` stills; startup is validated by
    `tools/boot-smoke.mjs`. The WebGL finish itself still has not been seen.
-2. **Front-left of the tile is empty.** The crowd clusters at the crossing and
-   the four buildings fill the back; the left front quadrant is pavement and
-   one tree. The next pass should distribute street furniture there.
+2. **The front-left quadrant is still the thinnest area.** It has a bench,
+   planters, bollards, a poster column, a lamp and a tree, but they are small and
+   dark, so the corner reads as pavement.
 3. **People are still schematic.** They read correctly at 1× (silhouette,
    head, umbrella) but close-up crops show a cone-like coat and a floating
    canopy. That is acceptable for a *template*, not yet for a hero shot.
@@ -137,7 +188,9 @@ in `main.js`; both fixed, both now covered).
    modelled at all.
 5. **LoD 2 loses too much of the shopfronts.** Their lit windows survive, the
    frames do not.
-6. **Tiling is not yet demonstrated in-engine.** The tile is authored to snap
+6. **The smudge cannot be judged here.** The stills bypass the WebGL finish
+   passes, so hatch/detail/paper strengths must be eyeballed in a real browser.
+7. **Tiling is not yet demonstrated in-engine.** The tile is authored to snap
    along x, but nothing renders two tiles side by side.
 
 ---
@@ -159,8 +212,9 @@ cropped; the crop recipe lives in `docs/HANDOFF.md`.
 
 ## 7. Next steps (ordered)
 
-1. Populate the empty front-left quadrant (bench, bins, poster column, bike
-   rack, a couple of café tables under an awning) at LoD-aware density.
+1. Fill the front-left quadrant properly: a bus shelter with a lit panel, a bike
+   rack, café tables under an awning, and two or three more walkers on that
+   sidewalk.
 2. Second crowd pass: coat silhouettes that are less conical, umbrellas that
    sit on the head instead of hovering.
 3. `tools/tiles.mjs`: render two tiles along x into one sheet to prove the

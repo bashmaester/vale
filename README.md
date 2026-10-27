@@ -26,16 +26,22 @@ Useful URLs:
 | --- | --- |
 | `index.html` | clean film, autoplay, 20s loop, no UI |
 | `index.html?lab=1` | opens the hidden node / scene / camera / timeline lab |
-| `index.html?cam=fly` | starts in user fly camera |
-| `index.html?hud=0` | disables the tiny camera-control HUD |
+| `index.html?cam=fps` | first-person walk (also `third`, `drone`, `cinematic`) |
+| `index.html?shot=crane` | cinematic shot: `rig`, `tripod`, `crane`, `orbit`, `detail` |
+| `index.html?ui=1` | opens the scene-control sidebar (also `?panel=1`) |
+| `index.html?hud=0` | disables the tiny camera help line |
 | `index.html?preset=riso` | starts with the Risograph look |
 | `index.html?t=11` | starts at 11 seconds |
 | `index.html?w=1920&h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&paused=1&t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts: `L` lab, `Space` play/pause, `S` save PNG frame, `R` reset all
-parameters, `C` release/take camera, `F` fly/orbit, `V` or `0` reset camera. While
-flying: `WASD/QE` move, `Shift` boosts, drag looks, right-drag pans, wheel zooms.
+Keyboard shortcuts: `L` lab, `Tab` scene controls, `Space` play/pause, `S` save PNG
+frame, `R` reset all parameters. Camera: `C` cycles cinematic → first person →
+third person → drone, `1`–`4` jump straight to a mode, `V` returns to the
+cinematic rig, `[` / `]` step through the steady shots. Left-drag looks, wheel
+zooms (dollies in drone), `WASD` moves, `Shift` runs/boosts, `Q`/`E` descend and
+climb in drone. **There is no right-drag pan** — that was explicitly dropped in
+favour of game-style navigation.
 
 ---
 
@@ -56,7 +62,7 @@ signal-cycle timeline ─┘                                   │
 
 ### 1. 3D scene graph
 
-`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe one built-out corner in world space (`x` right, `y` up, `z` toward the viewer):
+`src/tile.js`, `src/environment.js`, `src/crowd.js` and `src/traffic.js` describe one built-out corner in world space (`x` right, `y` up, `z` toward the viewer):
 
 - two crossing road strips and four raised sidewalk **boxes**; only the northeast corner is fully built out, the other three are simple receiving slabs;
 - four straight zebra crossings, stop lines, lane dividers, direction arrows, manhole covers and tactile paving;
@@ -68,7 +74,14 @@ signal-cycle timeline ─┘                                   │
 - persistent raindrop particles and puddle ripples, drawn into the plate rather than faked with a shader overlay;
 - grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
 
-`src/camera.js` is a small keyframed rig. It holds a three-quarter view of the built-out corner, pushes in slightly during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the volumes change perspective — but the output is still a flat plate.
+The camera is modular. `src/camera-modes.js` holds one class per navigation style —
+`CinematicMode` (the authored rig plus steady tripod / crane / orbit / detail
+shots), `FpsMode`, `ThirdPersonMode` and `DroneMode` — behind a `CameraMode` base
+(`enter/exit/update/onWheel/reset/place`). `src/camera-director.js` owns the
+shared input plumbing (pointer look, wheel, keys, HUD) and swaps modes at
+runtime; a new controller is one file plus one entry in `MODES`. All geometry is
+projected through `Camera.project()` in `src/math.js`, so the camera really is 3D
+and the volumes change perspective — but the output is still a flat plate.
 
 ### 2. 2D printing plates
 
@@ -146,8 +159,10 @@ src/collision.js                 separation + Poisson-disk blue noise
 src/shaders.js                   GLSL node definitions + presets
 src/graph.js                     node graph compiler / uniforms / serialization
 src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
-src/camera.js                    keyframed camera rig
-src/camera-control.js            user orbit / fly camera
+src/camera.js                    keyframed cinematic rig (used by CinematicMode)
+src/camera-modes.js              modular controllers: cinematic/fps/third/drone
+src/camera-director.js           mode switching, input plumbing, camera HUD
+src/sidebar.js                   hidden authoring sidebar (Tab)
 src/timeline.js                  one signal cycle
 src/environment.js               cubic corner set: roads, sidewalks, buildings, signals
 src/crowd.js                     varied tiny 3D people, walk cycle, long shadows
@@ -164,7 +179,7 @@ src/main.js                      wiring, query params, animation loop
 
 ## CI / Pages / handoff
 
-Every push to `arena/082e9ffd-vale` (and `main`) runs
+Every push to any branch (the workflow listens on `['**']`) runs
 `.github/workflows/deploy-pages.yml`: install → build → validate
 self-containment → regenerate docs → upload `_site/` → deploy with
 `actions/deploy-pages`. `npm run docs` writes fresh commit/branch/timestamp

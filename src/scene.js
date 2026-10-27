@@ -1,6 +1,6 @@
 import { Painter } from './draw.js';
 import { CameraRig } from './camera.js';
-import { CameraController } from './camera-control.js';
+import { CameraDirector } from './camera-director.js';
 import { Timeline } from './timeline.js';
 import { Crowd } from './crowd.js';
 import { Traffic, drawVehicle } from './traffic.js';
@@ -11,7 +11,7 @@ import {
 import {
   drawBackdrop, drawStreet, drawPaving, drawRoadMarkings, drawRail,
   drawBuildings, drawSignals, drawFurniture, drawReflections,
-  drawFrameBack, drawFrameFront,
+  collectFrame,
 } from './environment.js';
 
 export const SCENE_PARAM_DEFS = {
@@ -25,6 +25,8 @@ export const SCENE_PARAM_DEFS = {
   flySpeed: { value: 1.0, min: 0.2, max: 3.0, step: 0.01, label: 'fly speed' },
   cameraEase: { value: 8.0, min: 2.0, max: 20.0, step: 0.1, label: 'camera ease' },
   lod: { value: -1, min: -1, max: 2, step: 1, label: 'LoD (-1 = auto)' },
+  // 1 = the museum case is visible, 0 = only the volume itself.
+  caseFrame: { value: 1, min: 0, max: 1, step: 1, label: 'case boundaries' },
 };
 
 function defaults() {
@@ -50,7 +52,7 @@ export class Scene {
 
     this.timeline = new Timeline(20);
     this.cameraRig = new CameraRig(W, H);
-    this.cameraController = new CameraController();
+    this.cameraController = new CameraDirector();
     this.crowd = new Crowd(this.params);
     this.traffic = new Traffic(this.params);
     this.weather = new Weather(W, H);
@@ -130,7 +132,11 @@ export class Scene {
     // 2) The elevated line sits behind the buildings but above the street.
     drawRail(this.pp, camera);
     this.traffic.drawTrain(this.pp, camera, timeline, this.params);
-    drawFrameBack(this.pp, camera);
+
+    // The case shell is drawn here (behind the set), the near members take part
+    // in the depth sort below. `caseFrame = 0` hides the museum case entirely.
+    const frameItems = collectFrame(this.pp, camera, this.params);
+    for (const it of frameItems) if (it.group === 'far') it.draw(this.pp);
 
     // 3) Buildings, signals, furniture.
     drawBuildings(this.pp, camera, detail, timeline);
@@ -154,12 +160,18 @@ export class Scene {
         draw: (p) => { for (const d of it.draws) d(p); },
       });
     }
+    // Near case members (plinth, posts, rails) sort with the scene so a post
+    // in front of a vehicle occludes it and the plinth never floats.
+    for (const it of frameItems) {
+      if (it.group !== 'near') continue;
+      drawables.push({ depth: it.depth, draw: it.draw });
+    }
     drawables.sort((a, b) => b.depth - a.depth);
     for (const d of drawables) d.draw(this.pp);
 
-    // 6) Rain inside the volume, then the frame in front of everything.
+    // 6) Rain inside the volume. Nothing is drawn over the plate after it: the
+    //    case members are already in the depth sort.
     this.weather.drawRain(this.pp, camera, timeline, this.params, detail);
-    drawFrameFront(this.pp, camera);
 
     this.weather.drawField(this.fp, timeline, this.crowd, this.traffic, camera, this.params);
     return { plate: this.plate, field: this.field };

@@ -2,6 +2,57 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 9: game-style cameras, sorted case, sidebar
+
+**User feedback:** “the render is coming along… still things to solve but I'm
+encouraged.” Three requests: game-style navigation (no right-drag pan), toggles
+for the case boundaries (badly depth-sorted) and the unnatural static smudge,
+and a hidden sidebar for live parameters.
+
+### Added
+
+- `src/camera-modes.js`: `CameraMode` base and four controllers — `CinematicMode`
+  (`SHOTS`: `rig`, `tripod`, `crane`, `orbit`, `detail`), `FpsMode`,
+  `ThirdPersonMode`, `DroneMode` — plus `MODES`, `dirFromYawPitch`,
+  `yawPitchFromDir`, `clampToTile`.
+- `src/camera-director.js`: shared input plumbing (pointer look, wheel, keys,
+  HUD), runtime `setMode/cycle/setShot/place`, aliases (`orbit→third`,
+  `fly→drone`, `auto→cinematic`, `user→third`).
+- `src/sidebar.js` + `.sb-*` CSS: hidden authoring panel (`Tab`, ☰ handle,
+  `?ui=1`, `?panel=1`) with Camera / Scene / Texture / Palette / Case / Playback
+  sections; every row re-reads its live value through `sync()`.
+- `params.caseFrame` and `environment.collectFrame()`: frame members return
+  `{ depth, draw, group }`; far shell before the set, near posts merged into the
+  scene's depth sort.
+
+### Changed
+
+- `scene.js` draws the case through the sorted list (a post in front of a car now
+  occludes it), and `camera.js` is used only by `CinematicMode`.
+- `lab.js` camera section now exposes cinematic / first person / third person /
+  drone.
+- `PRESETS.linocut` softened at the preset level (hatch 0.20 → 0.11, contour
+  0.40 → 0.24, fiber 0.045 → 0.026, vignette 0.16 → 0.11, grain 0.070 → 0.062).
+  The node defaults in `shaders.js` were softened too, but the preset is what
+  actually ships.
+
+### Removed
+
+- `src/camera-control.js` (superseded by the director; nothing imports it) and
+  its right-drag pan.
+
+### Verified
+
+- `npm run verify` green; build 141.5 KiB; boot `fallback: true`; finite check
+  clean.
+- Camera probe: all four modes move and stay finite; cinematic shots drift
+  0.08–2.42 m over 60 frames (steady, not static).
+- Sidebar probe (headless DOM): 24 rows, and external changes to mode, case,
+  hatch strength, LoD, speed and pause all flow back into the widgets.
+- Case A/B stills with rain disabled: entering the volume, the back posts are
+  hidden by the building block and only the top rail above the roofline remains
+  visible — no frame lines drawn over the set.
+
 ## 2026-10-27 — Turn 5: current-state documentation and handoff
 
 **User feedback:** “very underwhelming” and “almost none of my notes ahve

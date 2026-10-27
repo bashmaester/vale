@@ -83,3 +83,40 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Libe
 .lab-foot { padding:8px 12px; border-top:1px solid #26332c; color:#617569; font-size:10px; line-height:1.5; }
 .lab-kbd { color:#cdd8cb; border:1px solid #3a4b41; border-radius:3px; padding:0 4px; }
 .lab-textarea { width:100%; height:90px; background:#070a08; color:#9fb2a5; border:1px solid #26332c; border-radius:5px; padding:6px; font:inherit; resize:vertical; }
+
+/* --- sidebar: the always-available scene controls ---------------------- */
+.sb-handle {
+  position: fixed; top: 14px; right: 14px; z-index: 40;
+  width: 34px; height: 34px; border-radius: 5px; cursor: pointer;
+  border: 1px solid rgba(86,199,183,.45); background: rgba(6,9,7,.78);
+  color: #d7ded4; font: 600 15px/1 ui-monospace, monospace;
+}
+.sb-handle:hover { border-color: #56c7b7; color: #eef3e8; }
+.sb {
+  position: fixed; top: 0; right: 0; bottom: 0; z-index: 39;
+  width: min(320px, 92vw); overflow-y: auto; overscroll-behavior: contain;
+  padding: 52px 14px 22px;
+  background: rgba(6,9,7,.94);
+  border-left: 1px solid rgba(86,199,183,.30);
+  color: #cdd8cb; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  backdrop-filter: blur(4px);
+}
+.sb[hidden] { display: none !important; }
+.sb-heading { margin: 0 0 4px; font-size: 12px; letter-spacing: .08em; color: #eef3e8; text-transform: uppercase; }
+.sb-note { margin: 0 0 14px; color: #6f8377; }
+.sb-section { padding: 10px 0 4px; border-top: 1px solid #1d2a23; }
+.sb-title { margin: 0 0 2px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: #56c7b7; }
+.sb-sub { margin: 0 0 6px; color: #6f8377; }
+.sb-row { display: block; margin: 8px 0; }
+.sb-row-head { display: flex; justify-content: space-between; gap: 8px; color: #9fb2a5; }
+.sb-label { color: #9fb2a5; }
+.sb-val { color: #d7ded4; font-variant-numeric: tabular-nums; }
+.sb-row input[type=range] { width: 100%; margin: 4px 0 0; accent-color: #56c7b7; }
+.sb-row select { width: 100%; margin-top: 3px; padding: 4px 6px; border-radius: 4px;
+  background: #0b120e; color: #d7ded4; border: 1px solid #2b3a32; font: inherit; }
+.sb-row-inline { display: flex; align-items: center; justify-content: space-between; }
+.sb-row-inline input[type=checkbox] { accent-color: #56c7b7; width: 15px; height: 15px; }
+.sb-btns { display: flex; gap: 6px; margin: 8px 0 4px; flex-wrap: wrap; }
+.sb-btn { cursor: pointer; border: 1px solid #3a4b41; background: #101713; color: #cdd8cb;
+  border-radius: 4px; padding: 5px 9px; font: inherit; }
+.sb-btn:hover { background: #1b2a22; border-color: #56c7b7; }

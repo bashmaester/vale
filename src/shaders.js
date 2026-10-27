@@ -114,7 +114,7 @@ export const NODE_DEFS = [
     inputs: ['carve'],
     ui: { x: 24, y: 106, w: 162, h: 60 },
     params: params({
-      contour: { value: 0.58, min: 0, max: 1.5, label: 'contour cuts' },
+      contour: { value: 0.32, min: 0, max: 1.5, label: 'contour cuts' },
       scale: { value: 9, min: 3, max: 30, label: 'contour scale px', step: 0.5 },
       warp: { value: 0.7, min: 0, max: 2, label: 'contour warp' },
       micro: { value: 0.42, min: 0, max: 1.5, label: 'micro scratches' },
@@ -148,7 +148,7 @@ export const NODE_DEFS = [
     params: params({
       angle: { value: -0.62, min: -3.14, max: 3.14, label: 'hatch angle', step: 0.01 },
       spacing: { value: 7.5, min: 3, max: 22, label: 'spacing px', step: 0.5 },
-      strength: { value: 0.34, min: 0, max: 1, label: 'hatch strength' },
+      strength: { value: 0.18, min: 0, max: 1, label: 'hatch strength' },
       warp: { value: 0.55, min: 0, max: 2, label: 'angle drift' },
       jitter: { value: 0.45, min: 0, max: 2, label: 'line wander' },
       breakup: { value: 0.38, min: 0, max: 1, label: 'broken lines' },
@@ -241,9 +241,9 @@ export const NODE_DEFS = [
     ui: { x: 24, y: 274, w: 162, h: 60 },
     params: params({
       grain: { value: 0.085, min: 0, max: 0.3, label: 'grain', step: 0.005 },
-      fiber: { value: 0.055, min: 0, max: 0.25, label: 'fiber', step: 0.005 },
+      fiber: { value: 0.030, min: 0, max: 0.25, label: 'fiber', step: 0.005 },
       speckle: { value: 0.5, min: 0, max: 1.5, label: 'speckle' },
-      vignette: { value: 0.42, min: 0, max: 1, label: 'vignette' },
+      vignette: { value: 0.26, min: 0, max: 1, label: 'vignette' },
     }),
     code: (g, n) => `vec4 n_paper(vec4 c, vec2 uv, vec4 field){
   if(${g.u(n, 'enabled')} < 0.5) return c;
@@ -287,11 +287,11 @@ export const PRESETS = {
     graph: {
       source: { misreg: 0.8, warp: 0.4 },
       carve: { strength: 0.55, scale: 15, boil: 0.20 },
-      detail: { contour: 0.40, scale: 10, warp: 0.6, micro: 0.30, spark: 0.22 },
-      hatch: { angle: -0.62, spacing: 8.5, strength: 0.20, warp: 0.50, jitter: 0.42, breakup: 0.34, cross: 0.14 },
+      detail: { contour: 0.24, scale: 10, warp: 0.6, micro: 0.24, spark: 0.18 },
+      hatch: { angle: -0.62, spacing: 8.5, strength: 0.11, warp: 0.50, jitter: 0.42, breakup: 0.34, cross: 0.10 },
       rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
       palette: { posterize: 0.42, bleed: 0.14, dither: 0.045, accent: 0.7 },
-      paper: { grain: 0.070, fiber: 0.045, speckle: 0.45, vignette: 0.16 },
+      paper: { grain: 0.062, fiber: 0.026, speckle: 0.30, vignette: 0.11 },
       output: { exposure: 1.04, contrast: 1.06 },
     },
     scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },

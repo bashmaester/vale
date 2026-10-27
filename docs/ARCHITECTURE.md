@@ -171,12 +171,27 @@ inspection and for the still tools.
 
 ---
 
+## 8b. Camera controllers
+
+`camera-modes.js` defines `CameraMode` (`enter/exit/update/onWheel/reset/place`)
+and four implementations: `CinematicMode` (the authored `CameraRig` plus the
+steady `SHOTS`: `rig`, `tripod`, `crane`, `orbit`, `detail`), `FpsMode`,
+`ThirdPersonMode` and `DroneMode`. `camera-director.js` owns the shared state —
+eye/target/fov/roll/yaw/pitch/keys — the window-level pointer, wheel and key
+handlers, the HUD, and `setMode/cycle/setShot/place/apply`. `scene.js` asks the
+director for the camera each frame and hands it to `CameraRig` only in cinematic
+mode. Adding a controller means writing one class and pushing it into `MODES`;
+no input code changes.
+
 ## 9. Runtime surfaces
 
 - `?finish=raw` / `?raw=1` — raw plate.
 - `?lab=1` — node graph, scene params (crowd density, walk tempo, rain, puddles,
   wind, camera shake, LoD), camera tab, timeline scrubber, export.
-- `?cam=orbit` / `?cam=fly`, `?hud=0` — user camera takeover.
-- `window.VALE` — `{ graph, scene, renderer, lab, state, W, H, DURATION }`.
+- `?cam=cinematic|fps|third|drone`, `?shot=<id>`, `?hud=0` — camera modes and
+  steady-shot selection (`orbit`/`fly`/`auto`/`user` stay as aliases).
+- `?ui=1` / `?panel=1` — opens the authoring sidebar (`src/sidebar.js`); `Tab`
+  or the ☰ handle toggles it, and it is hidden in a plain `index.html`.
+- `window.VALE` — `{ graph, scene, renderer, lab, sidebar, state, W, H, DURATION }`.
 - `tools/shot.mjs` renders stills headlessly through a DOM/canvas shim
   (`tools/canvas-env.mjs`) with an optional camera override.

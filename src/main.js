@@ -2,6 +2,7 @@ import { ShaderGraph, PRESETS } from './graph.js';
 import { Renderer } from './renderer.js';
 import { Scene } from './scene.js';
 import { Lab } from './lab.js';
+import { Sidebar } from './sidebar.js';
 import { DURATION } from './timeline.js';
 import { clamp } from './math.js';
 
@@ -32,16 +33,19 @@ if (q.get('finish') === 'raw' || q.get('raw') === '1') renderer.bypass = true;
 
 const camMode = q.get('cam');
 scene.cameraController.hudEnabled = q.get('hud') !== '0';
-if (camMode === 'orbit' || camMode === 'fly' || camMode === 'user') {
-  scene.cameraController.setMode(camMode === 'user' ? 'orbit' : camMode);
-}
+if (camMode) scene.cameraController.setMode(camMode === 'user' ? 'third' : camMode);
+const shotParam = q.get('shot');
+if (shotParam) scene.cameraController.setShot(shotParam);
 
 const lab = new Lab({ graph, scene, renderer, state });
+const sidebar = new Sidebar({ graph, scene, renderer, state, director: scene.cameraController });
+sidebar.mount();
 // Handles go out only after every construction has finished: referencing `lab`
 // before this line threw a TDZ ReferenceError and blanked the whole page.
-window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
+window.VALE = { graph, scene, renderer, lab, sidebar, state, W, H, DURATION };
 
 if (q.has('lab')) lab.open();
+if (q.has('ui') || q.has('panel')) sidebar.toggle(true);
 
 let last = performance.now();
 let lastError = '';
@@ -74,6 +78,6 @@ requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
 console.log(
-  '%cVALE%c — silent 20s 3D→2D print film. ?lab=1 opens the patch bay, ?cam=fly takes the camera.',
+  '%cVALE%c — Tab opens scene controls. C cycles camera: cinematic → first person → third person → drone. ?lab=1 opens the patch bay.',
   'color:#56c7b7;font-weight:bold', 'color:#9fb2a5'
 );

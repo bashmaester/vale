@@ -106,15 +106,16 @@ export class Lab {
         </section>
         <section class="lab-section" data-section="cam">
           <div class="lab-note">Take over the 3D camera. The figures, vehicles and umbrellas are procedural 3D geometry projected to outlines, so flying changes their perspective.</div>
-          <div class="lab-node-title" id="camStatus">AUTO RIG</div>
+          <div class="lab-node-title" id="camStatus">CINEMATIC</div>
           <div class="lab-btns">
-            <button class="lab-btn primary" id="camAutoBtn">Auto rig</button>
-            <button class="lab-btn" id="camOrbitBtn">Orbit</button>
-            <button class="lab-btn" id="camFlyBtn">Fly</button>
+            <button class="lab-btn primary" id="camAutoBtn">Cinematic</button>
+            <button class="lab-btn" id="camFpsBtn">First person</button>
+            <button class="lab-btn" id="camThirdBtn">Third person</button>
+            <button class="lab-btn" id="camFlyBtn">Drone</button>
             <button class="lab-btn" id="camResetBtn">Reset view</button>
           </div>
           <div id="camParams"></div>
-          <div class="lab-note"><b>Drag</b> look · <b>right-drag</b> pan · <b>wheel</b> zoom · <b>WASD/QE</b> fly · <b>Shift</b> boost · <b>C</b> release · <b>F</b> fly/orbit · <b>V</b> reset. Fly speed and easing are also in the SCENE tab.</div>
+          <div class="lab-note"><b>C</b> cycles modes · <b>1–4</b> jump to one · <b>V</b> back to cinematic · <b>[ ]</b> change steady shot. <b>Drag</b> look · <b>wheel</b> dolly · <b>WASD</b> move · <b>Shift</b> run/boost. Right-drag does nothing on purpose. Speeds live in the SCENE tab and the Tab sidebar.</div>
         </section>
         <section class="lab-section" data-section="time">
           <div class="lab-phasebar" id="phasebar"></div>
@@ -223,10 +224,11 @@ export class Lab {
         }
       });
     }
-    this.root.querySelector('#camAutoBtn').addEventListener('click', () => this.camera.setMode('auto'));
-    this.root.querySelector('#camOrbitBtn').addEventListener('click', () => this.camera.setMode('orbit'));
-    this.root.querySelector('#camFlyBtn').addEventListener('click', () => this.camera.setMode('fly'));
-    this.root.querySelector('#camResetBtn').addEventListener('click', () => this.camera.forceAuto());
+    this.root.querySelector('#camAutoBtn').addEventListener('click', () => this.camera.setMode('cinematic'));
+    this.root.querySelector('#camFpsBtn').addEventListener('click', () => this.camera.setMode('fps'));
+    this.root.querySelector('#camThirdBtn').addEventListener('click', () => this.camera.setMode('third'));
+    this.root.querySelector('#camFlyBtn').addEventListener('click', () => this.camera.setMode('drone'));
+    this.root.querySelector('#camResetBtn').addEventListener('click', () => this.camera.forceCinematic());
   }
 
   _buildNodeParams() {

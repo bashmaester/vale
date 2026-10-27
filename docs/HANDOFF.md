@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27, branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 9), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -68,9 +68,36 @@ Recent fixes that matter (all verified with stills):
 - **Vehicles** get a vertical gradient body fill, roof rim, wet sheen and brake
   glow — a flat fill had made them read as holes in the road.
 
-Measured in this build: `npm run check` passes, `npm run build` is 125.5 KiB,
-luminance 47–63 % dark across sizes, and the LoD contact sheet shows the three
+Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
+luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
+
+### Turn 9 — cameras, case sorting, sidebar
+
+The user is **encouraged** by the plate and asked for three things, all landed:
+
+1. **Game-style navigation.** `src/camera-modes.js` holds one class per mode
+   (`cinematic`, `fps`, `third`, `drone`) behind a `CameraMode` base;
+   `src/camera-director.js` owns input, mode switching and the HUD. `C` cycles,
+   `1`–`4` jump, `V` returns to the rig, `[` / `]` step the steady shots. The
+   old right-drag pan is gone and `src/camera-control.js` is deleted — do not
+   bring it back. Adding a mode = one class + one entry in `MODES`.
+2. **Depth-sorted case + visibility toggle.** `environment.collectFrame()`
+   returns depth-tagged drawables; the shell goes down before the set, the near
+   posts and rails join the scene's sorted list. `params.caseFrame = 0` hides
+   the case; the sidebar exposes it as “show boundaries”.
+3. **Hidden sidebar.** `src/sidebar.js`, opened by `Tab`, the ☰ handle,
+   `?ui=1` or `?panel=1`. Rows keep a `sync()` so external changes flow back;
+   the master fader now scales *relative to the active preset* (`texBase`) and
+   the smudge has its own on/off toggle.
+
+The lens-dirt complaint was addressed at the **preset** level: `PRESETS.linocut`
+now ships hatch 0.11, contour 0.24, fiber 0.026, vignette 0.11. Editing node
+defaults in `shaders.js` does nothing at runtime because `applyPreset` runs at
+boot — change the preset too, always.
+
+Open items: the front-left quadrant is still sparse, people are schematic in
+close-up, and the WebGL finish cannot be judged in this sandbox.
 
 ---
 
@@ -167,14 +194,15 @@ Luminance sweep: `node tools/smoke.mjs` (guard rail against an all-dark film).
 
 ## 5. Next concrete steps
 
-1. Fill the empty front-left quadrant with LoD-aware street furniture.
-2. Crowd pass 3: less conical coats, canopy resting on the head, a few more
-   accessories at L0 only.
-3. `tools/tiles.mjs`: render two tiles along x to prove snapping and inspect
-   the seam (this is the core engine claim, currently unproven visually).
-4. Glazing/interiors for vehicles at L0.
-5. Add a CI screenshot job (GitHub Actions has a browser) so the WebGL finish
-   can be validated for the first time.
+1. Give the front-left quadrant real content (bus shelter, bike rack, café
+   tables), then re-shoot `npm run stills`.
+2. Second crowd pass for close-ups: coat silhouettes that are less conical and
+   umbrellas that sit on the head.
+3. `tools/tiles.mjs`: render two tiles along x to prove the seam.
+4. Only then touch the finish passes again — and always in `PRESETS.linocut`.
+
+Still open from the same list: vehicle glazing at L0, and a CI screenshot job
+(GitHub Actions has a browser) so the WebGL finish can finally be validated.
 
 ---
 
@@ -189,11 +217,15 @@ Luminance sweep: `node tools/smoke.mjs` (guard rail against an all-dark film).
 | `src/traffic.js` | vehicles (extruded profiles) + overhead train |
 | `src/weather.js` | raindrops, ripples, puddles |
 | `src/scene.js` | orchestration, params, depth sorting, `render(t, dt)` |
-| `src/camera.js` | `CameraRig`: fitted keyframes, roll, fov |
+| `src/camera.js` | `CameraRig`: fitted keyframes, roll, fov (cinematic mode) |
+| `src/camera-modes.js` | modular controllers + `SHOTS` |
+| `src/camera-director.js` | mode switching, input, HUD |
 | `src/draw.js` | `Painter`: jittered polylines, polys, gradients, hatching |
 | `src/shaders.js` / `src/graph.js` | print finish presets and node graph |
 | `src/renderer.js` | WebGL2 fullscreen pass, `bypass` for raw plate |
 | `src/lab.js` | hidden lab UI |
+| `src/sidebar.js` | hidden scene-control sidebar (Tab) |
+| `src/style.css` | film screen, lab, camera HUD, `.sb-*` sidebar |
 | `tools/shot.mjs` | stills renderer (`--t`, `--eye`, `--target`, `--fov`) |
 | `tools/lod.mjs` | three-tier LoD contact sheet |
 | `tools/smoke.mjs` | luminance sweep at three viewport sizes |
