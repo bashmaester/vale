@@ -10,8 +10,10 @@ A silent, autoplaying 20-second film in **one self-contained `index.html`**. A r
 
 ```bash
 npm install
-npm run build      # regenerates the self-contained index.html
-npm run dev        # builds, then serves on http://localhost:8000
+npm run build           # regenerates the self-contained index.html
+npm run docs            # regenerates deploy metadata + docs/index.html
+npm run deploy:local    # build + docs
+npm run dev             # builds, then serves on http://localhost:8000
 ```
 
 Or just open `index.html` directly — it works from `file://` because everything is inlined.
@@ -21,13 +23,17 @@ Useful URLs:
 | URL | Effect |
 | --- | --- |
 | `index.html` | clean film, autoplay, 20s loop, no UI |
-| `index.html?lab=1` | opens the hidden node / parameter lab |
+| `index.html?lab=1` | opens the hidden node / scene / camera / timeline lab |
+| `index.html?cam=fly` | starts in user fly camera |
+| `index.html?hud=0` | disables the tiny camera-control HUD |
 | `index.html?preset=riso` | starts with the Risograph look |
 | `index.html?t=11` | starts at 11 seconds |
 | `index.html?w=1920&h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&paused=1&t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts (when the lab is open or closed): `L` toggles the lab, `Space` plays/pauses, `S` saves a PNG frame, `R` resets all parameters.
+Keyboard shortcuts: `L` lab, `Space` play/pause, `S` save PNG frame, `R` reset all
+parameters, `C` release/take camera, `F` fly/orbit, `V` or `0` reset camera. While
+flying: `WASD/QE` move, `Shift` boosts, drag looks, right-drag pans, wheel zooms.
 
 ---
 
@@ -48,15 +54,17 @@ signal-cycle timeline ─┘                                   │
 
 ### 1. 3D scene graph
 
-`src/environment.js`, `src/crowd.js`, `src/traffic.js` and `src/camera.js` describe the crossing in world space (`x` right, `y` up, `z` toward the viewer):
+`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe the crossing in world space (`x` right, `y` up, `z` toward the viewer):
 
-- buildings, signage, wires, elevated track, signals, zebra markings and manholes;
-- ~120 crossing pedestrians plus ~30 waiting umbrellas, each a parametric 3D position projected to 2D;
-- vehicles as essential 3D boxes with minimal window grids and lamps;
+- shared sidewalks, crosswalks, waiting zones, diagonal flows and legal parking slots;
+- buildings with windows/balconies/drainpipes, signage, wires, elevated track, signals, zebra markings, curbs, stop lines and puddles;
+- ~132 crossing pedestrians plus ~34 waiting umbrellas, each a **procedural 3D skeleton** with a distance-driven walk cycle and a faceted 3D umbrella dome — not a sliding billboard;
+- vehicles with wheels, hubs, wheel arches, cabins, sloped windshields, truck cab/cargo splits, bus signs, taxi roof lights, bumpers and lamps;
 - a six-car train passing overhead;
-- rain, wet-road reflections and gouged footprints.
+- rain, wet-road reflections and gouged footprints;
+- grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
 
-`src/camera.js` is a small keyframed rig. It pushes in during the surge, drifts with the train, then pulls back for the empty street. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D — but the output is a flat plate.
+`src/camera.js` is a small keyframed rig. It pushes in during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the figures change perspective — but the output is still a flat plate.
 
 ### 2. 2D printing plates
 
@@ -76,13 +84,22 @@ signal-cycle timeline ─┘                                   │
 | --- | --- |
 | `01 · Plate / misregister` | samples the plate, offsets red/blue channels, adds gate weave |
 | `02 · Carve / gouge` | edge-aware lino cuts, boiling tool marks, white scratches |
-| `03 · Directional hatch` | angled carved hatching in dry dark areas |
-| `04 · Rain / reflections` | stretched rain noise and gouged wet-streak reflections |
-| `05 · Ink separation` | bleed, dither, four-color posterization, accent bloom |
-| `06 · Paper / grain` | grain, fiber, speckle, vignette, projector flicker |
-| `07 · Output` | exposure and contrast |
+| `03 · Edge detail` | tangent-following contour cuts, micro scratches, edge sparks |
+| `04 · Broken hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
+| `05 · Rain / reflections` | stretched rain noise and gouged wet-streak reflections |
+| `06 · Ink separation` | bleed, dither, four-color posterization, accent bloom |
+| `07 · Paper / grain` | grain, fiber, speckle, vignette, projector flicker |
+| `08 · Output` | exposure and contrast |
 
-The optional lab (`src/lab.js`) draws this graph as draggable nodes with live sliders. Double-click a node to bypass it. Presets: **Linocut**, **Risograph**, **Newsprint**, **Blueprint**. Changes are uniforms, so they are live with no shader rebuild.
+The hatch node deliberately avoids uniform parallel lines: `fbm` warps angle and
+spacing, a second noise field breaks strokes, and a secondary rotated pass adds
+cross-hatching only in the darkest areas. The `detail` node expresses edges with
+contour cuts and micro scratches.
+
+The optional lab (`src/lab.js`) draws this graph as draggable nodes with live
+sliders, plus **SCENE**, **CAM** and **TIME** tabs. Double-click a node to bypass
+it. Presets: **Linocut**, **Risograph**, **Newsprint**, **Blueprint**. Changes are
+uniforms, so they are live with no shader rebuild.
 
 This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to one file with zero runtime dependencies. The graph compiler is the seam where a TSL/WebGPU adapter could be added later without touching the scene modules.
 
@@ -96,10 +113,10 @@ This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to on
 | --- | --- | --- |
 | 0.0–3.2s | `WAIT` | dense umbrellas at four corners, red signals, parked vehicles |
 | 3.2–4.4s | `SIGNAL` | teal lamps rise, umbrellas lean into the crossing |
-| 4.4–11.7s | `CROSS` | two diagonal streams surge; train passes; footsteps break reflections |
-| 11.7–15.8s | `DRAIN` | crowd thins toward the far edges, reflections begin to reform |
-| 15.8–18.2s | `EMPTY` | road almost clear; zebra, rain and wet reflections dominate |
-| 18.2–20.0s | `TRAFFIC` | vehicles cross, headlights smear, umbrellas gather again for the loop |
+| 4.4–11.7s | `CROSS` | four diagonal streams surge; train passes; footsteps break reflections |
+| 11.7–15.8s | `DRAIN` | crowd thins toward the far sidewalks, reflections begin to reform |
+| 15.8–17.6s | `EMPTY` | road almost clear; zebra, rain and wet reflections dominate |
+| 17.6–20.0s | `TRAFFIC` | vehicles cross, headlights smear, umbrellas gather again for the loop |
 
 The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps.
 
@@ -108,30 +125,55 @@ The loop is designed to be seamless: crossers are invisible while offscreen, veh
 ## Repository layout
 
 ```
-index.html            final self-contained film (generated; commit this)
-build.mjs             inlines CSS + bundled JS into index.html
-src/template.html     HTML shell
-src/style.css         fullscreen film + hidden lab styling
-src/math.js           noise, easing, RNG, perspective camera
-src/draw.js           rough-stroke 2D painter + 3D box projection helpers
-src/shaders.js        GLSL node definitions + presets
-src/graph.js          node graph compiler / uniforms / serialization
-src/renderer.js       WebGL2 fullscreen pass + 2D fallback
-src/camera.js         keyframed camera rig
-src/timeline.js       one signal cycle
-src/environment.js    road, zebra, buildings, wires, signs, signals, track
-src/crowd.js          umbrellas, figures, flow lines, footprints
-src/traffic.js        train + vehicles + light reflections
-src/weather.js        rain, wet reflections, field data texture
-src/scene.js          orchestrates plates and modules
-src/lab.js            optional node/parameter editor
-src/main.js           wiring, query params, animation loop
+index.html                       final self-contained film (generated; commit this)
+build.mjs                        inlines CSS + bundled JS into index.html
+scripts/update-docs.mjs          deploy docs / metadata generator
+.github/workflows/deploy-pages.yml  GitHub Actions → Pages
+docs/HANDOFF.md                  resume point for interrupted sessions
+docs/ARCHITECTURE.md             system design
+docs/CHANGELOG.md                turn-by-turn changes
+docs/CI.md                       deployment notes
+docs/BUILD.md, DEPLOY_STATUS.md, manifest.json, index.html   generated on deploy
+src/template.html                HTML shell
+src/style.css                    fullscreen film + hidden lab + camera HUD
+src/math.js                      noise, easing, RNG, perspective camera
+src/draw.js                      rough-stroke painter + 3D box/quad helpers
+src/world.js                     sidewalks, crosswalks, flows, parking rules
+src/collision.js                 separation + Poisson-disk blue noise
+src/shaders.js                   GLSL node definitions + presets
+src/graph.js                     node graph compiler / uniforms / serialization
+src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
+src/camera.js                    keyframed camera rig
+src/camera-control.js            user orbit / fly camera
+src/timeline.js                  one signal cycle
+src/environment.js               road, zebra, sidewalks, buildings, signs, wires
+src/crowd.js                     procedural 3D humanoids, walk cycle, footprints
+src/traffic.js                   detailed vehicles + train + light reflections
+src/weather.js                   rain, wet reflections, field data texture
+src/scene.js                     orchestrates plates, camera, modules, separation
+src/lab.js                       optional node/scene/camera/timeline editor
+src/main.js                      wiring, query params, animation loop
 ```
 
 `index.html` contains no `<script src>`, no `<link href>`, no images, and no external URLs. The only build dependency is `esbuild`, used at authoring time to inline the ES modules.
 
 ---
 
+## CI / Pages / handoff
+
+Every push to `arena/082e9ffd-vale` (and `main`) runs
+`.github/workflows/deploy-pages.yml`: install → build → validate
+self-containment → regenerate docs → upload `_site/` → deploy with
+`actions/deploy-pages`. `npm run docs` writes fresh commit/branch/timestamp
+metadata into `docs/BUILD.md`, `docs/DEPLOY_STATUS.md`, `docs/manifest.json`
+and `docs/index.html`.
+
+The human-authored handoff is `docs/HANDOFF.md`. Update it at the end of each
+turn so an interrupted session can resume from the current objective, known
+issues and next steps. See `docs/CI.md` for troubleshooting.
+
+---
+
 ## Design intent
 
-The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are architectural-sketch marks with umbrellas, not rigged characters. Vehicles are essential lines, not detailed models. Rain and grain are atmosphere, not physics. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.
+The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are architectural-sketch marks with umbrellas — but they are built from 3D joints and a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. Rain and grain are atmosphere, not physics. Shared world rules keep cars off crosswalks and objects apart. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.

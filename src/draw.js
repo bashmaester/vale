@@ -124,7 +124,8 @@ export class Painter {
   polys(polys, opts = {}) {
     const c = this._pre(opts);
     c.beginPath();
-    for (const pts of polys) {
+    for (const raw of polys) {
+      const pts = raw.map(asArr).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
       if (pts.length < 3) continue;
       c.moveTo(pts[0][0], pts[0][1]);
       for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);

@@ -47,6 +47,7 @@ export class Lab {
     this.scene = scene;
     this.renderer = renderer;
     this.state = state;
+    this.camera = scene.cameraController;
     this.root = document.getElementById('lab');
     this.isOpen = false;
     this.built = false;
@@ -86,6 +87,7 @@ export class Lab {
       <div class="lab-tabs">
         <button class="lab-tab active" data-tab="look">LOOK</button>
         <button class="lab-tab" data-tab="scene">SCENE</button>
+        <button class="lab-tab" data-tab="cam">CAM</button>
         <button class="lab-tab" data-tab="time">TIME</button>
         <button class="lab-tab" data-tab="io">I/O</button>
       </div>
@@ -101,6 +103,18 @@ export class Lab {
           <div id="sceneParams"></div>
           <div class="lab-node-title">Look presets</div>
           <div class="lab-btns" id="presetBtns"></div>
+        </section>
+        <section class="lab-section" data-section="cam">
+          <div class="lab-note">Take over the 3D camera. The figures, vehicles and umbrellas are procedural 3D geometry projected to outlines, so flying changes their perspective.</div>
+          <div class="lab-node-title" id="camStatus">AUTO RIG</div>
+          <div class="lab-btns">
+            <button class="lab-btn primary" id="camAutoBtn">Auto rig</button>
+            <button class="lab-btn" id="camOrbitBtn">Orbit</button>
+            <button class="lab-btn" id="camFlyBtn">Fly</button>
+            <button class="lab-btn" id="camResetBtn">Reset view</button>
+          </div>
+          <div id="camParams"></div>
+          <div class="lab-note"><b>Drag</b> look · <b>right-drag</b> pan · <b>wheel</b> zoom · <b>WASD/QE</b> fly · <b>Shift</b> boost · <b>C</b> release · <b>F</b> fly/orbit · <b>V</b> reset. Fly speed and easing are also in the SCENE tab.</div>
         </section>
         <section class="lab-section" data-section="time">
           <div class="lab-phasebar" id="phasebar"></div>
@@ -124,7 +138,7 @@ export class Lab {
           <div class="lab-note">The normal film at <b>index.html</b> is UI-free. Append <b>?lab=1</b> to open this patch bay. No external assets, no audio.</div>
         </section>
       </div>
-      <div class="lab-foot"><span class="lab-kbd">L</span> lab · <span class="lab-kbd">Space</span> play · <span class="lab-kbd">S</span> frame · <span class="lab-kbd">R</span> reset</div>
+      <div class="lab-foot"><span class="lab-kbd">L</span> lab · <span class="lab-kbd">Space</span> play · <span class="lab-kbd">S</span> frame · <span class="lab-kbd">R</span> reset · <span class="lab-kbd">C/F/V</span> camera</div>
     `;
 
     this.tabs = [...this.root.querySelectorAll('.lab-tab')];
@@ -143,6 +157,8 @@ export class Lab {
     this.nodeParams = this.root.querySelector('#nodeParams');
     this.sceneParams = this.root.querySelector('#sceneParams');
     this.presetBtns = this.root.querySelector('#presetBtns');
+    this.camStatus = this.root.querySelector('#camStatus');
+    this.camParams = this.root.querySelector('#camParams');
     this.phasebar = this.root.querySelector('#phasebar');
     this.scrub = this.root.querySelector('#scrub');
     this.timeLabel = this.root.querySelector('#timeLabel');
@@ -153,6 +169,7 @@ export class Lab {
     this._buildPhasebar();
     this._buildPresets();
     this._buildSceneParams();
+    this._buildCameraControls();
     this._buildNodeParams();
     this._bindGraph();
     this._bindActions();
@@ -185,8 +202,31 @@ export class Lab {
     for (const [key, def] of Object.entries(SCENE_PARAM_DEFS)) {
       this.sceneInputs[key] = makeSlider(this.sceneParams, def.label, def, params[key], (v) => {
         this.scene.setParam(key, v);
+        if (this.camInputs && this.camInputs[key]) {
+          this.camInputs[key].input.value = v;
+          this.camInputs[key].val.textContent = Number(v).toFixed(def.step < 0.01 ? 3 : 2);
+        }
       });
     }
+  }
+
+  _buildCameraControls() {
+    this.camInputs = {};
+    this.camParams.innerHTML = '';
+    for (const key of ['flySpeed', 'cameraEase']) {
+      const def = SCENE_PARAM_DEFS[key];
+      this.camInputs[key] = makeSlider(this.camParams, def.label, def, this.scene.getParams()[key], (v) => {
+        this.scene.setParam(key, v);
+        if (this.sceneInputs[key]) {
+          this.sceneInputs[key].input.value = v;
+          this.sceneInputs[key].val.textContent = Number(v).toFixed(def.step < 0.01 ? 3 : 2);
+        }
+      });
+    }
+    this.root.querySelector('#camAutoBtn').addEventListener('click', () => this.camera.setMode('auto'));
+    this.root.querySelector('#camOrbitBtn').addEventListener('click', () => this.camera.setMode('orbit'));
+    this.root.querySelector('#camFlyBtn').addEventListener('click', () => this.camera.setMode('fly'));
+    this.root.querySelector('#camResetBtn').addEventListener('click', () => this.camera.forceAuto());
   }
 
   _buildNodeParams() {
@@ -344,6 +384,13 @@ export class Lab {
       s.input.value = params[key];
       s.val.textContent = Number(params[key]).toFixed(s.input.step < 0.01 ? 3 : 2);
     }
+    if (this.camInputs) {
+      for (const [key, s] of Object.entries(this.camInputs)) {
+        if (params[key] == null) continue;
+        s.input.value = params[key];
+        s.val.textContent = Number(params[key]).toFixed(s.input.step < 0.01 ? 3 : 2);
+      }
+    }
     this.drawGraph();
     this.updateJSON();
   }
@@ -415,6 +462,7 @@ export class Lab {
     this.timeLabel.textContent = `${(u * DURATION).toFixed(2)} / ${DURATION.toFixed(2)}`;
     this.phaseLabel.textContent = timeline.label();
     this.playBtn.textContent = this.state.paused ? 'Play' : 'Pause';
+    if (this.camStatus) this.camStatus.textContent = this.camera.status();
     this.drawGraph();
   }
 }

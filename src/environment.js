@@ -1,5 +1,6 @@
 import { PALETTE } from './draw.js';
-import { v3, makeRng, hash21, clamp, lerp } from './math.js';
+import { v3, makeRng, hash21, clamp, lerp, quadLerp } from './math.js';
+import { SIDEWALKS, CROSSWALKS } from './world.js';
 
 const rng = makeRng(20241027);
 const BUILDINGS = [];
@@ -131,6 +132,90 @@ export function drawZebra(p, camera, timeline, params) {
   }
 }
 
+export function drawSidewalks(p, camera, timeline, params) {
+  for (let i = 0; i < SIDEWALKS.length; i++) {
+    const s = SIDEWALKS[i];
+    const quad = p.groundQuad(camera, s.x0, s.z0, s.x1, s.z1, {
+      y: 0.055,
+      fill: 'rgba(20,25,21,0.96)',
+      stroke: 'rgba(239,233,216,0.55)',
+      width: 1.2,
+      alpha: 0.96,
+      seed: 700 + i,
+      jitter: 0.35,
+    });
+    // Sidewalk scoring, in perspective.
+    if (quad) {
+      for (let k = 1; k < 5; k++) {
+        const v = k / 5;
+        const a = quadLerp(quad, 0.04, v);
+        const b = quadLerp(quad, 0.96, v);
+        p.line([a, b], {
+          color: 'rgba(239,233,216,0.18)', width: 0.7, alpha: 0.7,
+          jitter: 0.25, seed: 720 + i * 10 + k, double: false,
+        });
+      }
+    }
+  }
+  // Raised curb edges facing the road.
+  for (const s of SIDEWALKS) {
+    const edges = [
+      [v3(s.x0, 0.07, s.z0), v3(s.x1, 0.07, s.z0)],
+      [v3(s.x1, 0.07, s.z0), v3(s.x1, 0.07, s.z1)],
+      [v3(s.x1, 0.07, s.z1), v3(s.x0, 0.07, s.z1)],
+      [v3(s.x0, 0.07, s.z1), v3(s.x0, 0.07, s.z0)],
+    ];
+    for (let e = 0; e < edges.length; e++) {
+      p.projectLine(camera, edges[e], {
+        color: 'rgba(239,233,216,0.62)', width: e === 1 || e === 3 ? 1.3 : 0.9,
+        alpha: 0.7, jitter: 0.3, seed: 760 + e, double: false,
+      });
+    }
+  }
+}
+
+export function drawRoadDetails(p, camera, timeline, params) {
+  // Stop lines sit before the crosswalks, never on them.
+  const stopZ = CROSSWALKS.foreground.z0 - 1.1;
+  p.projectLine(camera, [v3(-19, 0.03, stopZ), v3(19, 0.03, stopZ)], {
+    color: 'rgba(239,233,216,0.55)', width: 1.4, alpha: 0.55,
+    jitter: 0.4, seed: 801, double: false,
+  });
+  for (const x of [-10.5, 10.5]) {
+    p.projectLine(camera, [v3(x, 0.03, -14), v3(x, 0.03, 14)], {
+      color: 'rgba(239,233,216,0.38)', width: 1.0, alpha: 0.45,
+      jitter: 0.3, seed: 810 + x, double: false,
+    });
+  }
+  // Direction chevrons cut into the asphalt.
+  for (const [x, z, dir] of [[-7, -3, 1], [7, 3, -1], [0, 6, 1]]) {
+    const pts = [
+      v3(x - 1.2, 0.03, z - dir * 0.8),
+      v3(x, 0.03, z + dir * 0.6),
+      v3(x + 1.2, 0.03, z - dir * 0.8),
+    ];
+    p.projectLine(camera, pts, {
+      color: 'rgba(239,233,216,0.28)', width: 1.1, alpha: 0.55,
+      jitter: 0.35, seed: 820 + x + z, double: false,
+    });
+  }
+  // Puddles: irregular flat outlines, not physics.
+  const puddles = [[-11, 4], [10, -5], [-4, 10], [14, 8], [-16, -4], [5, -10]];
+  for (let i = 0; i < puddles.length; i++) {
+    const [x, z] = puddles[i];
+    const q = camera.project(v3(x, 0.035, z));
+    if (!q) continue;
+    const r = q.scale * (0.9 + hash21(i, 3) * 0.7);
+    p.ellipse(q.x, q.y, r, r * 0.32, {
+      stroke: i % 3 === 0 ? 'rgba(43,184,174,0.35)' : 'rgba(239,233,216,0.22)',
+      width: 0.8, alpha: 0.55, rot: (hash21(i, 7) - 0.5) * 0.5,
+    });
+    p.ellipse(q.x, q.y, r * 0.55, r * 0.16, {
+      stroke: 'rgba(239,233,216,0.14)', width: 0.6, alpha: 0.5,
+    });
+  }
+}
+
 export function drawBuildings(p, camera, timeline, params) {
   for (let i = 0; i < BUILDINGS.length; i++) {
     const b = BUILDINGS[i];
@@ -153,6 +238,32 @@ export function drawBuildings(p, camera, timeline, params) {
         margin: 0.22,
         skip: (x, y) => hash21(x + i * 3.1, y * 5.7 + i) > 0.80,
       });
+      // Balcony slabs, drainpipe and a few AC boxes give facades scale.
+      for (let k = 1; k < 4; k++) {
+        const v = k / 4;
+        const a = quadLerp(front.quad, 0.04, v);
+        const c = quadLerp(front.quad, 0.96, v);
+        p.line([a, c], {
+          color: 'rgba(239,233,216,0.22)', width: 0.7, alpha: 0.7,
+          jitter: 0.2, seed: 850 + i * 7 + k, double: false,
+        });
+      }
+      p.line([quadLerp(front.quad, 0.94, 0.02), quadLerp(front.quad, 0.94, 0.98)], {
+        color: 'rgba(239,233,216,0.28)', width: 0.8, alpha: 0.6,
+        jitter: 0.2, seed: 880 + i, double: false,
+      });
+      if (i % 2 === 0) {
+        for (let k = 0; k < 2; k++) {
+          const u = 0.16 + k * 0.28;
+          const v = 0.32 + hash21(i, k) * 0.4;
+          const c = quadLerp(front.quad, u, v);
+          const w = Math.max(2, Math.abs(quadLerp(front.quad, u + 0.08, v)[0] - c[0]));
+          p.rect(c[0] - w / 2, c[1] - w * 0.35, w, w * 0.7, {
+            fill: 'rgba(239,233,216,0.07)', stroke: 'rgba(239,233,216,0.35)',
+            width: 0.6, alpha: 0.7, seed: 900 + i * 3 + k, jitter: 0.3,
+          });
+        }
+      }
     }
     // Sparse rooftop antennae.
     if (i % 3 === 0) {
@@ -228,7 +339,7 @@ export function drawSigns(p, camera, timeline, params) {
 export function drawSignals(p, camera, timeline, params) {
   const walk = timeline.walkSignal();
   const stop = timeline.stopSignal();
-  const corners = [[-13, 9], [13, 9], [-13, -9], [13, -9]];
+  const corners = [[-16.4, 9.4], [16.4, 9.4], [-16.4, -9.4], [16.4, -9.4]];
   for (let i = 0; i < corners.length; i++) {
     const [x, z] = corners[i];
     p.projectLine(camera, [v3(x, 0, z), v3(x, 3.4, z)], {
@@ -285,6 +396,8 @@ export function drawEnvironment(p, camera, timeline, params) {
   drawHorizon(p, camera, timeline, params);
   drawRoad(p, camera, timeline, params);
   drawZebra(p, camera, timeline, params);
+  drawSidewalks(p, camera, timeline, params);
+  drawRoadDetails(p, camera, timeline, params);
   drawBuildings(p, camera, timeline, params);
   drawWires(p, camera, timeline, params);
   drawSigns(p, camera, timeline, params);

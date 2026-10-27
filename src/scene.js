@@ -1,5 +1,6 @@
 import { Painter } from './draw.js';
 import { CameraRig } from './camera.js';
+import { CameraController } from './camera-control.js';
 import { Timeline } from './timeline.js';
 import { drawEnvironment } from './environment.js';
 import { Crowd } from './crowd.js';
@@ -15,6 +16,8 @@ export const SCENE_PARAM_DEFS = {
   reflectionStrength: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'reflection depth' },
   footstepStrength: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'footstep gouge' },
   cameraShake: { value: 1.0, min: 0.0, max: 2.0, step: 0.01, label: 'gate weave' },
+  flySpeed: { value: 1.0, min: 0.2, max: 3.0, step: 0.01, label: 'fly speed' },
+  cameraEase: { value: 8.0, min: 2.0, max: 20.0, step: 0.1, label: 'camera ease' },
 };
 
 function defaults() {
@@ -46,6 +49,7 @@ export class Scene {
 
     this.timeline = new Timeline(20);
     this.cameraRig = new CameraRig(W, H);
+    this.cameraController = new CameraController();
     this.crowd = new Crowd(this.params);
     this.traffic = new Traffic(this.params);
     this.weather = new Weather(W, H);
@@ -104,20 +108,24 @@ export class Scene {
     ctx.restore();
   }
 
-  render(t) {
+  render(t, dt = 0.016) {
     const timeline = this.timeline;
     timeline.update(t);
-    const camera = this.cameraRig.update(timeline.u, this.params);
+    const autoCamera = this.cameraRig.update(timeline.u, this.params);
+    const camera = this.cameraController.apply(autoCamera, dt, this.params);
     const boil = Math.floor(timeline.t * 12);
     this.pp.setBoil(boil); this.wp.setBoil(boil); this.fp.setBoil(boil);
 
     this._clearPlate();
     drawEnvironment(this.pp, camera, timeline, this.params);
 
+    // Traffic resolves first; the crowd then separates against real vehicle hulls.
+    this.traffic.update(camera, timeline, this.params);
+    const obstacles = this.traffic.activeItems();
+    this.crowd.update(camera, timeline, this.params, obstacles);
+
     // Wet plate is built before the ink figures: reflections, then gouged footsteps.
     this._clearWet();
-    this.crowd.update(camera, timeline, this.params);
-    this.traffic.update(camera, timeline, this.params);
     this.weather.drawReflections(this.wp, timeline, this.params);
     this.traffic.drawReflections(this.wp, camera, timeline, this.params);
     this.crowd.drawFootprints(this.wp, timeline, this.params);

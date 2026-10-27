@@ -1,5 +1,10 @@
+// Procedural 3D humanoids, projected to 2D ink outlines.
+// Every joint is a world-space point, so camera movement changes the figure's
+// silhouette instead of sliding a billboard around.
 import { PALETTE } from './draw.js';
-import { v3, clamp, lerp, norm3, makeRng, hash11, smoothstep } from './math.js';
+import { v3, clamp, lerp, norm3, makeRng, hash11, TAU } from './math.js';
+import { separate, separateGroups, poissonDisk } from './collision.js';
+import { FLOWS, WAIT_ZONES, ROAD, isOnSidewalk, clampToWorld } from './world.js';
 
 const UMBRELLA_COLORS = [
   { fill: 'rgba(239,233,216,0.10)', stroke: PALETTE.ink, kind: 'white' },
@@ -11,11 +16,6 @@ const UMBRELLA_COLORS = [
   { fill: 'rgba(239,233,216,0.10)', stroke: PALETTE.ink, kind: 'white' },
 ];
 
-const FLOWS = [
-  { a: [-19.5, 15.5], b: [19.5, -15.5], weight: 0.62 },
-  { a: [-19.5, -15.5], b: [19.5, 15.5], weight: 0.38 },
-];
-
 function bezier2(p0, p1, p2, t) {
   const u = 1 - t;
   return {
@@ -24,103 +24,13 @@ function bezier2(p0, p1, p2, t) {
   };
 }
 
-function drawUmbrella(p, item, A) {
-  const u = item.umb;
-  const ctx = p.ctx;
-  ctx.save();
-  ctx.translate(0, -70);
-  ctx.rotate(item.tilt);
-  // Scalloped canopy, still only lines and flat ink.
-  const dome = [
-    [-39, 0], [-31, -7], [-22, -12], [-12, -16], [0, -18],
-    [12, -16], [22, -12], [31, -7], [39, 0],
-    [32, 2], [24, -1], [16, 2], [8, -1], [0, 2],
-    [-8, -1], [-16, 2], [-24, -1], [-32, 2], [-39, 0],
-  ];
-  p.poly(dome, {
-    fill: u.fill, stroke: u.stroke, width: 1.6, alpha: A,
-    seed: item.seed, jitter: 0.45,
-  });
-  // Ribs.
-  for (let i = 0; i < 9; i++) {
-    const x = -36 + i * 9;
-    p.line([[0, -18], [x, i % 2 ? 1.5 : -1]], {
-      color: u.kind === 'white' ? 'rgba(239,233,216,0.45)' : 'rgba(239,233,216,0.55)',
-      width: 0.65, alpha: A * 0.75, jitter: 0.25, seed: item.seed + i, double: false,
-    });
+function chooseFlow(rng) {
+  let r = rng.next();
+  for (const f of FLOWS) {
+    if (r < f.weight) return f;
+    r -= f.weight;
   }
-  // Handle and a small hook.
-  p.line([[0, 0], [0, 34], [3, 39], [7, 38], [8, 34]], {
-    color: PALETTE.ink, width: 1.5, alpha: A, jitter: 0.3, seed: item.seed + 20, double: false,
-  });
-  // Drips from the rim.
-  for (let i = 0; i < 4; i++) {
-    const x = -28 + i * 18 + hash11(item.seed + i) * 3;
-    const len = 5 + hash11(item.seed + i * 3) * 9;
-    p.line([[x, 2], [x + 1, 2 + len]], {
-      color: 'rgba(239,233,216,0.55)', width: 0.7, alpha: A * 0.6,
-      jitter: 0.2, seed: item.seed + i * 7, double: false,
-    });
-  }
-  ctx.restore();
-}
-
-function drawFigure(p, item, A, params) {
-  const ctx = p.ctx;
-  ctx.save();
-  ctx.translate(item.foot.x, item.foot.y);
-  ctx.scale(item.unit, item.unit);
-  ctx.rotate(item.stride * 0.012);
-
-  const swing = item.stride;
-  const bob = Math.abs(Math.sin(item.stridePhase)) * 0.9;
-  ctx.translate(0, -bob);
-
-  // Legs and shoes.
-  p.line([[-3.5, -16], [-5 + swing * 2.2, -1]], {
-    color: PALETTE.ink, width: 1.8, alpha: A, jitter: 0.35, seed: item.seed + 1,
-  });
-  p.line([[3.5, -16], [5 - swing * 2.2, -1]], {
-    color: PALETTE.ink, width: 1.8, alpha: A, jitter: 0.35, seed: item.seed + 2,
-  });
-  p.ellipse(-5 + swing * 2.2, 0, 3.2, 1.5, {
-    stroke: PALETTE.ink, width: 1.0, alpha: A, rot: swing * 0.12,
-  });
-  p.ellipse(5 - swing * 2.2, 0, 3.2, 1.5, {
-    stroke: PALETTE.ink, width: 1.0, alpha: A, rot: -swing * 0.12,
-  });
-
-  // Coat: architectural-sketch silhouette.
-  const coat = item.coatFilled
-    ? [[-8, -46], [8, -46], [11, -15], [-11, -15]]
-    : [[-7, -46], [7, -46], [9, -15], [-9, -15]];
-  p.poly(coat, {
-    fill: item.coatFilled ? 'rgba(239,233,216,0.08)' : PALETTE.black,
-    stroke: PALETTE.ink, width: 1.7, alpha: A, seed: item.seed + 3, jitter: 0.4,
-  });
-  p.line([[0, -44], [0, -17]], {
-    color: 'rgba(239,233,216,0.42)', width: 0.8, alpha: A * 0.8,
-    jitter: 0.25, seed: item.seed + 4, double: false,
-  });
-  p.line([[-5, -34], [5, -34]], {
-    color: 'rgba(239,233,216,0.28)', width: 0.7, alpha: A * 0.7,
-    jitter: 0.2, seed: item.seed + 5, double: false,
-  });
-
-  // Head and shoulder line.
-  p.ellipse(0, -54, 4.7, 5.4, {
-    fill: PALETTE.black, stroke: PALETTE.ink, width: 1.5, alpha: A,
-  });
-  p.line([[-9, -45], [9, -45]], {
-    color: PALETTE.ink, width: 1.3, alpha: A, jitter: 0.3, seed: item.seed + 6, double: false,
-  });
-  // Arm to the umbrella handle.
-  p.line([[6, -43], [3, -36], [0, -31]], {
-    color: PALETTE.ink, width: 1.5, alpha: A, jitter: 0.3, seed: item.seed + 7, double: false,
-  });
-
-  drawUmbrella(p, item, A);
-  ctx.restore();
+  return FLOWS[FLOWS.length - 1];
 }
 
 export class Crowd {
@@ -130,148 +40,336 @@ export class Crowd {
     this.density = 1;
     this.rebuild();
   }
+
   rebuild() {
     const rng = makeRng(918273);
-    const N = Math.round(118 * this.density);
+    const N = Math.round(132 * this.density);
     this.crossers = [];
-    for (let i = 0; i < N; i++) {
-      const flow = rng.chance(FLOWS[0].weight) ? FLOWS[0] : FLOWS[1];
-      const a = { x: flow.a[0], z: flow.a[1] };
-      const b = { x: flow.b[0], z: flow.b[1] };
-      const dir = norm3(v3(b.x - a.x, 0, b.z - a.z));
-      const perp = { x: -dir.z, z: dir.x };
-      const lane = rng.range(-7.2, 7.2);
-      const start = { x: a.x + perp.x * lane, z: a.z + perp.z * lane };
-      const end = { x: b.x + perp.x * lane, z: b.z + perp.z * lane };
-      const bend = rng.range(-2.6, 2.6);
+    const specs = [];
+    for (const f of FLOWS) {
+      const count = Math.floor(N * f.weight);
+      const pts = poissonDisk(count, f.bounds, 0.95, rng, (x, z) => isOnSidewalk(x, z));
+      for (const pt of pts) specs.push({ flow: f, start: pt });
+    }
+    let guard = 0;
+    while (specs.length < N && guard++ < N * 4) {
+      const f = chooseFlow(rng);
+      const x = rng.range(f.bounds.x0, f.bounds.x1);
+      const z = rng.range(f.bounds.z0, f.bounds.z1);
+      if (isOnSidewalk(x, z)) specs.push({ flow: f, start: { x, z } });
+    }
+    for (let i = 0; i < specs.length; i++) {
+      const { flow, start } = specs[i];
+      const end = { x: start.x + flow.delta.x, z: start.z + flow.delta.z };
+      const dir = norm3(v3(flow.delta.x, 0, flow.delta.z));
+      const side = { x: -dir.z, z: dir.x };
+      const bend = rng.range(-2.2, 2.2);
       const ctrl = {
-        x: (start.x + end.x) / 2 + perp.x * bend,
-        z: (start.z + end.z) / 2 + perp.z * bend,
+        x: (start.x + end.x) / 2 + side.x * bend,
+        z: (start.z + end.z) / 2 + side.z * bend,
       };
       this.crossers.push({
-        id: i, start, end, ctrl, dir,
-        delay: rng.range(0, 1),
-        phase: rng.range(0, Math.PI * 2),
+        id: i, start, end, ctrl, dir, side,
+        pathLength: Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.4,
+        delay: clamp((Math.abs(start.x) - 17) / 7, 0, 1) * 0.45 + rng.range(0, 0.55),
+        phase: rng.range(0, TAU),
         scale: rng.range(0.86, 1.14),
-        seed: rng.range(1, 1000),
+        seed: rng.range(1, 10000),
         umb: rng.pick(UMBRELLA_COLORS),
         coatFilled: rng.chance(0.22),
         trail: [],
       });
     }
-    const M = Math.round(30 * this.density);
+
+    const M = Math.round(34 * this.density);
     this.waiters = [];
-    const corners = [[-15, 12], [15, 12], [-15, -12], [15, -12]];
+    const perZone = Math.ceil(M / WAIT_ZONES.length);
+    const waiterPoints = [];
+    for (const z of WAIT_ZONES) {
+      const pts = poissonDisk(perZone, z, 0.92, rng, (x, zz) => isOnSidewalk(x, zz));
+      for (const pt of pts) waiterPoints.push(pt);
+    }
     for (let i = 0; i < M; i++) {
-      const c = corners[i % corners.length];
+      const base = waiterPoints[i % waiterPoints.length] || { x: -20, z: 14 };
+      const dir = norm3(v3(-base.x, 0, -base.z));
       this.waiters.push({
-        id: 1000 + i,
-        base: { x: c[0] + rng.range(-2.4, 2.4), z: c[1] + rng.range(-2.2, 2.2) },
-        phase: rng.range(0, Math.PI * 2),
-        scale: rng.range(0.82, 1.08),
-        seed: rng.range(1000, 2000),
+        id: 10000 + i,
+        base: { x: base.x + rng.range(-0.2, 0.2), z: base.z + rng.range(-0.2, 0.2) },
+        dir, side: { x: -dir.z, z: dir.x },
+        phase: rng.range(0, TAU),
+        scale: rng.range(0.82, 1.1),
+        seed: rng.range(10000, 20000),
         umb: rng.pick(UMBRELLA_COLORS),
         coatFilled: rng.chance(0.18),
       });
     }
   }
+
   setDensity(d) {
     this.density = clamp(d, 0.2, 2.2);
     this.rebuild();
   }
 
-  _makeItem(ped, world, alpha, camera, timeline, params, waiter = false) {
-    const foot = camera.project(v3(world.x, 0, world.z));
-    const head = camera.project(v3(world.x, 1.72, world.z));
-    if (!foot || !head) return null;
-    const unit = clamp((foot.y - head.y) / 60, 0.34, 2.7) * ped.scale;
-    const stridePhase = timeline.t * (5.2 + params.walkSpeed * 2.4) + ped.phase + (waiter ? 0 : timeline.cross() * 9);
-    const stride = Math.sin(stridePhase);
-    return {
-      ped, foot, head, unit, alpha, waiter,
-      depth: foot.depth,
-      stride, stridePhase,
-      tilt: params.wind * 0.10 + Math.sin(stridePhase * 0.5) * 0.035 + stride * 0.025,
-      umb: ped.umb,
-      coatFilled: ped.coatFilled,
-      seed: ped.seed,
-    };
-  }
-
-  update(camera, timeline, params) {
-    this.items = [];
+  update(camera, timeline, params, obstacles = []) {
     const u = timeline.u;
     const crowdA = timeline.crowdAlpha();
     const waiterA = timeline.waiterAlpha();
-    const wind = params.wind || 0;
+    const wind = params.wind == null ? 0.6 : params.wind;
+    const raw = [];
 
-    for (const p of this.crossers) {
-      let world;
-      let alpha = crowdA;
+    for (const ped of this.crossers) {
+      let world, moving = false, distance = 0;
       if (u > 0.79 || u < 0.18) {
-        // Waiting / gathering at the start edge.
-        const idle = Math.sin(timeline.t * 1.4 + p.phase) * 0.10;
-        world = { x: p.start.x + idle, z: p.start.z + Math.cos(timeline.t * 1.1 + p.phase) * 0.08 };
+        const idle = Math.sin(timeline.t * 1.3 + ped.phase) * 0.10;
+        world = { x: ped.start.x + idle, z: ped.start.z + Math.cos(timeline.t * 1.1 + ped.phase) * 0.08 };
       } else {
-        const s = timeline.crossWithDelay(p.delay);
+        const s = timeline.crossWithDelay(ped.delay);
         if (s < 1) {
-          world = bezier2(p.start, p.ctrl, p.end, s);
-          const sway = Math.sin(timeline.t * 5 + p.phase) * 0.08;
-          world.x += -p.dir.z * sway;
-          world.z += p.dir.x * sway;
+          world = bezier2(ped.start, ped.ctrl, ped.end, s);
+          const sway = Math.sin(timeline.t * 5 + ped.phase) * 0.07;
+          world.x += ped.side.x * sway;
+          world.z += ped.side.z * sway;
         } else {
           const d = timeline.drain() * 16;
-          world = {
-            x: p.end.x + p.dir.x * d + Math.sin(timeline.t * 5 + p.phase) * 0.06,
-            z: p.end.z + p.dir.z * d,
-          };
+          world = { x: ped.end.x + ped.dir.x * d, z: ped.end.z + ped.dir.z * d };
         }
+        distance = (s < 1 ? s * ped.pathLength : ped.pathLength + timeline.drain() * 16);
+        moving = true;
       }
-      const item = this._makeItem(p, world, alpha, camera, timeline, params, false);
-      if (!item) continue;
-      if (!p.trail) p.trail = [];
-      if (alpha > 0.18) {
-        p.trail.push([item.foot.x, item.foot.y, item.unit]);
-        if (p.trail.length > 9) p.trail.shift();
-      }
-      item.trail = p.trail;
-      this.items.push(item);
+      const stridePhase = ped.phase + (moving ? (distance / (0.78 * ped.scale)) * TAU : Math.sin(timeline.t * 1.4 + ped.phase) * 0.18);
+      raw.push({
+        ped, world, alpha: crowdA, dir: ped.dir, side: ped.side, scale: ped.scale,
+        stridePhase, moving, waiter: false, radius: 0.54 * ped.scale,
+        group: 'crowd', fixed: false,
+      });
     }
 
     for (const w of this.waiters) {
-      const idle = Math.sin(timeline.t * 1.2 + w.phase) * 0.12;
+      const idle = Math.sin(timeline.t * 1.2 + w.phase) * 0.11;
       const world = {
-        x: w.base.x + idle + wind * 0.2,
-        z: w.base.z + Math.cos(timeline.t * 0.9 + w.phase) * 0.10,
+        x: w.base.x + idle + wind * 0.15,
+        z: w.base.z + Math.cos(timeline.t * 0.9 + w.phase) * 0.09,
       };
-      const item = this._makeItem(w, world, waiterA * 0.92, camera, timeline, params, true);
-      if (item) { item.trail = []; this.items.push(item); }
+      raw.push({
+        ped: w, world, alpha: waiterA * 0.92, dir: w.dir, side: w.side, scale: w.scale,
+        stridePhase: w.phase + Math.sin(timeline.t * 1.1 + w.phase) * 0.12,
+        moving: false, waiter: true, radius: 0.54 * w.scale,
+        group: 'crowd', fixed: false,
+      });
     }
-    // Far planes first: larger camera depth is farther away in this rig.
+
+    separate(raw, {
+      iterations: 2, padding: 0.06,
+      bounds: { x0: ROAD.x0 + 1, x1: ROAD.x1 - 1, z0: ROAD.z0 + 1, z1: ROAD.z1 - 1 },
+    });
+    if (obstacles.length) separateGroups(raw, obstacles, { iterations: 2, padding: 0.42 });
+    for (const r of raw) {
+      const c = clampToWorld(r.world, 0.8);
+      r.world.x = c.x; r.world.z = c.z;
+    }
+
+    this.items = raw.map((r) => this._makeItem(r, camera, params)).filter(Boolean);
     this.items.sort((a, b) => b.depth - a.depth);
+    for (const it of this.items) {
+      if (it.waiter || it.alpha < 0.18 || !it.ped.trail) continue;
+      it.ped.trail.push([it.foot.x, it.foot.y, it.unit]);
+      if (it.ped.trail.length > 9) it.ped.trail.shift();
+      it.trail = it.ped.trail;
+    }
     return this.items;
+  }
+
+  _makeItem(r, camera, params) {
+    const sc = r.scale;
+    const W = r.world;
+    const dir = r.dir, side = r.side;
+    const phase = r.stridePhase;
+    const moving = r.moving;
+    const wind = params.wind == null ? 0.6 : params.wind;
+    const tilt = wind * 0.075 + (moving ? Math.sin(phase) * 0.018 : Math.sin(phase) * 0.008);
+    const stride = Math.sin(phase);
+    const stride2 = Math.sin(phase + Math.PI);
+    const bob = moving ? Math.abs(Math.sin(phase)) * 0.045 * sc : 0.012 * sc * Math.sin(phase * 0.5);
+
+    const local = (lat, h, fwd) => v3(
+      W.x + side.x * lat + dir.x * fwd,
+      h,
+      W.z + side.z * lat + dir.z * fwd,
+    );
+    const J = {};
+    const set = (name, lat, h, fwd) => {
+      const w = local(lat, h, fwd);
+      J[name] = { w, s: camera.project(w) };
+      return J[name];
+    };
+    set('pelvis', 0, 0.92 * sc + bob, 0);
+    set('chest', 0, 1.38 * sc + bob, 0);
+    set('neck', 0, 1.56 * sc + bob, 0);
+    set('head', 0, 1.71 * sc + bob, 0);
+    set('headTop', 0, 1.87 * sc + bob, 0);
+    set('hairL', -0.13 * sc, 1.82 * sc + bob, 0);
+    set('hairR', 0.13 * sc, 1.82 * sc + bob, 0);
+    set('shoulderL', -0.23 * sc, 1.44 * sc + bob, 0);
+    set('shoulderR', 0.23 * sc, 1.44 * sc + bob, 0);
+    set('hipL', -0.13 * sc, 0.92 * sc + bob, 0);
+    set('hipR', 0.13 * sc, 0.92 * sc + bob, 0);
+    set('button1', 0, 1.28 * sc + bob, 0.015 * sc);
+    set('button2', 0, 1.10 * sc + bob, 0.015 * sc);
+
+    const armSwing = moving ? stride : 0.12 * Math.sin(phase * 0.5);
+    set('elbowL', -0.31 * sc, 1.18 * sc + bob, -armSwing * 0.16 * sc);
+    set('handL', -0.34 * sc, 0.95 * sc + bob, -armSwing * 0.30 * sc);
+    set('elbowR', 0.31 * sc, 1.18 * sc + bob, armSwing * 0.10 * sc);
+    set('handR', 0.22 * sc, 1.00 * sc + bob, 0.02 * sc);
+
+    const liftL = moving ? Math.max(0, Math.cos(phase)) * 0.13 * sc : 0;
+    const liftR = moving ? Math.max(0, Math.cos(phase + Math.PI)) * 0.13 * sc : 0;
+    set('kneeL', -0.12 * sc, 0.50 * sc + bob + liftL * 0.4, stride * 0.20 * sc);
+    set('footL', -0.12 * sc, 0.05 * sc + liftL, stride * 0.35 * sc);
+    set('toeL', -0.12 * sc, 0.04 * sc + liftL, stride * 0.35 * sc + 0.14 * sc);
+    set('kneeR', 0.12 * sc, 0.50 * sc + bob + liftR * 0.4, stride2 * 0.20 * sc);
+    set('footR', 0.12 * sc, 0.05 * sc + liftR, stride2 * 0.35 * sc);
+    set('toeR', 0.12 * sc, 0.04 * sc + liftR, stride2 * 0.35 * sc + 0.14 * sc);
+
+    set('apex', tilt * 0.6 * sc, 2.38 * sc + bob, -tilt * 0.3 * sc);
+    set('knob', tilt * 0.65 * sc, 2.49 * sc + bob, -tilt * 0.32 * sc);
+    set('rimCenter', tilt * 0.12 * sc, 2.06 * sc + bob, -tilt * 0.06 * sc);
+    set('handleMid', 0.20 * sc, 1.46 * sc + bob, 0.02 * sc);
+    set('hook', 0.31 * sc, 0.94 * sc + bob, 0.05 * sc);
+
+    const rim = [];
+    const RN = 9;
+    for (let i = 0; i < RN; i++) {
+      const a = (i / RN) * TAU;
+      const rr = 0.58 * sc * (i % 2 ? 0.90 : 1.0);
+      const lat = tilt * 0.12 * sc + Math.cos(a) * rr;
+      const fwd = -tilt * 0.06 * sc + Math.sin(a) * rr;
+      const h = 2.06 * sc + bob - 0.03 * sc * Math.sin(a * 2);
+      const w = local(lat, h, fwd);
+      rim.push({ w, s: camera.project(w) });
+    }
+    const drips = [];
+    for (let i = 0; i < 4; i++) {
+      const idx = (i * 2) % RN;
+      const rp = rim[idx];
+      const a = (idx / RN) * TAU;
+      const lat = tilt * 0.12 * sc + Math.cos(a) * 0.55 * sc;
+      const fwd = -tilt * 0.06 * sc + Math.sin(a) * 0.55 * sc;
+      const w = local(lat, 1.88 * sc + bob - hash11(r.ped.seed + i) * 0.12 * sc, fwd);
+      drips.push({ a: rp.s, b: camera.project(w) });
+    }
+
+    const essentials = Object.values(J).map((o) => o.s)
+      .concat(rim.map((o) => o.s))
+      .concat(drips.map((d) => d.b));
+    if (essentials.some((s) => !s)) return null;
+
+    const footL = J.footL.s, footR = J.footR.s;
+    const unit = clamp((footL.y - J.headTop.s.y) / 70, 0.34, 2.7);
+    const lineW = clamp(unit * 1.5, 0.6, 2.6);
+    const A = r.alpha;
+    const umb = r.ped.umb;
+    const draws = [];
+    const avg = (...pts) => pts.reduce((a, p) => a + p.depth, 0) / pts.length;
+    const push = (depth, fn) => draws.push({ depth, fn });
+    const line = (opts = {}) => ({
+      color: PALETTE.ink, width: lineW, alpha: A, jitter: 0.3,
+      seed: r.ped.seed, double: false, ...opts,
+    });
+
+    // Coat: a real 3D quad (shoulders/hips), not a screen-space sprite.
+    const coat = [J.shoulderL.s, J.shoulderR.s, J.hipR.s, J.hipL.s];
+    push(avg(...coat), (p) => p.poly(coat, {
+      fill: r.ped.coatFilled ? 'rgba(239,233,216,0.08)' : PALETTE.black,
+      stroke: PALETTE.ink, width: lineW, alpha: A,
+      seed: r.ped.seed + 3, jitter: 0.35,
+    }));
+    push(avg(J.neck.s, J.pelvis.s), (p) => p.line([J.neck.s, J.pelvis.s], line({
+      color: 'rgba(239,233,216,0.42)', width: lineW * 0.55, alpha: A * 0.8,
+    })));
+    push(avg(J.shoulderL.s, J.shoulderR.s), (p) => p.line([J.shoulderL.s, J.shoulderR.s], line({ width: lineW * 0.9 })));
+    for (const btn of [J.button1, J.button2]) {
+      push(btn.s.depth, (p) => p.ellipse(btn.s.x, btn.s.y, clamp(unit * 0.8, 0.8, 2.2), clamp(unit * 0.8, 0.8, 2.2), {
+        fill: 'rgba(239,233,216,0.5)', stroke: false, alpha: A * 0.7,
+      }));
+    }
+
+    // Limbs: each bone is a projected 3D segment.
+    const bones = [
+      [J.shoulderL, J.elbowL, J.handL],
+      [J.shoulderR, J.elbowR, J.handR],
+      [J.hipL, J.kneeL, J.footL],
+      [J.hipR, J.kneeR, J.footR],
+    ];
+    for (let b = 0; b < bones.length; b++) {
+      const pts = bones[b].map((o) => o.s);
+      push(avg(...pts), (p) => p.line(pts, line({ seed: r.ped.seed + 10 + b })));
+    }
+    for (const [f, t] of [[J.footL, J.toeL], [J.footR, J.toeR]]) {
+      push(avg(f.s, t.s), (p) => p.line([f.s, t.s], line({ width: lineW * 0.9, seed: r.ped.seed + 20 })));
+    }
+
+    // Head + hair cut.
+    const hr = clamp(J.head.s.scale * 0.15 * sc, 2, 12);
+    push(J.head.s.depth, (p) => p.ellipse(J.head.s.x, J.head.s.y, hr, hr * 1.05, {
+      fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.8, alpha: A,
+    }));
+    push(avg(J.hairL.s, J.hairR.s), (p) => p.line([J.hairL.s, J.hairR.s], line({ width: lineW * 0.65 })));
+
+    // Umbrella: faceted 3D dome, rim, ribs, handle and drips.
+    const tris = [];
+    for (let i = 0; i < RN; i++) tris.push([J.apex.s, rim[i].s, rim[(i + 1) % RN].s]);
+    const domeDepth = avg(J.apex.s, ...rim.map((o) => o.s));
+    push(domeDepth, (p) => p.polys(tris, { fill: umb.fill, alpha: A }));
+    push(domeDepth - 0.2, (p) => p.line(rim.map((o) => o.s).concat([rim[0].s]), {
+      color: umb.stroke, width: lineW, alpha: A, jitter: 0.4,
+      seed: r.ped.seed + 30, double: false,
+    }));
+    for (let i = 0; i < RN; i++) {
+      push(avg(J.apex.s, rim[i].s), (p) => p.line([J.apex.s, rim[i].s], {
+        color: umb.kind === 'white' ? 'rgba(239,233,216,0.45)' : 'rgba(239,233,216,0.55)',
+        width: lineW * 0.42, alpha: A * 0.75, jitter: 0.22,
+        seed: r.ped.seed + 40 + i, double: false,
+      }));
+    }
+    push(avg(J.apex.s, J.knob.s), (p) => p.line([J.apex.s, J.knob.s], line({ width: lineW * 0.8 })));
+    push(avg(J.rimCenter.s, J.handleMid.s, J.handR.s, J.hook.s), (p) => p.line(
+      [J.rimCenter.s, J.handleMid.s, J.handR.s, J.hook.s],
+      line({ width: lineW, seed: r.ped.seed + 60 }),
+    ));
+    for (let i = 0; i < drips.length; i++) {
+      push(avg(drips[i].a, drips[i].b), (p) => p.line([drips[i].a, drips[i].b], {
+        color: 'rgba(239,233,216,0.55)', width: lineW * 0.5, alpha: A * 0.6,
+        jitter: 0.2, seed: r.ped.seed + 70 + i, double: false,
+      }));
+    }
+
+    draws.sort((a, b) => b.depth - a.depth);
+    const foot = {
+      x: (footL.x + footR.x) / 2,
+      y: (footL.y + footR.y) / 2,
+      depth: avg(footL, footR),
+    };
+    return {
+      ped: r.ped, world: r.world, alpha: A, waiter: r.waiter,
+      radius: r.radius, group: 'crowd',
+      foot, feet: [footL, footR], unit, depth: foot.depth,
+      stridePhase: phase, trail: r.ped.trail || [], draws,
+    };
   }
 
   drawFlowLines(p, camera, timeline, params) {
     const amt = timeline.cross() * (1 - timeline.drain() * 0.6);
     if (amt < 0.03) return;
-    for (let k = -3; k <= 3; k++) {
-      const off = k * 3.4;
-      const a = v3(-20 + off, 0.03, 16 - off);
-      const b = v3(20 + off, 0.03, -16 - off);
+    for (const f of FLOWS) {
+      const cx = (f.bounds.x0 + f.bounds.x1) / 2;
+      const cz = (f.bounds.z0 + f.bounds.z1) / 2;
+      const a = v3(cx, 0.03, cz);
+      const b = v3(cx + f.delta.x, 0.03, cz + f.delta.z);
       p.projectLine(camera, [a, b], {
-        color: k % 2 ? 'rgba(43,184,174,0.30)' : 'rgba(239,233,216,0.22)',
-        width: 0.8, alpha: amt * 0.42, dash: [5, 12], jitter: 0.4,
-        seed: 800 + k, double: false,
-      });
-    }
-    for (let k = -2; k <= 2; k++) {
-      const off = k * 3.8;
-      const a = v3(-20 + off, 0.03, -16 + off);
-      const b = v3(20 + off, 0.03, 16 + off);
-      p.projectLine(camera, [a, b], {
-        color: 'rgba(239,233,216,0.16)', width: 0.7, alpha: amt * 0.28,
-        dash: [3, 14], jitter: 0.4, seed: 900 + k, double: false,
+        color: f.id === 'A' || f.id === 'C' ? 'rgba(43,184,174,0.26)' : 'rgba(239,233,216,0.18)',
+        width: 0.8, alpha: amt * 0.36, dash: [5, 13], jitter: 0.4,
+        seed: 800 + f.id.charCodeAt(0), double: false,
       });
     }
   }
@@ -280,36 +378,30 @@ export class Crowd {
     const strength = params.footstepStrength == null ? 1 : params.footstepStrength;
     const refl = params.reflectionStrength == null ? 1 : params.reflectionStrength;
     for (const it of this.items) {
-      if (it.waiter || it.alpha < 0.16 || !it.trail || it.trail.length < 2) continue;
-      // Broken vertical reflection under the walker.
-      const off = (hash11(it.seed) - 0.5) * 2;
-      wp.line([
-        [it.foot.x + off, it.foot.y + 1],
-        [it.foot.x + off + 1.5, it.foot.y + (14 + it.unit * 20) * refl],
-      ], {
-        color: 'rgba(239,233,216,0.20)', width: 0.7 + it.unit * 0.45,
-        alpha: it.alpha * 0.55, composite: 'lighter', jitter: 0.5,
-        seed: it.seed + 2, double: false,
-      });
+      if (it.waiter || it.alpha < 0.16) continue;
+      for (let f = 0; f < it.feet.length; f++) {
+        const ft = it.feet[f];
+        wp.line([[ft.x, ft.y + 1], [ft.x + (f ? 1.4 : -1.4), ft.y + (12 + it.unit * 18) * refl]], {
+          color: 'rgba(239,233,216,0.20)', width: 0.7 + it.unit * 0.45,
+          alpha: it.alpha * 0.5, composite: 'lighter', jitter: 0.5,
+          seed: it.ped.seed + f, double: false,
+        });
+      }
       const n = Math.min(5, it.trail.length);
       for (let k = 0; k < n; k++) {
-        const idx = it.trail.length - 1 - k;
-        const t = it.trail[idx];
+        const t = it.trail[it.trail.length - 1 - k];
         if (!t) continue;
         const age = k / Math.max(1, n - 1);
         const a = it.alpha * (1 - age * 0.65) * strength;
-        const rx = 2.6 * (t[2] || it.unit), ry = 1.15 * (t[2] || it.unit);
-        // Gouge the wet reflection away.
+        const rx = 2.5 * (t[2] || it.unit), ry = 1.1 * (t[2] || it.unit);
+        const rot = (hash11(it.ped.seed + k) - 0.5) * 0.5;
         wp.ellipse(t[0], t[1], rx, ry, {
           fill: 'rgba(0,0,0,0.95)', stroke: false,
-          composite: 'destination-out', alpha: a * 0.9,
-          rot: (hash11(it.seed + k) - 0.5) * 0.5,
+          composite: 'destination-out', alpha: a * 0.9, rot,
         });
-        // Leave a faint shoe rim.
         wp.ellipse(t[0], t[1], rx, ry, {
           stroke: 'rgba(239,233,216,0.55)', width: 0.65,
-          composite: 'source-over', alpha: a * 0.45,
-          rot: (hash11(it.seed + k) - 0.5) * 0.5,
+          composite: 'source-over', alpha: a * 0.45, rot,
         });
       }
     }
@@ -318,7 +410,7 @@ export class Crowd {
   draw(p, camera, timeline, params) {
     for (const it of this.items) {
       if (it.alpha < 0.02) continue;
-      drawFigure(p, it, it.alpha, params);
+      for (const d of it.draws) d.fn(p);
     }
   }
 }

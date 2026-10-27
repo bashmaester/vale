@@ -14,6 +14,24 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Libe
 }
 [hidden] { display: none !important; }
 
+.cam-hud {
+  position: fixed;
+  left: 16px;
+  bottom: 16px;
+  z-index: 20;
+  max-width: min(720px, calc(100vw - 32px));
+  padding: 7px 11px;
+  color: #d7ded4;
+  background: rgba(6, 9, 7, 0.78);
+  border: 1px solid rgba(86, 199, 183, 0.45);
+  border-radius: 5px;
+  font-size: 10px;
+  letter-spacing: .04em;
+  line-height: 1.5;
+  pointer-events: none;
+  white-space: normal;
+}
+
 /* Optional authoring lab. Invisible during normal playback. */
 #lab {
   position: fixed;

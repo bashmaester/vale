@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>VALE — docs &amp; handoff</title>
+<style>
+:root{color-scheme:dark}*{box-sizing:border-box}
+body{margin:0;background:#070908;color:#d7ded4;font:14px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+header{padding:28px clamp(18px,5vw,64px);border-bottom:1px solid #26332c}
+h1{margin:0 0 6px;font-size:22px;letter-spacing:.16em;color:#eef3e8}
+.meta{color:#7d9688;font-size:12px}
+main{max-width:1040px;margin:0 auto;padding:28px clamp(18px,5vw,64px) 64px}
+a{color:#56c7b7;text-decoration:none}a:hover{text-decoration:underline}
+.film{display:inline-block;margin:0 0 26px;padding:10px 16px;border:1px solid #56c7b7;border-radius:6px;background:#101713;font-weight:700}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px}
+.card{display:block;padding:16px;border:1px solid #31413a;border-radius:8px;background:#0c110e;color:inherit;text-decoration:none}
+.card:hover{border-color:#56c7b7;text-decoration:none;background:#101a15}
+.card h2{margin:0 0 8px;font-size:12px;letter-spacing:.14em;color:#eef3e8}
+.card p{margin:0;color:#8fa397;font-size:12px}
+pre{white-space:pre-wrap;word-break:break-word;background:#0a0e0b;border:1px solid #26332c;border-radius:8px;padding:16px;color:#9fb2a5;font-size:12px;max-height:420px;overflow:auto}
+h2.sec{font-size:12px;letter-spacing:.14em;color:#7d9688;margin:34px 0 10px}
+footer{padding:20px clamp(18px,5vw,64px);border-top:1px solid #26332c;color:#617569;font-size:11px}
+</style>
+</head>
+<body>
+<header>
+  <h1>VALE / DOCS &amp; HANDOFF</h1>
+  <div class="meta">branch arena/082e9ffd-vale · commit d7776408 · built 2026-10-27T14:28:37.909Z · index.html 91,171 bytes</div>
+</header>
+<main>
+  <a class="film" href="../index.html">▶ open the self-contained film</a>
+  <div class="grid">
+    <a class="card" href="HANDOFF.md"><h2>HANDOFF</h2><p>**Purpose:** resume this project immediately if the conversation is interrupted.
+Read this first, then `ARCHITECTURE.md` and `CHANGELOG.md`. Fresh commit/build
+metadata is always in `BUILD.md` and `DEPLOY_STATUS.md` (generated on deploy).</p></a>
+    <a class="card" href="ARCHITECTURE.md"><h2>ARCHITECTURE</h2><p>The system is a **representation pipeline**, not a simulation and not a flat
+illustration. It has four layers: a shared world model, a parametric 3D scene,
+2D printing plates, and a node-based shader finish.</p></a>
+    <a class="card" href="CHANGELOG.md"><h2>CHANGELOG</h2><p>Dates use the user’s local timezone (America/New_York).</p></a>
+    <a class="card" href="CI.md"><h2>CI / PAGES</h2><p>The working agreement is:</p></a>
+    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit d7776408 on arena/082e9ffd-vale, built 2026-10-27T14:28:37.909Z.</p></a>
+    <a class="card" href="DEPLOY_STATUS.md"><h2>DEPLOY STATUS</h2><p>Fresh deployment metadata for this Pages build.</p></a>
+  </div>
+  <h2 class="sec">README (live copy)</h2>
+  <pre># VALE — rainy crossing
+
+A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo scramble crossing is built as a real 3D scene, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
+
+&gt; Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
+
+---
+
+## Quick start
+
+```bash
+npm install
+npm run build           # regenerates the self-contained index.html
+npm run docs            # regenerates deploy metadata + docs/index.html
+npm run deploy:local    # build + docs
+npm run dev             # builds, then serves on http://localhost:8000
+```
+
+Or just open `index.html` directly — it works from `file://` because everything is inlined.
+
+Useful URLs:
+
+| URL | Effect |
+| --- | --- |
+| `index.html` | clean film, autoplay, 20s loop, no UI |
+| `index.html?lab=1` | opens the hidden node / scene / camera / timeline lab |
+| `index.html?cam=fly` | starts in user fly camera |
+| `index.html?hud=0` | disables the tiny camera-control HUD |
+| `index.html?preset=riso` | starts with the Risograph look |
+| `index.html?t=11` | starts at 11 seconds |
+| `index.html?w=1920&amp;h=1080` | renders at a different internal resolution |
+| `index.html?lab=1&amp;paused=1&amp;t=7` | paused lab frame for inspection |
+
+Keyboard shortcuts: `L` lab, `Space` play/pause, `S` save PNG frame, `R` reset all
+parameters, `C` release/take camera, `F` fly/orbit, `V` or `0` reset camera. While
+flying: `WASD/QE` move, `Shift` boosts, drag looks, right-drag pans, wheel zooms.
+
+---
+
+## The hybrid pipeline
+
+The disagreement with the earlier “go pure 2D” recommendation is the point of this build: the scene is **not** a flat illustration pretending to be 3D, and it is **not** a textured 3D render pretending to be a print. It is a representation pipeline:
+
+```
+parametric 3D modules ─┐
+keyframed 3D camera  ─┼─▶ perspective projection ─▶ 2D ink plate + field plates
+signal-cycle timeline ─┘                                   │
+                                                          ▼
+                                             node-based GLSL look graph
+                                                          │
+                                                          ▼
+                                             black / white / red / teal film
+```
+
+### 1. 3D scene graph
+
+`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe the crossing in world space (`x` right, `y` up, `z` toward the viewer):
+
+- shared sidewalks, crosswalks, waiting zones, diagonal flows and legal parking slots;
+- buildings with windows/balconies/drainpipes, signage, wires, elevated track, signals, zebra markings, curbs, stop lines and puddles;
+- ~132 crossing pedestrians plus ~34 waiting umbrellas, each a **procedural 3D skeleton** with a distance-driven walk cycle and a faceted 3D umbrella dome — not a sliding billboard;
+- vehicles with wheels, hubs, wheel arches, cabins, sloped windshields, truck cab/cargo splits, bus signs, taxi roof lights, bumpers and lamps;
+- a six-car train passing overhead;
+- rain, wet-road reflections and gouged footprints;
+- grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
+
+`src/camera.js` is a small keyframed rig. It pushes in during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the figures change perspective — but the output is still a flat plate.
+
+### 2. 2D printing plates
+
+`src/scene.js` renders three offscreen canvases each frame:
+
+- **`plate`** — the main ink image: black paper, white/teal/red line work.
+- **`wet`** — reflections built with additive strokes, then broken by dark footprint shapes (`destination-out`) before being screened onto the plate.
+- **`field`** — a data texture: `R` = wetness/reflection zone, `G` = crowd/motion density, `B` = train/signal accent bloom.
+
+`src/draw.js` is the hand-drawn rasterizer: rough polylines with line boil, jittered polygons, projected 3D boxes, screen-space signboards, abstract glyphs and splashes. Static geometry is still projected every frame so the camera can move.
+
+### 3. Node-based look graph
+
+`src/shaders.js` and `src/graph.js` implement a tiny modular shader system. Each node owns GLSL plus typed parameters; `ShaderGraph.compile()` topologically sorts the graph and emits one WebGL2 fragment shader:
+
+| Node | Role |
+| --- | --- |
+| `01 · Plate / misregister` | samples the plate, offsets red/blue channels, adds gate weave |
+| `02 · Carve / gouge` | edge-aware lino cuts, boiling tool marks, white scratches |
+| `03 · Edge detail` | tangent-following contour cuts, micro scratches, edge sparks |
+| `04 · Broken hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
+| `05 · Rain / reflections` | stretched rain noise and gouged wet-streak reflections |
+| `06 · Ink separation` | bleed, dither, four-color posterization, accent bloom |
+| `07 · Paper / grain` | grain, fiber, speckle, vignette, projector flicker |
+| `08 · Output` | exposure and contrast |
+
+The hatch node deliberately avoids uniform parallel lines: `fbm` warps angle and
+spacing, a second noise field breaks strokes, and a secondary rotated pass adds
+cross-hatching only in the darkest areas. The `detail` node expresses edges with
+contour cuts and micro scratches.
+
+The optional lab (`src/lab.js`) draws this graph as draggable nodes with live
+sliders, plus **SCENE**, **CAM** and **TIME** tabs. Double-click a node to bypass
+it. Presets: **Linocut**, **Risograph**, **Newsprint**, **Blueprint**. Changes are
+uniforms, so they are live with no shader rebuild.
+
+This is raw GLSL ES 3.0 rather than Three.js TSL: it keeps the deliverable to one file with zero runtime dependencies. The graph compiler is the seam where a TSL/WebGPU adapter could be added later without touching the scene modules.
+
+---
+
+## The 20-second signal cycle
+
+`src/timeline.js` is the single source of truth. Every module reads the same normalized time `u = t / 20`:
+
+| Time | Phase | Visual state |
+| --- | --- | --- |
+| 0.0–3.2s | `WAIT` | dense umbrellas at four corners, red signals, parked vehicles |
+| 3.2–4.4s | `SIGNAL` | teal lamps rise, umbrellas lean into the crossing |
+| 4.4–11.7s | `CROSS` | four diagonal streams surge; train passes; footsteps break reflections |
+| 11.7–15.8s | `DRAIN` | crowd thins toward the far sidewalks, reflections begin to reform |
+| 15.8–17.6s | `EMPTY` | road almost clear; zebra, rain and wet reflections dominate |
+| 17.6–20.0s | `TRAFFIC` | vehicles cross, headlights smear, umbrellas gather again for the loop |
+
+The loop is designed to be seamless: crossers are invisible while offscreen, vehicles reset offscreen, and the crowd fades back into the waiting corners before `u` wraps.
+
+---
+
+## Repository layout
+
+```
+index.html                       final self-contained film (generated; commit this)
+build.mjs                        inlines CSS + bundled JS into index.html
+scripts/update-docs.mjs          deploy docs / metadata generator
+.github/workflows/deploy-pages.yml  GitHub Actions → Pages
+docs/HANDOFF.md                  resume point for interrupted sessions
+docs/ARCHITECTURE.md             system design
+docs/CHANGELOG.md                turn-by-turn changes
+docs/CI.md                       deployment notes
+docs/BUILD.md, DEPLOY_STATUS.md, manifest.json, index.html   generated on deploy
+src/template.html                HTML shell
+src/style.css                    fullscreen film + hidden lab + camera HUD
+src/math.js                      noise, easing, RNG, perspective camera
+src/draw.js                      rough-stroke painter + 3D box/quad helpers
+src/world.js                     sidewalks, crosswalks, flows, parking rules
+src/collision.js                 separation + Poisson-disk blue noise
+src/shaders.js                   GLSL node definitions + presets
+src/graph.js                     node graph compiler / uniforms / serialization
+src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
+src/camera.js                    keyframed camera rig
+src/camera-control.js            user orbit / fly camera
+src/timeline.js                  one signal cycle
+src/environment.js               road, zebra, sidewalks, buildings, signs, wires
+src/crowd.js                     procedural 3D humanoids, walk cycle, footprints
+src/traffic.js                   detailed vehicles + train + light reflections
+src/weather.js                   rain, wet reflections, field data texture
+src/scene.js                     orchestrates plates, camera, modules, separation
+src/lab.js                       optional node/scene/camera/timeline editor
+src/main.js                      wiring, query params, animation loop
+```
+
+`index.html` contains no `&lt;script src&gt;`, no `&lt;link href&gt;`, no images, and no external URLs. The only build dependency is `esbuild`, used at authoring time to inline the ES modules.
+
+---
+
+## CI / Pages / handoff
+
+Every push to `arena/082e9ffd-vale` (and `main`) runs
+`.github/workflows/deploy-pages.yml`: install → build → validate
+self-containment → regenerate docs → upload `_site/` → deploy with
+`actions/deploy-pages`. `npm run docs` writes fresh commit/branch/timestamp
+metadata into `docs/BUILD.md`, `docs/DEPLOY_STATUS.md`, `docs/manifest.json`
+and `docs/index.html`.
+
+The human-authored handoff is `docs/HANDOFF.md`. Update it at the end of each
+turn so an interrupted session can resume from the current objective, known
+issues and next steps. See `docs/CI.md` for troubleshooting.
+
+---
+
+## Design intent
+
+The references are not simulations: they are **representations that embody the structure and feeling** of a place. People are architectural-sketch marks with umbrellas — but they are built from 3D joints and a real walk cycle, so a flown camera sees believable perspective rather than sliding sprites. Vehicles are essential lines with wheels and silhouettes, not detailed models. Rain and grain are atmosphere, not physics. Shared world rules keep cars off crosswalks and objects apart. The system has enough parametric complexity to stage waiting, crossing and emptiness clearly — but the shader graph flattens everything back into a consistent black/red/teal/white print.
+</pre>
+  <h2 class="sec">QUICK LINKS</h2>
+  <p><a href="HANDOFF.md">HANDOFF.md</a> · <a href="ARCHITECTURE.md">ARCHITECTURE.md</a> · <a href="CHANGELOG.md">CHANGELOG.md</a> · <a href="CI.md">CI.md</a> · <a href="BUILD.md">BUILD.md</a> · <a href="DEPLOY_STATUS.md">DEPLOY_STATUS.md</a> · <a href="manifest.json">manifest.json</a></p>
+</main>
+<footer>Generated by scripts/update-docs.mjs. Human-authored docs are committed in <code>docs/</code>; BUILD/DEPLOY/manifest/index are regenerated on every deploy.</footer>
+</body>
+</html>

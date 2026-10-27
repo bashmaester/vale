@@ -1,0 +1,70 @@
+name: Deploy film + handoff docs to GitHub Pages
+
+on:
+  push:
+    branches:
+      - arena/082e9ffd-vale
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build self-contained film
+        run: npm run build
+
+      - name: Validate no external assets
+        run: |
+          if grep -Eq '<script[^>]+src=|<link[^>]+href=|https?://' index.html; then
+            echo "index.html must stay fully self-contained"
+            exit 1
+          fi
+          echo "index.html is self-contained ($(wc -c < index.html) bytes)"
+
+      - name: Regenerate deploy docs
+        run: npm run docs
+
+      - name: Assemble Pages site
+        run: |
+          rm -rf _site
+          mkdir -p _site/docs
+          cp index.html _site/index.html
+          cp README.md _site/README.md
+          cp -R docs/. _site/docs/
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

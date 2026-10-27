@@ -40,9 +40,9 @@ export class Timeline {
     return 0.20 + 0.80 * (1 - this.empty());
   }
   traffic() {
-    return smoothstep(0.775, 0.89, this.u);
+    return smoothstep(0.88, 0.95, this.u);
   }
-  parkedAlpha() { return 1 - smoothstep(0.76, 0.85, this.u); }
+  parkedAlpha() { return 1 - smoothstep(0.86, 0.92, this.u); }
   train() { return smootherstep(0.31, 0.73, this.u); }
   reflectionReform() { return smoothstep(0.74, 0.92, this.u); }
   rainPulse() {
@@ -54,7 +54,7 @@ export class Timeline {
     if (u < 0.22) return 'SIGNAL';
     if (u < 0.585) return 'CROSS';
     if (u < 0.79) return 'DRAIN';
-    if (u < 0.91) return 'EMPTY';
+    if (u < 0.88) return 'EMPTY';
     return 'TRAFFIC';
   }
 }
@@ -64,6 +64,6 @@ export const PHASES = [
   { id: 'SIGNAL', a: 0.16, b: 0.22, color: '#d8a03a' },
   { id: 'CROSS', a: 0.22, b: 0.585, color: '#2bb8ae' },
   { id: 'DRAIN', a: 0.585, b: 0.79, color: '#6c8f7f' },
-  { id: 'EMPTY', a: 0.79, b: 0.91, color: '#5d6961' },
-  { id: 'TRAFFIC', a: 0.91, b: 1, color: '#d43b30' },
+  { id: 'EMPTY', a: 0.79, b: 0.88, color: '#5d6961' },
+  { id: 'TRAFFIC', a: 0.88, b: 1, color: '#d43b30' },
 ];

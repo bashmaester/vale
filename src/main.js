@@ -26,6 +26,13 @@ scene.setParams(PRESETS[presetName].scene || {});
 
 const canvas = document.getElementById('screen');
 const renderer = new Renderer(canvas, graph, W, H);
+
+const camMode = q.get('cam');
+scene.cameraController.hudEnabled = q.get('hud') !== '0';
+if (camMode === 'orbit' || camMode === 'fly' || camMode === 'user') {
+  scene.cameraController.setMode(camMode === 'user' ? 'orbit' : camMode);
+}
+
 const lab = new Lab({ graph, scene, renderer, state });
 
 if (q.has('lab')) lab.open();
@@ -39,7 +46,7 @@ function frame(now) {
   last = now;
   if (!state.paused) state.time += dt * state.speed;
   const t = state.time;
-  const { plate, field } = scene.render(t);
+  const { plate, field } = scene.render(t, dt);
   const shaderTime = ((t % DURATION) + DURATION) % DURATION;
   renderer.render(plate, field, shaderTime);
   lab.render(t, scene.timeline);
@@ -50,6 +57,6 @@ requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
 console.log(
-  '%cVALE%c — silent 20s 3D→2D print film. Append ?lab=1 for the node patch bay.',
+  '%cVALE%c — silent 20s 3D→2D print film. ?lab=1 opens the patch bay, ?cam=fly takes the camera.',
   'color:#56c7b7;font-weight:bold', 'color:#9fb2a5'
 );
