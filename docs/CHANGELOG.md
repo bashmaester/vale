@@ -23,13 +23,12 @@ current branch to `main` so another session can restart from the references.
 - `README.md`: added a status warning that the current build is a technical
   scaffold, not an approved visual result, with links to the current-state and
   handoff docs.
-- `docs/CI.md`: note that this turn is merged to `main` via PR
-  `PR_NUMBER_TBD`.
+- `docs/CI.md`: note that this turn is merged to `main` via PR #1.
 - `docs/CHANGELOG.md`: this entry.
 
 ### Merged
 
-- Branch `arena/082e9ffd-vale` → `main` via PR `PR_NUMBER_TBD`.
+- Branch `arena/082e9ffd-vale` → `main` via PR #1.
 - Pages CI continues to deploy from both branches.
 
 ### Important

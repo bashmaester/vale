@@ -5,8 +5,7 @@ assessment is that the result is “very underwhelming” and that “almost non
 their notes have landed. Treat this document as the source of truth for the
 next art-direction pass.
 
-**Last reviewed:** 2026-10-27, before merging the current branch to `main` via
-PR `PR_NUMBER_TBD`.
+**Last reviewed:** 2026-10-27, merged to `main` via PR #1.
 
 **Read in this order:**
 
@@ -229,7 +228,7 @@ Live site: https://bashmaester.github.io/vale/
 
 - Working branch: `arena/082e9ffd-vale`.
 - This handoff commit is pushed to that branch.
-- Merge to `main` is done via PR `PR_NUMBER_TBD` from
+- Merged to `main` via PR #1 from
   `arena/082e9ffd-vale` → `main` using `gh pr merge`, without switching the
   local working branch.
 - Pages CI triggers on both the working branch and `main`.
