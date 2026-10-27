@@ -70,7 +70,10 @@ globalThis.requestAnimationFrame = (cb) => { frameCb = cb; return 1; };
 globalThis.window.requestAnimationFrame = globalThis.requestAnimationFrame;
 
 const html = readFileSync(resolve(root, 'index.html'), 'utf8');
-const m = html.match(/<script>([\s\S]*)<\/script>/);
+// Take the last inline script: the template puts a tiny watchdog first and the
+// app bundle after it. A greedy match across both would inject `</script>`.
+const all = [...html.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)];
+const m = all.length ? all[all.length - 1] : null;
 if (!m) throw new Error('no inline script found in index.html');
 const js = m[1];
 const tmp = resolve(root, '.boot-smoke.cjs');

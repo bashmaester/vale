@@ -57,6 +57,9 @@ function defaults() {
   return Object.fromEntries(Object.entries(SCENE_PARAM_DEFS).map(([k, d]) => [k, d.value]));
 }
 
+// How far (in pixels) the cached set may drift before it is repainted.
+const STATIC_SHIFT = 1.25;
+
 function makeCanvas(W, H, alpha = true) {
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
@@ -176,7 +179,10 @@ export class Scene {
   }
 
   _ensureStatic(camera, detail) {
-    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${this.W}x${this.H}`;
+    // `boil` is in the key on purpose: the hand-drawn jitter regenerates at
+    // ~7.5 Hz, so a cached set must repaint when it ticks, or the artwork stops
+    // boiling while the people and rain keep going.
+    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${this.pp.boil}|${this.W}x${this.H}`;
     const ref = { x: 0, y: 3.2, z: 0 };
     let needsRepaint = key !== this._staticKey || !this._staticPose;
     let dx = 0, dy = 0;
@@ -187,7 +193,7 @@ export class Scene {
         needsRepaint = true;
       } else {
         dx = b.x - a.x; dy = b.y - a.y;
-        if (Math.hypot(dx, dy) > 2.5) needsRepaint = true;
+        if (Math.hypot(dx, dy) > STATIC_SHIFT) needsRepaint = true;
       }
     }
     if (needsRepaint) {
@@ -196,7 +202,10 @@ export class Scene {
       this._staticPose = { eye: { ...camera.eye }, target: { ...camera.target }, fov: camera.fov, roll: camera.roll };
       this._staticCamera = new Camera();
       this._staticCamera.setViewport(this.W, this.H);
-      this._staticCamera.set(camera.eye, camera.target, camera.fov, camera.roll);
+      // Snapshot: Camera.set stores references, and the rig mutates its own
+      // eye/target every frame. Sharing them made the cached pose follow the
+      // live camera, so the shift was always 0 and the layer went stale.
+      this._staticCamera.set({ ...camera.eye }, { ...camera.target }, camera.fov, camera.roll);
       this._staticCamera.roll = camera.roll;
       dx = 0; dy = 0;
       this.staticStats.redraws++;
@@ -274,7 +283,9 @@ export class Scene {
     //    buildings. Both layers are repainted only when the camera drifts.
     const shift = this._ensureStatic(camera, detail);
     const blit = (canvas) => {
-      if (shift.x || shift.y) this.pp.ctx.drawImage(canvas, shift.x, shift.y);
+      // Integer offsets only: a fractional drawImage resamples the whole frame.
+      const x = Math.round(shift.x), y = Math.round(shift.y);
+      if (x || y) this.pp.ctx.drawImage(canvas, x, y);
       else this.pp.ctx.drawImage(canvas, 0, 0);
     };
     blit(this.staticFar);

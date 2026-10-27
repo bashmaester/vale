@@ -8,7 +8,7 @@
 // jump to t = 20 and the drop is exactly where it belongs. Ripples are derived
 // from the moment a drop lands, so they cannot drift out of phase either.
 
-import { PALETTE } from './draw.js';
+import { PALETTE, glowAt } from './draw.js';
 import { v3, clamp, lerp, makeRng, hash11, TAU, smoothstep } from './math.js';
 import { groundYAt, TILE } from './tile.js';
 import { PUDDLES, SIGNAL_POSITIONS, LIGHT_SOURCES } from './world.js';
@@ -233,13 +233,7 @@ export class Weather {
     ctx.globalCompositeOperation = 'lighter';
 
     const blob = (x, y, r, rgb, a) => {
-      if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
-      if (r <= 0 || a <= 0) return;
-      const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-      g.addColorStop(0, `rgba(${rgb},${a})`);
-      g.addColorStop(1, `rgba(${rgb},0)`);
-      ctx.fillStyle = g;
-      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+      glowAt(ctx, x, y, r, rgb, a, { composite: 'lighter' });
     };
 
     // R = puddle mask only. No broad wetness gradient, no fake glass.

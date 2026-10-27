@@ -11,7 +11,7 @@
 // Everything is drawn into the 2D plate through Camera.project(), so the same
 // scene can be flown around. Nothing here is screen-space art except glows.
 
-import { PALETTE } from './draw.js';
+import { PALETTE, glowAt as glowBlit } from './draw.js';
 import {
   v3, clamp, lerp, hash11, hash21, makeRng, quadLerp, smoothstep, TAU,
 } from './math.js';
@@ -64,18 +64,9 @@ function faceOf(faces, name) {
 
 // Screen-space glow. Used only for emitters (lamps, signs, shopfronts).
 function glow(p, x, y, r, rgb, a) {
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
-  if (a <= 0.002 || r <= 0.5) return;
-  const c = p.ctx;
-  const g = c.createRadialGradient(x, y, 0, x, y, r);
-  g.addColorStop(0, `rgba(${rgb},${a})`);
-  g.addColorStop(0.45, `rgba(${rgb},${a * 0.42})`);
-  g.addColorStop(1, `rgba(${rgb},0)`);
-  c.save();
-  c.globalCompositeOperation = 'lighter';
-  c.fillStyle = g;
-  c.fillRect(x - r, y - r, r * 2, r * 2);
-  c.restore();
+  // One sprite blit instead of a fresh radial gradient every call (see
+  // draw.js). The sprite already carries the falloff profile.
+  glowBlit(p.ctx, x, y, r, rgb, a);
 }
 
 const RGB = {

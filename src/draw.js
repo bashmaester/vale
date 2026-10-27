@@ -14,6 +14,51 @@ export const PALETTE = {
 
 const asArr = (p) => (Array.isArray(p) ? p : [p.x, p.y]);
 
+// --- glow sprites ----------------------------------------------------------
+// Emitters (lamps, signs, headlights, puddle reflections) all want the same
+// soft additive falloff. Building a radial gradient per emitter per frame is
+// one of the most expensive things Canvas2D does — allocating the gradient,
+// then rasterising a large, blended fill. Instead the falloff is rasterised
+// once per colour into a small sprite and blitted, which is a straight copy.
+const GLOW_SPRITES = new Map();
+const GLOW_SIZE = 96;
+
+function glowSprite(rgb) {
+  let sprite = GLOW_SPRITES.get(rgb);
+  if (sprite) return sprite;
+  const c = document.createElement('canvas');
+  c.width = GLOW_SIZE; c.height = GLOW_SIZE;
+  const ctx = c.getContext('2d');
+  const h = GLOW_SIZE / 2;
+  const g = ctx.createRadialGradient(h, h, 0, h, h, h);
+  g.addColorStop(0, `rgba(${rgb},1)`);
+  g.addColorStop(0.45, `rgba(${rgb},0.42)`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, GLOW_SIZE, GLOW_SIZE);
+  GLOW_SPRITES.set(rgb, c);
+  return c;
+}
+
+/**
+ * Additive screen-space glow. `rgb` is "r,g,b"; `a` is 0..1.
+ */
+export function glowAt(ctx, x, y, r, rgb, a, opts = {}) {
+  if (!(a > 0.002) || !(r > 0.5)) return;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
+  const sprite = glowSprite(rgb);
+  const prevOp = ctx.globalCompositeOperation;
+  const prevAlpha = ctx.globalAlpha;
+  const prevSmooth = ctx.imageSmoothingEnabled;
+  ctx.globalCompositeOperation = opts.composite || 'lighter';
+  ctx.globalAlpha = Math.min(1, a);
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite, x - r, y - r, r * 2, r * 2);
+  ctx.globalCompositeOperation = prevOp;
+  ctx.globalAlpha = prevAlpha;
+  ctx.imageSmoothingEnabled = prevSmooth;
+}
+
 export class Painter {
   constructor(ctx, W, H) {
     this.ctx = ctx;

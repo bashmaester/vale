@@ -26,6 +26,11 @@ each neighbour switchable and off by default; hide the UI until `\` is pressed.
   puddles, reflections, signals, lamp flicker).
 - Adaptive resolution: a governor in `src/main.js` moves the render scale in
   5 % steps between 45 % and 100 % to hold ~60 fps (`?scale=` pins it).
+- A cached static set: the backdrop, street, paving, rail, buildings and
+  furniture are painted into an offscreen layer and re-blitted (with an integer
+  drift offset) instead of being redrawn every frame.
+- Glow sprites: emitter glows blit a cached radial-gradient sprite instead of
+  building a gradient per call.
 
 ### Changed
 

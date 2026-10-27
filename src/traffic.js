@@ -6,7 +6,7 @@
 // Two vehicles sit legally at the kerbs, two move in their own lanes during the
 // traffic beat, and a short train passes on the elevated line behind the block.
 
-import { PALETTE } from './draw.js';
+import { PALETTE, glowAt } from './draw.js';
 import { v3, clamp, lerp, easeInOut, quadLerp, smoothstep, smootherstep } from './math.js';
 import { separate } from './collision.js';
 import { TILE } from './tile.js';
@@ -272,31 +272,15 @@ export function drawVehicle(p, camera, item) {
         fill: BONE(0.92), stroke: BONE(0.8), width: 0.55, alpha,
       });
       if (item.moving) {
-        const c = p.ctx;
-        const g = c.createRadialGradient(nose.x, nose.y, 0, nose.x, nose.y, r * 11);
-        g.addColorStop(0, `rgba(239,233,216,${0.18 * alpha})`);
-        g.addColorStop(1, 'rgba(239,233,216,0)');
-        c.save();
-        c.globalCompositeOperation = 'lighter';
-        c.fillStyle = g;
-        c.fillRect(nose.x - r * 11, nose.y - r * 11, r * 22, r * 22);
-        c.restore();
+        glowAt(p.ctx, nose.x, nose.y, r * 11, '239,233,216', 0.18 * alpha);
       }
     }
     const rear = camera.project(mirror([axisPoint(world, spec, -0.99 * prof.w * 0.5, lat, lampY)])[0]);
     if (rear && Number.isFinite(rear.x) && Number.isFinite(rear.y)) {
       const rr = Math.max(1, rear.scale * 0.075);
       if (!item.moving) {
-        const c = p.ctx;
         const col = spec.dir > 0 ? '212,59,48' : '43,184,174';
-        const g = c.createRadialGradient(rear.x, rear.y, 0, rear.x, rear.y, rr * 9);
-        g.addColorStop(0, `rgba(${col},${0.30 * alpha})`);
-        g.addColorStop(1, `rgba(${col},0)`);
-        c.save();
-        c.globalCompositeOperation = 'lighter';
-        c.fillStyle = g;
-        c.fillRect(rear.x - rr * 9, rear.y - rr * 9, rr * 18, rr * 18);
-        c.restore();
+        glowAt(p.ctx, rear.x, rear.y, rr * 9, col, 0.30 * alpha);
       }
       p.ellipse(rear.x, rear.y, rr * 1.25, rr * 0.75, {
         fill: spec.dir > 0 ? PALETTE.red : PALETTE.teal,
@@ -454,15 +438,7 @@ export class Traffic {
       // Under-carriage light on the wet street below.
       const q = camera.project(v3(x, 8.6, z + 0.9));
       if (q && A > 0.2) {
-        const c = p.ctx;
-        const g = c.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.scale * 2.4);
-        g.addColorStop(0, `rgba(216,190,150,${0.10 * A})`);
-        g.addColorStop(1, 'rgba(216,190,150,0)');
-        c.save();
-        c.globalCompositeOperation = 'lighter';
-        c.fillStyle = g;
-        c.fillRect(q.x - q.scale * 2.4, q.y - q.scale * 2.4, q.scale * 4.8, q.scale * 4.8);
-        c.restore();
+        glowAt(p.ctx, q.x, q.y, q.scale * 2.4, '216,190,150', 0.10 * A);
       }
     }
   }

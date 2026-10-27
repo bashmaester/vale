@@ -228,6 +228,26 @@ The rule is: a node that cannot change the image must not exist in it.
   browser to keep a copy of the drawing buffer alive every frame.
 - `bypass` (raw plate) and the 2D fallback blit the plate straight to a canvas.
 
+### The cached set
+
+Everything that is a pure function of the camera pose — walls, ground, street,
+paving, markings, rail, buildings, street furniture — is painted into
+`scene.static` (plus `staticFar` for the walls) and reused while the camera only
+drifts. The cached pose is a snapshot (`{...eye}`, `{...target}`); the delta is
+applied as an **integer** blit offset (fractional `drawImage` resamples the whole
+frame), and the layer repaints when the offset exceeds 1.25 px or when the
+line-boil phase ticks (~7.5 Hz). The boil is part of the cache key on purpose:
+it is part of the drawing, and freezing it would flatten the animation.
+
+At 1440×810 the set costs ~39 ms to paint, so this is the single biggest win:
+the layer repaints about 13 % of frames and the rest cost one blit.
+
+### Glows
+
+Every emitter glow (lamps, signs, headlights, puddle light) draws a cached
+radial-gradient sprite (`glowAt` in `src/draw.js`) instead of building a
+gradient and rasterising a large additive fill per call.
+
 The scene (`src/scene.js`) draws in this order, each stage timed into
 `scene.profile` (EMA, shown by the stats overlay):
 
