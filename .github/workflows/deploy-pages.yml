@@ -42,6 +42,11 @@ jobs:
       - name: Build self-contained film
         run: npm run build
 
+      # The inline bundle must boot: this catches TDZ errors, bad constructor
+      # order and a corrupted $& substitution that would ship a blank page.
+      - name: Boot smoke test (built bundle)
+        run: npm run boot
+
       - name: Validate no external assets
         run: |
           if grep -Eq '<script[^>]+src=|<link[^>]+href=|https?://' index.html; then

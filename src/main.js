@@ -29,7 +29,6 @@ const renderer = new Renderer(canvas, graph, W, H);
 
 // ?finish=raw shows the ink plate with no print graph, for judging the drawing.
 if (q.get('finish') === 'raw' || q.get('raw') === '1') renderer.bypass = true;
-window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
 
 const camMode = q.get('cam');
 scene.cameraController.hudEnabled = q.get('hud') !== '0';
@@ -38,6 +37,9 @@ if (camMode === 'orbit' || camMode === 'fly' || camMode === 'user') {
 }
 
 const lab = new Lab({ graph, scene, renderer, state });
+// Handles go out only after every construction has finished: referencing `lab`
+// before this line threw a TDZ ReferenceError and blanked the whole page.
+window.VALE = { graph, scene, renderer, lab, state, W, H, DURATION };
 
 if (q.has('lab')) lab.open();
 

@@ -6,3 +6,4 @@ _site/
 image-search/
 .smoke.mjs
 .shots/
+.boot-smoke.cjs

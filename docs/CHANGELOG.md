@@ -310,3 +310,29 @@ use to build tiles from).”
 
 - `deploy-pages.yml` now triggers on **every branch** (`'**'`) and runs
   `npm run check` before building, so any branch is a previewable build.
+
+## 2026-10-27 — Turn 7: fix the blank deploy
+
+**Symptom:** the GitHub Pages build rendered a black screen.
+
+**Root cause (two, both fatal):**
+
+1. `build.mjs` substituted the bundle with `String.replace(marker, js)`. A
+   string replacement expands `$&`, `` $` ``, `$'` and `$$`; the minified bundle
+   contains `$&&` (esbuild names variables `$`), so the marker was injected into
+   the middle of the code. The inline script no longer parsed → blank page.
+2. `src/main.js` published `window.VALE` before `const lab = new Lab(...)`, a
+   temporal-dead-zone `ReferenceError` at startup.
+
+**Fixed**
+
+- `build.mjs`: function replacers, marker-survival check, and a `new Function`
+  parse check on the emitted bundle (fails the build on a syntax error).
+- `src/main.js`: `window.VALE` is published after all construction.
+- `tools/boot-smoke.mjs` + `npm run boot`: runs the *built* bundle under a DOM
+  shim, drives six frames, fails on any startup error. Wired into CI.
+- `npm run verify` = check + build + boot.
+- `.gitignore`: `.boot-smoke.cjs`.
+
+**Verified:** default, `?finish=raw` and `?cam=fly&lab=1` all boot clean; the
+extracted inline script passes `node --check`; the served page is 200 / ~127 KiB.

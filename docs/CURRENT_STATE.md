@@ -113,12 +113,20 @@ expected.
 
 ---
 
+## 4b. Build integrity
+
+`npm run verify` (check → build → boot) is the gate. `npm run boot` executes the
+built `index.html` bundle in Node with a DOM shim, drives six frames and fails on
+any startup error, so a corrupted or non-parsing bundle can no longer ship (the
+2026-10-27 blank deploy was a `$&` substitution bug in the build plus a TDZ error
+in `main.js`; both fixed, both now covered).
+
 ## 5. Honest weaknesses
 
-1. **No real browser verification.** The sandbox has no browser (apt and the
-   Playwright CDN are unreachable), so every judgement here comes from
-   `@napi-rs/canvas` stills of the ink plate with the shader bypassed. The
-   WebGL finish has not been seen.
+1. **No real browser verification.** The sandbox has no browser (apt, the
+   Playwright CDN and puppeteer's Chrome download are all blocked), so the
+   ink plate is judged from `@napi-rs/canvas` stills; startup is validated by
+   `tools/boot-smoke.mjs`. The WebGL finish itself still has not been seen.
 2. **Front-left of the tile is empty.** The crowd clusters at the crossing and
    the four buildings fill the back; the left front quadrant is pavement and
    one tree. The next pass should distribute street furniture there.

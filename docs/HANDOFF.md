@@ -74,12 +74,37 @@ tiers degrading as designed.
 
 ---
 
+## 2b. The blank-page bug (fixed 2026-10-27)
+
+The deployed page was blank because **the build corrupted the inline script**.
+`build.mjs` injected the bundle with `template.replace('/*__SCRIPT__*/', js)`,
+and `String.replace` expands `$&`, `` $` ``, `$'` and `$$` inside a *string*
+replacement. The minified bundle contains `$&&` (esbuild names variables `$`),
+so the marker was re-inserted into the middle of the code and the whole script
+failed to parse — a black canvas, no console output the user could see.
+
+Fixes in place:
+
+- `build.mjs` uses function replacers (`() => js`), refuses to write a file
+  that still contains a template marker, and parses the emitted bundle with
+  `new Function(js)` so a syntax error fails the build.
+- `src/main.js` published `window.VALE = { …, lab, … }` *before* `const lab`
+  was initialised — a temporal-dead-zone ReferenceError that also blanked the
+  page. Handles are now published after construction.
+- `tools/boot-smoke.mjs` (`npm run boot`) executes the built bundle in Node with
+  a DOM shim, drives six real frames, and fails on any startup error. CI runs it.
+- `npm run verify` = check + build + boot.
+
+Lesson: a build that "succeeds" can still ship a syntactically invalid page.
+The boot test is the guard.
+
 ## 3. Do not repeat these
 
 - **No browser in the sandbox.** `apt` cannot reach the Debian mirror, the
-  Playwright CDN times out, and `npm i gl` fails in node-gyp. Do not burn a turn
-  retrying them; use `tools/shot.mjs` (napi-canvas stills of the ink plate with
-  the shader bypassed).
+  Playwright CDN times out, `npm i gl` fails in node-gyp, and `puppeteer`'s
+  Chrome download is blocked. Do not burn a turn retrying them; use
+  `tools/shot.mjs` (napi-canvas stills) and `tools/boot-smoke.mjs` (real startup
+  path). `tools/browse.mjs` is kept for environments that do have Chrome.
 - **Flat-rim umbrella discs** and long stems: they read as flying saucers /
   lollipops. The rim + mid + apex dome with a tilted rim plane is the only
   version that worked.
