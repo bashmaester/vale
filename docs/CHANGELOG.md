@@ -49,6 +49,10 @@ architectural-sketch references rather than add more rigged detail.
 - `docs/HANDOFF.md`, `docs/ARCHITECTURE.md`, `README.md`, `docs/CI.md`: updated
   for the retrace, slower clock, oriented signs, lanes and quieter wet look.
 
+### Deployed
+
+- GitHub Pages workflow run `40531284984` succeeded for commit `f2d73ed`.
+
 ### Known / unverified
 
 - No browser screenshot available in the sandbox; a DOM smoke test passed across

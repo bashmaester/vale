@@ -13,9 +13,9 @@ The working agreement is:
 The push is the trigger. There is no separate manual deploy command needed.
 
 **Current live site:** https://bashmaester.github.io/vale/ — the retrace turn
-(tiny people, slower motion, street set, oriented signs, quiet wet) deploys
-through this same workflow. Successful runs on this branch so far include
-`40521585370` and `40521959240`.
+(tiny people, slower motion, street set, oriented signs, quiet wet) deployed as
+commit `f2d73ed` through this same workflow. Successful runs on this branch so
+far include `40521585370`, `40521959240` and `40531284984`.
 
 ## Workflow
 

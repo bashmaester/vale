@@ -176,8 +176,8 @@ Live site for this repository: **https://bashmaester.github.io/vale/**
 - handoff: `https://bashmaester.github.io/vale/docs/HANDOFF.md`
 
 Successful Pages workflow runs on this branch so far: `40521585370`,
-`40521959240`. The retrace turn deploys through the same workflow; check
-`DEPLOY_STATUS.md` for the latest run.
+`40521959240`, `40531284984`. The retrace turn deployed as commit `f2d73ed`;
+check `DEPLOY_STATUS.md` for the newest generated status.
 
 ---
 
