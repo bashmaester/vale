@@ -79,13 +79,16 @@ export class ShaderGraph {
     const calls = this.order
       .filter((n) => live.has(n.id))
       .map((n) => `  c = n_${n.id}(c, uv, field);`).join('\n');
+    // The gate weave lives in the shared helpers, so it needs its uniform only
+    // when the source node survives compilation.
+    const weave = live.has('source') ? this.u(this.getNode('source'), 'warp') : '0.0';
     return `${FRAGMENT_HEADER}
 ${uniforms.join('\n')}
 ${FRAGMENT_HELPERS}
 ${funcs.join('\n\n')}
 
 void main(){
-  vec2 uv = clamp(v_uv + gateWeave(v_uv, uTime), 0.0, 1.0);
+  vec2 uv = clamp(v_uv + gateWeave(v_uv, uTime, ${weave}), 0.0, 1.0);
   vec4 field = texture(uField, uv);
   vec4 c = texture(uInk, uv);
 ${calls}

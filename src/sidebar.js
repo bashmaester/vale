@@ -81,8 +81,11 @@ export class Sidebar {
   }
 
   _onKey(e) {
-    const tag = (e.target && e.target.tagName || '').toLowerCase();
-    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    const t = e.target || {};
+    const tag = (t.tagName || '').toLowerCase();
+    const typing = tag === 'textarea' || tag === 'select'
+      || (tag === 'input' && !['range', 'checkbox', 'radio', 'button'].includes((t.type || '').toLowerCase()));
+    if (typing) return;
     if (e.key === 'Tab') { e.preventDefault(); this.toggle(); }
   }
 

@@ -49,8 +49,9 @@ float fbm(vec2 p){
 mat2 rot(float a){ float s=sin(a), c=cos(a); return mat2(c,-s,s,c); }
 float luma(vec3 c){ return dot(c, vec3(0.299,0.587,0.114)); }
 
-vec2 gateWeave(vec2 uv, float t){
-  float w = u_source_warp;
+// The weave amount is passed in, so the whole helper still compiles when the
+// source node (and therefore u_source_warp) has been stripped out.
+vec2 gateWeave(vec2 uv, float t, float w){
   return vec2(
     sin(t*1.7 + uv.y*3.0)*0.00055,
     cos(t*1.31 + uv.x*2.0)*0.00035
