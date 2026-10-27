@@ -37,12 +37,17 @@ export class Renderer {
     // preserveDrawingBuffer forces the browser to copy the drawing buffer every
     // frame (~1-2 ms at 1440p) and it is only needed for readback. Screenshot
     // tools ask for it explicitly with ?capture=1.
-    const capture = typeof location !== 'undefined' && /[?&]capture=1/.test(location.search || '');
+    const search = typeof location !== 'undefined' ? (location.search || '') : '';
+    const capture = /[?&]capture=1/.test(search);
+    // Escape hatch: ?renderer=2d composites the plate directly, no GL at all.
+    const force2d = /[?&]renderer=2d/.test(search);
+    this._force2d = force2d;
     try {
-      this.gl = canvas.getContext('webgl2', {
+      // No powerPreference: asking for the discrete GPU has produced black
+      // canvases inside embeds, and the default choice is fine for a quad.
+      this.gl = force2d ? null : canvas.getContext('webgl2', {
         alpha: false, antialias: false, depth: false, stencil: false,
-        preserveDrawingBuffer: capture, powerPreference: 'high-performance',
-        desynchronized: true,
+        preserveDrawingBuffer: capture, failIfMajorPerformanceCaveat: false,
       });
     } catch (e) { this.gl = null; }
     if (!this.gl) { this._fallback(); return; }
@@ -51,20 +56,41 @@ export class Renderer {
     this.initGL();
   }
 
-  _fallback() {
+  _fallback(reason) {
+    if (this.fallback) return;
+    this._force2d = this._force2d || false;
     this.fallback = true;
-    const c = document.createElement('canvas');
-    c.className = this.canvas.className || 'screen';
-    c.id = `${this.canvas.id || 'screen'}-2d`;
-    c.setAttribute('aria-label', this.canvas.getAttribute('aria-label') || '');
-    this.canvas.replaceWith(c);
-    this.canvas = c;
-    this.ctx2d = c.getContext('2d');
+    this.fallbackReason = reason || 'no webgl2';
+    if (reason && typeof console !== 'undefined') console.warn(`VALE: ${reason} — compositing on the 2D canvas instead.`);
+    // Never let the escape hatch throw: if any DOM call here failed, the page
+    // would stay black with no way back.
+    if (this._force2d && this.canvas.getContext) {
+      this.ctx2d = this.canvas.getContext('2d');
+      this.resize(this.W, this.H);
+      return;
+    }
+    try {
+      const c = document.createElement('canvas');
+      c.className = this.canvas.className || 'screen';
+      c.id = `${this.canvas.id || 'screen'}-2d`;
+      if (c.setAttribute && this.canvas.getAttribute) {
+        c.setAttribute('aria-label', this.canvas.getAttribute('aria-label') || '');
+      }
+      if (this.canvas.replaceWith) this.canvas.replaceWith(c);
+      this.canvas = c;
+      this.ctx2d = c.getContext('2d');
+    } catch (e) {
+      this.ctx2d = this.canvas.getContext ? this.canvas.getContext('2d') : null;
+    }
     this.resize(this.W, this.H);
   }
 
   initGL() {
     const gl = this.gl;
+    // Order matters: the program must exist before the quad asks it where
+    // `a_pos` lives. Building the quad first threw on a real GL context
+    // (getAttribLocation without a program) and blanked the whole page.
+    if (!this._buildProgram()) return;
     if (!this._built) {
       this._built = true;
       this._initQuad();
@@ -73,7 +99,6 @@ export class Renderer {
       gl.disable(gl.BLEND);
       gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     }
-    this._buildProgram();
     this.resize(this.W, this.H);
   }
 
@@ -87,7 +112,7 @@ export class Renderer {
     } catch (e) {
       console.error(e);
       // Keep the film visible even if a node produces invalid GLSL.
-      this._fallback();
+      this._fallback(`look graph did not compile (${e && e.message ? e.message : e})`);
       return false;
     }
     if (this.program) gl.deleteProgram(this.program);
@@ -98,7 +123,21 @@ export class Renderer {
     for (const name of ['uInk', 'uField', 'uRes', 'uTime', ...Object.keys(this.graph.uniformValues())]) {
       this.loc[name] = gl.getUniformLocation(program, name);
     }
+    // Attribute locations belong to the program, so re-point the quad every
+    // time the program is rebuilt.
+    if (this.quad) this._bindQuadAttrib();
     return true;
+  }
+
+  _bindQuadAttrib() {
+    const gl = this.gl;
+    if (!this.program || !this.quad || !gl) return;
+    const a = gl.getAttribLocation(this.program, 'a_pos');
+    this.attrPos = a;
+    if (a < 0) return;
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.quad);
+    gl.enableVertexAttribArray(a);
+    gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
   }
 
   _initQuad() {
@@ -106,10 +145,8 @@ export class Renderer {
     const quad = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, quad);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1,-1, 1,-1, -1,1, 1,1]), gl.STATIC_DRAW);
-    const a = gl.getAttribLocation(this.program, 'a_pos');
-    gl.enableVertexAttribArray(a);
-    gl.vertexAttribPointer(a, 2, gl.FLOAT, false, 0, 0);
     this.quad = quad;
+    this._bindQuadAttrib();
   }
 
   _initTextures() {
@@ -128,6 +165,13 @@ export class Renderer {
     this.texField = makeTex(1);
     this._inkAlloc = 0;
     this._fieldAlloc = 0;
+  }
+
+  // Why did we end up on the 2D path? Kept for the error chip and the console.
+  get backend() {
+    if (this.bypass) return 'plate';
+    if (this.fallback) return this.fallbackReason || '2d';
+    return 'webgl2';
   }
 
   // Allocate the texture store once per size. Per-frame uploads then reuse it
@@ -223,5 +267,42 @@ export class Renderer {
     gl.clearColor(0.02, 0.024, 0.02, 1);
     gl.clear(gl.COLOR_BUFFER_BIT);
     gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    this._healthCheck(gl, plate);
+  }
+
+  // A GL pass that renders nothing must not look like a broken page: sample the
+  // centre pixel on the first few frames and fall back to the 2D composite if
+  // the pass came out black while the plate has ink there.
+  _healthCheck(gl, plate) {
+    if (this._checked || this.fallback) return;
+    // Sample twice: one black frame during startup must not trip this.
+    this._samples = this._samples || [];
+    const px = new Uint8Array(4);
+    let black = true;
+    try {
+      gl.readPixels((this.W / 2) | 0, (this.H / 2) | 0, 1, 1, gl.RGBA, gl.UNSIGNED_BYTE, px);
+      black = px[0] + px[1] + px[2] === 0;
+    } catch (e) { this._checked = true; return; }
+    this._samples.push(black);
+    if (this._samples.length < 3) return;
+    this._checked = true;
+    let ink = 0;
+    try {
+      const c = plate.getContext('2d');
+      const d = c.getImageData((this.W / 2) | 0, this.H - 1 - ((this.H / 2) | 0), 1, 1).data;
+      ink = d[0] + d[1] + d[2];
+    } catch (e) { ink = 255; }   // no readback: assume the plate has ink
+    if (this._samples.every(Boolean) && ink > 24) {
+      this._fallback(`the WebGL pass rendered nothing (${this._glInfo(gl)})`);
+    }
+  }
+
+  _glInfo(gl) {
+    try {
+      const ext = gl.getExtension && gl.getExtension('WEBGL_debug_renderer_info');
+      if (!ext) return 'no renderer info';
+      return String(gl.getParameter(ext.UNMASKED_RENDERER_WEBGL)).slice(0, 90);
+    } catch (e) { return 'no renderer info'; }
   }
 }

@@ -111,6 +111,14 @@ Also this turn: `walls` is a bitmask (back / left, default open), the eight
 buffer cells render as wireframe or point cloud with per-cell toggles, the
 drone is the default camera, and `\` hides the whole UI.
 
+**Trap that cost a deploy:** `initGL()` must compile the program *before* the
+quad. `getAttribLocation(undefined, 'a_pos')` throws on a real context, which
+killed the constructor and left a black canvas — and the headless harness never
+saw it, because without WebGL it takes the 2D fallback. `tools/renderer-smoke.mjs`
+now covers the GL path with a strict stand-in (wrong-kind arguments throw), and
+`npm run verify` includes it. When something on screen goes blank, check
+`?renderer=2d` and the on-screen error strip first.
+
 **Next architectural step (not done):** move the set and the actors off
 Canvas2D — batched WebGL2 instancing first (quads for strokes, one draw call per
 line weight), WebGPU behind a capability check once the geometry contract is

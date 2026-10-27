@@ -202,3 +202,21 @@ body.ui-hidden .sb-handle { display: none; }
 .sb-handle { opacity: 0; transition: opacity .18s ease; }
 body:hover .sb-handle { opacity: 1; }
 body.ui-hidden .cam-hud { display: none; }
+
+/* --- on-screen failure notice ------------------------------------------- */
+.vale-err {
+  position: fixed;
+  left: 12px;
+  bottom: 12px;
+  z-index: 60;
+  max-width: min(680px, calc(100vw - 24px));
+  padding: 7px 10px;
+  border-radius: 5px;
+  border: 1px solid #d43b30;
+  background: rgba(30, 8, 6, .92);
+  color: #f3dcd6;
+  font: 10px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace;
+  word-break: break-word;
+}
+.vale-err[hidden] { display: none !important; }
+.vale-err b { color: #ff8b7c; letter-spacing: .08em; }

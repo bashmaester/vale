@@ -158,6 +158,32 @@ function govern(frameMs) {
   else if (frameEma < 13.5 && quality < 1) setQuality(quality + 0.05);
 }
 
+// --- visible diagnostics ---------------------------------------------------
+// A frame that throws used to leave a black canvas and a console message nobody
+// reads. Failures now show up on screen (and `window.__valeError` stays set for
+// tooling).
+function showError(msg) {
+  let box = document.getElementById('vale-err');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'vale-err';
+    box.className = 'vale-err';
+    const t = document.createElement('b');
+    t.textContent = 'VALE: ';
+    box.appendChild(t);
+    const body = document.createElement('span');
+    body.id = 'vale-err-msg';
+    box.appendChild(body);
+    document.body.appendChild(box);
+  }
+  const body = document.getElementById('vale-err-msg');
+  if (body) body.textContent = String(msg || 'unknown error').slice(0, 320);
+  box.hidden = false;
+}
+window.addEventListener('error', (e) => showError((e && e.message) || 'script error'));
+window.addEventListener('unhandledrejection', (e) => showError((e && e.reason && e.reason.message) || 'promise rejection'));
+window.VALE.showError = showError;
+
 let last = performance.now();
 let lastError = '';
 function frame(now) {
@@ -182,10 +208,12 @@ function frame(now) {
       lastError = msg;
       window.__valeError = msg;
       console.error('VALE frame error:', err);
+      showError(`frame error — ${msg}`);
     }
   } finally {
     stats.update(frameMs);
     govern(frameMs);
+    if (stats.open) stats.setBackend && stats.setBackend(renderer.backend);
     requestAnimationFrame(frame);
   }
 }

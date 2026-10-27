@@ -47,6 +47,20 @@ each neighbour switchable and off by default; hide the UI until `\` is pressed.
 
 ### Fixed
 
+- **Blank page after the Turn 11 renderer refactor.** `initGL()` built the
+  full-screen quad before compiling the look program, so `_initQuad()` called
+  `gl.getAttribLocation(undefined, 'a_pos')`. On a real WebGL2 context that
+  throws, the `Renderer` constructor threw, module evaluation stopped and the
+  canvas stayed black — the failure was invisible in Node because the headless
+  harness has no WebGL and took the 2D fallback every time. The program is now
+  built first, the attribute is bound (and re-bound whenever the program is
+  rebuilt), and `tools/renderer-smoke.mjs` runs the renderer against a strict
+  WebGL2 stand-in that rejects wrong-kind arguments, so this class of bug fails
+  the build instead of the page.
+- The renderer can no longer die silently: a GPU pass that produces nothing for
+  three frames falls back to the 2D composite (logging the reason and the
+  renderer string), `?renderer=2d` forces that path, and frame errors are shown
+  in an on-screen strip instead of only in the console.
 - `caseFrame` was never read by the case builder (it checked `params.case`), so
   the toggle did nothing; the frame now disappears when switched off.
 - Shader presets no longer leak `enabled: false` from `plate` into the next
