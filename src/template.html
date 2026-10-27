@@ -9,6 +9,31 @@
 </head>
 <body>
 <canvas id="screen" class="screen" aria-label="A silent animated print of a rainy Tokyo crossing"></canvas>
+<script>
+/* Pre-boot watchdog. If the bundle throws before it can draw anything, the page
+   used to be a silent black rectangle. This runs first and paints the reason. */
+window.addEventListener('error', function (e) {
+  var box = document.getElementById('vale-err');
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'vale-err';
+    box.className = 'vale-err';
+    box.innerHTML = '<b>VALE: </b><span id="vale-err-msg"></span>';
+    (document.body || document.documentElement).appendChild(box);
+  }
+  var msg = document.getElementById('vale-err-msg');
+  if (msg) {
+    var text = (e && (e.message || (e.error && e.error.message))) || 'script error';
+    msg.textContent = String(text).slice(0, 320);
+  }
+});
+window.addEventListener('unhandledrejection', function (e) {
+  var msg = document.getElementById('vale-err-msg');
+  var text = (e && e.reason && (e.reason.message || e.reason)) || 'promise rejection';
+  if (msg) msg.textContent = String(text).slice(0, 320);
+  else dispatchEvent(new ErrorEvent('error', { message: String(text) }));
+});
+</script>
 <div id="lab" hidden></div>
 <script>/*__SCRIPT__*/</script>
 </body>

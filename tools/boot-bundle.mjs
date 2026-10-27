@@ -79,6 +79,17 @@ if (useGL) {
 document.getElementById = (id) => (id === 'screen' ? screen : null);
 document.querySelector = () => null;
 
+globalThis.addEventListener = () => {};
+globalThis.removeEventListener = () => {};
+globalThis.dispatchEvent = () => true;
+if (!globalThis.ErrorEvent) {
+  globalThis.ErrorEvent = class ErrorEvent extends Error {
+    constructor(type, init = {}) { super(init.message || ''); this.type = type; }
+  };
+}
+globalThis.window = globalThis.window || globalThis;
+globalThis.window.addEventListener = () => {};
+
 let raf = null;
 globalThis.requestAnimationFrame = (fn) => { raf = fn; return 1; };
 globalThis.cancelAnimationFrame = () => {};
