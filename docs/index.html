@@ -26,26 +26,26 @@ footer{padding:20px clamp(18px,5vw,64px);border-top:1px solid #26332c;color:#617
 <body>
 <header>
   <h1>VALE / DOCS &amp; HANDOFF</h1>
-  <div class="meta">branch arena/bab4bc10-vale · commit f11d8154 · built 2026-10-27T19:22:28.979Z · index.html 167,484 bytes</div>
+  <div class="meta">branch arena/bab4bc10-vale · commit dfbf3633 · built 2026-10-27T19:47:55.057Z · index.html 180,875 bytes</div>
 </header>
 <main>
   <a class="film" href="../index.html">▶ open the self-contained film</a>
   <div class="grid">
-    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>**Last updated:** 2026-10-27 (Turn 11 — frame budget, branch `arena/bab4bc10-vale`)
+    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>**Last updated:** 2026-10-27 (Turn 12 — tileable cells and palettes, branch `arena/bab4bc10-vale`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
-drives the sample, not the deliverabl</p></a>
+drives the sample, not</p></a>
     <a class="card" href="HANDOFF.md"><h2>HANDOFF</h2><p>**Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.</p></a>
     <a class="card" href="ARCHITECTURE.md"><h2>ARCHITECTURE</h2><p>VALE is an engine foundation for a cosy procedural city sim. The unit of the
 engine is a **tile**: a modular 3D volume — a cut-away box of city that can be
 lifted out, inspected and snapped beside another tile. The sample scene is one
-such tile, presented in a physical-looking case (plinth, corner posts, cut-face
-caps, engraved label) so the modularity is vi</p></a>
+such tile, presented inside a glass case — four panes and a lid, no posts or
+rails — so the modularity is visible without any</p></a>
     <a class="card" href="CHANGELOG.md"><h2>CHANGELOG</h2><p>Dates use the user’s local timezone (America/New_York).</p></a>
     <a class="card" href="CI.md"><h2>CI / PAGES</h2><p>The working agreement is:</p></a>
-    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit f11d8154 on arena/bab4bc10-vale, built 2026-10-27T19:22:28.979Z.</p></a>
+    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit dfbf3633 on arena/bab4bc10-vale, built 2026-10-27T19:47:55.057Z.</p></a>
     <a class="card" href="DEPLOY_STATUS.md"><h2>DEPLOY STATUS</h2><p>Fresh deployment metadata for this Pages build.</p></a>
   </div>
   <h2 class="sec">README (live copy)</h2>
@@ -80,6 +80,7 @@ Useful URLs:
 | `index.html?cam=fps` | first-person walk (also `third`, `drone`, `cinematic`) |
 | `index.html?shot=crane` | cinematic shot: `rig`, `tripod`, `crane`, `orbit`, `detail` |
 | `index.html?ui=1` | opens the scene-control sidebar (also `?panel=1`) |
+| `index.html?palette=patent` | boots into a palette (`mobius`, `patent`, `ink`, `bw`, `custom`) |
 | `index.html?scale=0.7` | renders the plate/shader at 70 % for slower machines |
 | `index.html?hud=0` | disables the tiny camera help line |
 | `index.html?preset=riso` | starts with the Risograph look |
@@ -88,7 +89,8 @@ Useful URLs:
 | `index.html?lab=1&amp;paused=1&amp;t=7` | paused lab frame for inspection |
 
 Keyboard shortcuts: `\` shows/hides the whole UI (it starts hidden, and the
-camera starts in drone mode), `L` lab, `Tab` scene controls. Inside the lab: `Space`
+camera starts in drone mode), `L` lab, `Tab` scene controls, `\` stats, `H` hide
+all UI. Inside the lab: `Space`
 play/pause, `R` reset, `Ctrl/Cmd+S` save a PNG frame (a bare `S` used to save one
 on every step backwards — it no longer does anything outside the lab). Camera: `C` cycles cinematic → first person →
 third person → drone, `1`–`4` jump straight to a mode, `V` returns to the

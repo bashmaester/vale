@@ -354,4 +354,64 @@ export const PRESETS = {
     },
     scene: { rainAmount: 1.15, rainSpeed: 1.05, puddleAmount: 1.1 },
   },
+
+  // --- styles that pair with the colour palettes --------------------------
+  // The palette pass sets the paper and the ink; these decide how much ink the
+  // finish puts down on top of it.
+  patent: {
+    label: 'Patent sketch',
+    graph: {
+      source: { misreg: 0.45, warp: 0.25 },
+      carve: { strength: 0.34, scale: 12, boil: 0.16 },
+      detail: { contour: 0.62, scale: 8, warp: 0.4, micro: 0.30, spark: 0.10 },
+      hatch: { angle: -0.62, spacing: 9.5, strength: 0.07, warp: 0.42, jitter: 0.55, breakup: 0.44, cross: 0.04 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
+      palette: { posterize: 0.12, bleed: 0.05, dither: 0.02, accent: 0.55 },
+      paper: { grain: 0.05, fiber: 0.03, speckle: 0.22, vignette: 0.06 },
+      output: { exposure: 1.0, contrast: 0.96 },
+    },
+    scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },
+  },
+  ink: {
+    label: 'Ink',
+    graph: {
+      source: { misreg: 0.9, warp: 0.35 },
+      carve: { strength: 0.72, scale: 13, boil: 0.16 },
+      detail: { contour: 0.20, scale: 12, warp: 0.5, micro: 0.16, spark: 0.14 },
+      hatch: { angle: -0.62, spacing: 6.0, strength: 0.24, warp: 0.55, jitter: 0.4, breakup: 0.3, cross: 0.22 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
+      palette: { posterize: 0.55, bleed: 0.30, dither: 0.05, accent: 0.9 },
+      paper: { grain: 0.08, fiber: 0.04, speckle: 0.35, vignette: 0.16 },
+      output: { exposure: 1.02, contrast: 1.22 },
+    },
+    scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },
+  },
+  bw: {
+    label: 'B / W',
+    graph: {
+      source: { misreg: 0.5, warp: 0.3 },
+      carve: { strength: 0.5, scale: 14, boil: 0.18 },
+      detail: { contour: 0.34, scale: 10, warp: 0.5, micro: 0.24, spark: 0.16 },
+      hatch: { angle: 0.6, spacing: 7.5, strength: 0.16, warp: 0.4, jitter: 0.35, breakup: 0.32, cross: 0.14 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
+      palette: { posterize: 0.30, bleed: 0.10, dither: 0.04, accent: 0.4 },
+      paper: { grain: 0.07, fiber: 0.04, speckle: 0.28, vignette: 0.10 },
+      output: { exposure: 1.0, contrast: 1.10 },
+    },
+    scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },
+  },
+  mobius: {
+    label: 'Möbius',
+    graph: {
+      source: { misreg: 1.0, warp: 0.5 },
+      carve: { strength: 0.6, scale: 15, boil: 0.24 },
+      detail: { contour: 0.30, scale: 10, warp: 0.7, micro: 0.26, spark: 0.22 },
+      hatch: { angle: -0.62, spacing: 8.5, strength: 0.10, warp: 0.5, jitter: 0.42, breakup: 0.34, cross: 0.10 },
+      rain: { enabled: false, intensity: 0, speed: 0, reflect: 0, splash: 0 },
+      palette: { posterize: 0.50, bleed: 0.20, dither: 0.06, accent: 1.05 },
+      paper: { grain: 0.07, fiber: 0.03, speckle: 0.34, vignette: 0.13 },
+      output: { exposure: 1.06, contrast: 1.14 },
+    },
+    scene: { rainAmount: 1.0, rainSpeed: 1.0, puddleAmount: 1.0 },
+  },
 };

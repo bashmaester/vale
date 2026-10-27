@@ -6,12 +6,13 @@
 //   3. the markings — zebra, stop lines, arrows, patching, drains,
 //   4. the buildings — four lots with lit windows, shopfronts, signs, roofs,
 //   5. the furniture — signals, lamps, wires, tree, vending machine, bicycles,
-//   6. the frame — plinth, posts, rails, layer caps, engraved label.
+//   6. the boundary — glass panes and a lid on the plinth, no posts or rails.
 //
 // Everything is drawn into the 2D plate through Camera.project(), so the same
 // scene can be flown around. Nothing here is screen-space art except glows.
 
 import { PALETTE, glowAt as glowBlit } from './draw.js';
+import { grade } from './palette.js';
 import {
   v3, clamp, lerp, hash11, hash21, makeRng, quadLerp, smoothstep, TAU,
 } from './math.js';
@@ -113,9 +114,9 @@ export function drawWalls(p, camera, detail = { wallDetail: 1 }, params = {}) {
     const bot = camera.project(v3(0, 0, z0));
     if (top && bot) {
       const g = ctx.createLinearGradient(0, top.y, 0, bot.y);
-      g.addColorStop(0, SHADE.wallHi);
-      g.addColorStop(0.45, SHADE.wall);
-      g.addColorStop(1, '#08080a');
+      g.addColorStop(0, grade(SHADE.wallHi));
+      g.addColorStop(0.45, grade(SHADE.wall));
+      g.addColorStop(1, grade('#08080a'));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, p.W, p.H);
     }
@@ -197,9 +198,9 @@ export function drawWalls(p, camera, detail = { wallDetail: 1 }, params = {}) {
     const bot = camera.project(v3(x0, 0, 0));
     if (top && bot) {
       const g = ctx.createLinearGradient(0, top.y, 0, bot.y);
-      g.addColorStop(0, '#18181c');
-      g.addColorStop(0.5, '#0c0c0e');
-      g.addColorStop(1, '#070709');
+      g.addColorStop(0, grade('#18181c'));
+      g.addColorStop(0.5, grade('#0c0c0e'));
+      g.addColorStop(1, grade('#070709'));
       ctx.fillStyle = g;
       ctx.fillRect(0, 0, p.W, p.H);
     }
@@ -1581,8 +1582,8 @@ export function drawReflections(p, camera, timeline, detail = { puddleDetail: 1 
     if (q && Number.isFinite(q.x) && Number.isFinite(q.y) && Number.isFinite(q.scale)) {
       const c = p.ctx;
       const g = c.createRadialGradient(q.x, q.y, 0, q.x, q.y, q.scale * 2.4);
-      g.addColorStop(0, 'rgba(43,184,174,0.14)');
-      g.addColorStop(1, 'rgba(43,184,174,0)');
+      g.addColorStop(0, grade('rgba(43,184,174,0.14)'));
+      g.addColorStop(1, grade('rgba(43,184,174,0)'));
       c.save();
       c.globalCompositeOperation = 'lighter';
       c.fillStyle = g;
@@ -1596,11 +1597,6 @@ export function drawReflections(p, camera, timeline, detail = { puddleDetail: 1 
 // 8. The frame: plinth, posts, rails, cut caps, engraved label.
 // ---------------------------------------------------------------------------
 
-function edgeStrip(p, camera, a, b, c2, d, fill) {
-  return p.projectPoly(camera, [a, b, c2, d], {
-    fill, stroke: BONE(0.55), width: 0.9, alpha: 1, jitter: 0.18, seed: 4100,
-  });
-}
 
 // The case is a physical object, so it has to take part in the depth sort like
 // everything else inside the volume. These builders return drawables that the
@@ -1620,55 +1616,55 @@ export function collectFrame(p, camera, params = {}) {
     items.push({ depth: depthAt(x, y, z) + bias, draw, group });
   };
 
-  // --- back: rails on the closed walls + the two far posts -----------------
-  add((x0 + x1) / 2, y1, z0, (pp) => {
-    line3(pp, camera, [x0, y1, z0], [x1, y1, z0], {
-      color: BONE(0.14), width: 1.0, alpha: 0.7, jitter: 0.08, seed: 4200, double: false,
-    });
-  }, 1.5, 'far');
-  add(x0, y1, (z0 + z1) / 2, (pp) => {
-    line3(pp, camera, [x0, y1, z0], [x0, y1, z1], {
-      color: BONE(0.10), width: 0.9, alpha: 0.6, jitter: 0.08, seed: 4201, double: false,
-    });
-  }, 1.5, 'far');
-  for (const [px, pz] of [[x0, z0], [x1, z0]]) {
-    add(px, (y0 + y1) / 2, pz, (pp) => {
-      pp.box(camera, [px, (y0 + y1 + 0.2) / 2, pz], [TILE.post * 1.5, y1 - y0 + 0.2, TILE.post * 1.5], {
-        fill: C.shell, stroke: BONE(0.30), width: 0.75, alpha: 0.95,
-        seed: 4210 + px, jitter: 0.06, edgeAlpha: 0.55,
+  // --- glass: the boundary is a pane, never a frame -----------------------
+  //
+  // Four sides and a lid, each a single translucent plane with a soft gradient
+  // and one diagonal sheen. No posts, no rails, no cut caps: hardware on the
+  // edge would read as a frame around one cell, and cells have to butt
+  // together without a seam for the neighbouring tiles (and LoD) to work.
+  const W = x1 - x0, D = z1 - z0;
+  const pane = (pts, seed, a0, a1, group, bias = 0) => {
+    let cx = 0, cy = 0, cz = 0;
+    for (const q of pts) { cx += q.x; cy += q.y; cz += q.z; }
+    cx /= pts.length; cy /= pts.length; cz /= pts.length;
+    add(cx, cy, cz, (pp) => {
+      pp.poly(pts, {
+        gradient: [[0, TEAL(a0)], [0.72, TEAL((a0 + a1) * 0.5)], [1, TEAL(a1)]],
+        gradientDir: 'v', stroke: null, jitter: 0.12, seed,
       });
-    }, 0, 'far');
-  }
-
-  // --- cut faces: wall thickness and the layered ground section ------------
-  add(x1, 3.0, (z0 + z1) / 2, (pp) => {
-    edgeStrip(pp, camera,
-      v3(x1, y1, z0), v3(x1, y1, z0 + s), v3(x1, 0.0, z0 + s), v3(x1, 0.0, z0),
-      '#2c2c31');
-    // Ground section at the open right face: base, asphalt, sidewalk cap.
-    const layer = (ya, yb, fill, alpha = 1) => {
-      pp.projectPoly(camera, [
-        v3(x1, ya, z0), v3(x1, ya, z1), v3(x1, yb, z1), v3(x1, yb, z0),
-      ], { fill: `${fill}`, stroke: null, alpha, jitter: 0.12, seed: 4300 + ya });
-    };
-    layer(y0, -0.55, 'rgba(24,24,28,0.95)');
-    layer(-0.55, -0.10, 'rgba(42,42,47,0.95)');
-    layer(-0.10, 0.0, 'rgba(14,14,17,0.98)');
-    layer(0.0, SIDEWALK_Y, 'rgba(68,68,74,0.98)');
-    for (let i = 0; i < 8; i++) {
-      const zz = lerp(z0 + 0.8, z1 - 0.8, i / 7);
-      line3(pp, camera, [x1 - 0.02, y0 + 0.35, zz], [x1 + 0.02, y0 + 0.35, zz], {
-        color: BONE(0.18), width: 0.6, alpha: 0.8,
-        jitter: 0.1, seed: 4310 + i, double: false,
+    }, bias, group);
+  };
+  const sheen = (a3, b3, c3, d3, seed, alpha, group, bias = 0) => {
+    const cx = (a3.x + b3.x + c3.x + d3.x) / 4;
+    const cy = (a3.y + b3.y + c3.y + d3.y) / 4;
+    const cz = (a3.z + b3.z + c3.z + d3.z) / 4;
+    add(cx, cy, cz, (pp) => {
+      pp.poly([a3, b3, c3, d3], {
+        fill: BONE(alpha), stroke: null, jitter: 0.16, seed,
       });
-    }
-  }, 0.6, 'far');
+    }, bias, group);
+  };
 
-  add(x0, 3.0, z1, (pp) => {
-    edgeStrip(pp, camera,
-      v3(x0, y1, z1), v3(x0 + s, y1, z1), v3(x0 + s, 0.0, z1), v3(x0, 0.0, z1),
-      '#232328');
-  }, 0, 'far');
+  // Closed sides first (behind the set).
+  pane([v3(x0, y0, z0), v3(x1, y0, z0), v3(x1, y1, z0), v3(x0, y1, z0)],
+    4700, 0.055, 0.135, 'far', 0.4);
+  sheen(v3(x0 + W * 0.22, y1, z0), v3(x0 + W * 0.34, y1, z0),
+    v3(x0 + W * 0.10, y0, z0), v3(x0 + W * 0.02, y0, z0), 4701, 0.035, 'far', 0.3);
+  pane([v3(x0, y0, z0), v3(x0, y0, z1), v3(x0, y1, z1), v3(x0, y1, z0)],
+    4702, 0.05, 0.12, 'far', 0.4);
+  sheen(v3(x0, y1, z0 + D * 0.24), v3(x0, y1, z0 + D * 0.36),
+    v3(x0, y0, z0 + D * 0.10), v3(x0, y0, z0 + D * 0.02), 4703, 0.03, 'far', 0.3);
+
+  // Open sides and the lid last (in front of the set). They only tint, so the
+  // film still reads through them.
+  pane([v3(x0, y0, z1), v3(x1, y0, z1), v3(x1, y1, z1), v3(x0, y1, z1)],
+    4704, 0.012, 0.05, 'near', -0.6);
+  sheen(v3(x1 - W * 0.18, y1, z1), v3(x1 - W * 0.30, y1, z1),
+    v3(x1 - W * 0.06, y0, z1), v3(x1 + W * 0.02, y0, z1), 4705, 0.028, 'near', -0.7);
+  pane([v3(x1, y0, z0), v3(x1, y0, z1), v3(x1, y1, z1), v3(x1, y1, z0)],
+    4706, 0.012, 0.045, 'near', -0.6);
+  pane([v3(x0, y1, z0), v3(x1, y1, z0), v3(x1, y1, z1), v3(x0, y1, z1)],
+    4707, 0.01, 0.022, 'near', -0.8);
 
   // --- the near slab face: what the streets sit on -------------------------
   add((x0 + x1) / 2, 0, z1, (pp) => {
@@ -1680,103 +1676,10 @@ export function collectFrame(p, camera, params = {}) {
     ], { fill: 'rgba(62,62,68,0.98)', stroke: null, jitter: 0.14, seed: 4321 });
   }, 0.3, 'far');
 
-  // --- plinth + engraved label --------------------------------------------
-  const plinthTop = 0.0;
-  const plinthBottom = y0 - 0.35;
-  const px0 = x0 - s, px1 = x1 + s, pz1 = z1 + s;
-  add((px0 + px1) / 2, plinthTop, pz1, (pp) => {
-    pp.projectPoly(camera, [
-      v3(px0, plinthTop, pz1), v3(px1, plinthTop, pz1),
-      v3(px1, plinthBottom, pz1), v3(px0, plinthBottom, pz1),
-    ], {
-      fill: '#0b0f0c', stroke: BONE(0.46), width: 1.0, alpha: 1,
-      jitter: 0.08, seed: 4400,
-    });
-    pp.projectPoly(camera, [
-      v3(px1, plinthTop, z0 - s), v3(px1, plinthTop, pz1),
-      v3(px1, plinthBottom, pz1), v3(px1, plinthBottom, z0 - s),
-    ], {
-      fill: '#080c09', stroke: BONE(0.36), width: 0.9, alpha: 1,
-      jitter: 0.08, seed: 4401,
-    });
-    // Reflected plinth on the table surface: the model sits on something.
-    const reflectBottom = y0 - 0.9;
-    pp.projectPoly(camera, [
-      v3(px0, y0, pz1), v3(px1, y0, pz1),
-      v3(px1, reflectBottom, pz1 + 0.1), v3(px0, reflectBottom, pz1 + 0.1),
-    ], {
-      fill: 'rgba(18,26,21,0.30)', stroke: null, jitter: 0.12, seed: 4480,
-    });
-    line3(pp, camera, [px0, plinthTop, pz1], [px1, plinthTop, pz1], {
-      color: BONE(0.52), width: 1.0, alpha: 0.9,
-      jitter: 0.05, seed: 4402, double: false,
-    });
-    line3(pp, camera, [px0, plinthBottom, pz1], [px1, plinthBottom, pz1], {
-      color: BONE(0.24), width: 0.7, alpha: 0.75,
-      jitter: 0.05, seed: 4403, double: false,
-    });
-  }, 0.2);
+  // No plinth and no label plate: the case is glass and planes, so the volume
+  // stands on its own floor slab instead of on furniture. Anything along an
+  // edge would read as a frame around a single cell.
 
-  // Label sits on the plinth face, fractionally in front of it.
-  add(1.2, -0.95, pz1 + 0.012, (pp) => {
-    const plateW = 7.6, plateH = 0.95;
-    const cx = 1.2, cy = -0.95, cz = pz1 + 0.012;
-    const pq = pp.projectPoly(camera, [
-      v3(cx - plateW / 2, cy + plateH / 2, cz), v3(cx + plateW / 2, cy + plateH / 2, cz),
-      v3(cx + plateW / 2, cy - plateH / 2, cz), v3(cx - plateW / 2, cy - plateH / 2, cz),
-    ], {
-      fill: 'rgba(14,19,15,0.98)', stroke: BONE(0.26), width: 0.65, alpha: 1,
-      jitter: 0.04, seed: 4410,
-    });
-    if (!pq) return;
-    pp.line([quadLerp(pq, 0.04, 0.24), quadLerp(pq, 0.96, 0.24)], {
-      color: BONE(0.26), width: 0.55, alpha: 0.9, jitter: 0.05, seed: 4411, double: false,
-    });
-    pp.line([quadLerp(pq, 0.04, 0.80), quadLerp(pq, 0.96, 0.80)], {
-      color: BONE(0.18), width: 0.5, alpha: 0.85, jitter: 0.05, seed: 4412, double: false,
-    });
-    let u = 0.06, k = 0;
-    while (u < 0.94) {
-      const wMark = 0.012 + hash11(4430 + k * 3.7) * 0.026;
-      const gap = 0.008 + hash11(4440 + k * 1.9) * 0.012;
-      const v0 = 0.44, v1 = 0.60;
-      pp.poly([
-        quadLerp(pq, u, v0), quadLerp(pq, u + wMark, v0),
-        quadLerp(pq, u + wMark, v1), quadLerp(pq, u, v1),
-      ], { fill: BONE(0.22 + hash11(4450 + k) * 0.16), stroke: null, jitter: 0.02, seed: 4460 + k });
-      u += wMark + gap;
-      k++;
-    }
-    pp.poly([
-      quadLerp(pq, 0.015, 0.44), quadLerp(pq, 0.032, 0.44),
-      quadLerp(pq, 0.032, 0.60), quadLerp(pq, 0.015, 0.60),
-    ], { fill: RED(0.85), stroke: null, jitter: 0.02, seed: 4470 });
-  }, 0.05);
-
-  // --- corner posts and top rails on the open faces ------------------------
-  const postW = TILE.post * 1.7;
-  for (const [px, pz] of [[x0, z1], [x1, z1], [x1, z0]]) {
-    add(px, (y0 + y1) / 2, pz, (pp) => {
-      pp.box(camera, [px, (y0 + y1 + 0.25) / 2, pz], [postW, y1 - y0 + 0.25, postW], {
-        fill: C.shell, stroke: BONE(0.58), width: 0.85, alpha: 0.98,
-        seed: 4500 + px + pz, jitter: 0.06, edgeAlpha: 0.72,
-      });
-    }, -0.2);
-  }
-
-  const railH = TILE.rail;
-  add((x0 + x1) / 2, y1 - railH / 2, z1, (pp) => {
-    pp.box(camera, [(x0 + x1) / 2, y1 - railH / 2, z1], [x1 - x0, railH, railH], {
-      fill: '#16161a', stroke: BONE(0.52), width: 0.85, alpha: 0.98,
-      seed: 4600, jitter: 0.05, edgeAlpha: 0.72,
-    });
-  });
-  add(x1, y1 - railH / 2, (z0 + z1) / 2, (pp) => {
-    pp.box(camera, [x1, y1 - railH / 2, (z0 + z1) / 2], [railH, railH, z1 - z0], {
-      fill: '#0e0e12', stroke: BONE(0.46), width: 0.85, alpha: 0.98,
-      seed: 4601, jitter: 0.05, edgeAlpha: 0.7,
-    });
-  });
   return items;
 }
 

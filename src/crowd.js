@@ -168,9 +168,12 @@ export class Crowd {
       // tile. They walk in from there, so nobody ever pops into mid-frame.
       const approachSign = rng.chance(0.5) ? 1 : -1;
       const edgeX = approachSign > 0 ? TILE.x1 - 0.35 : TILE.x0 + 0.35;
+        const approach = { x: edgeX, z: start.z + rng.range(-0.18, 0.18) };
+      const adx = start.x - approach.x, adz = start.z - approach.z;
+      const al = Math.hypot(adx, adz) || 1;
       this.crossers.push(makePerson(rng, i, {
         start, end, ctrl, dir, side, kind: flow.kind, flow: flow.id,
-        approach: { x: edgeX, z: start.z + side.z * 0.0 },
+        approach, approachDir: { x: adx / al, z: adz / al },
         pathLength: Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
         delay: clamp((Math.abs(start.x) - 7) / 12, 0, 1) * 0.16 + rng.range(0, 0.30),
       }));
@@ -196,6 +199,7 @@ export class Crowd {
   }
 
   update(camera, timeline, params, obstacles = [], detail = { crowd: 1, windows: 1, props: 1 }) {
+    this.timeline = timeline;
     const u = timeline.u;
     const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
     const motionT = timeline.motionT;
@@ -206,55 +210,47 @@ export class Crowd {
     const waiterA = timeline.waiterAlpha();
     const wind = params.wind == null ? 0.6 : params.wind;
     const tempo = clamp(params.walkSpeed == null ? 1 : params.walkSpeed, 0.3, 2) * 0.62;
+    // Half-width of the sampling window used to work out a heading, in loop
+    // phase. 0.02 = 0.4 s at the 20 s loop: long enough to average out the
+    // sway, short enough that a corner still reads as a corner.
+    const TURN = 0.02;
     const raw = [];
 
     for (const ped of this.crossers) {
-      let world, moving = false, distance = 0;
-      // Alpha is driven by where the person is, not by the clock: they fade in
-      // at the edge of the tile, walk in, wait at the kerb, cross on the green
-      // and walk off the far side. The loop point therefore happens while they
-      // are already invisible, so there is no pop.
-      let alpha = 1;
-      if (u > 0.80 || u < 0.18) {
-        const idle = osc(2, ped.phase) * 0.07;
-        if (u < 0.18) {
-          // Approach leg: from the tile edge to the kerb.
-          const k = smootherstep(0.0, 0.17, u);
-          world = {
-            x: lerp(ped.approach.x, ped.start.x + idle, k),
-            z: lerp(ped.approach.z, ped.start.z, k) + Math.sin((TAU * 2 * motionT) / LOOP + ped.phase + 1.57) * 0.055 * k,
-          };
-          moving = k > 0.01 && k < 0.99;
-          alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
-        } else {
-          world = {
-            x: ped.start.x + idle,
-            z: ped.start.z + Math.sin((TAU * 2 * motionT) / LOOP + ped.phase + 1.57) * 0.055,
-          };
-          alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
-        }
+      // Wherever this person is, they are somewhere on one continuous walk.
+      // Sampling the path a fraction of a second either side of now gives a
+      // heading that turns BEFORE the corner instead of snapping to a new
+      // direction when they get there — the difference between walking and
+      // hovering. Everything stays a pure function of `u`, so the loop still
+      // lands on exactly the same frame at 0 and 20 s.
+      const now = this._crosserAt(ped, u, motionT);
+      const back = this._crosserAt(ped, Math.max(0, u - TURN), motionT);
+      const fwd = this._crosserAt(ped, Math.min(1, u + TURN), motionT);
+      let hx = fwd.x - back.x, hz = fwd.z - back.z;
+      const hs = Math.hypot(hx, hz);
+      const look = this._facing(ped, u);
+      let dir;
+      if (hs > 1e-5) {
+        hx /= hs; hz /= hs;
+        // Blend out of the resting pose as they start moving.
+        const w = clamp(hs / 0.09, 0, 1);
+        const bx = look.x * (1 - w) + hx * w;
+        const bz = look.z * (1 - w) + hz * w;
+        const bl = Math.hypot(bx, bz) || 1;
+        dir = { x: bx / bl, z: bz / bl };
       } else {
-        const s = timeline.crossWithDelay(ped.delay * ped.pace);
-        if (s < 1) {
-          world = bezier2(ped.start, ped.ctrl, ped.end, s);
-          const sway = osc(4, ped.phase) * 0.04;
-          world.x += ped.side.x * sway;
-          world.z += ped.side.z * sway;
-        } else {
-          const d = timeline.drain() * (ped.kind === 'stroll' ? 4.5 : 8);
-          world = { x: ped.end.x + ped.dir.x * d, z: ped.end.z + ped.dir.z * d };
-        }
-        distance = (s < 1 ? s * ped.pathLength : ped.pathLength + timeline.drain() * (ped.kind === 'stroll' ? 4.5 : 8));
-        moving = true;
-        // Walk into the far edge and dissolve there, not in the middle.
-        alpha = boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade') *
-          (1 - smoothstep(0.74, 0.9, u));
+        dir = look;
       }
+      const side = { x: -dir.z, z: dir.x };
+      const world = { x: now.x, z: now.z };
+      const moving = now.moving;
+      const distance = now.distance;
+      const alpha = now.alpha * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
       const stridePhase = ped.phase + (moving
         ? distance / (ped.strideLen * ped.scale * ped.gait) * TAU * tempo
         : osc(2, ped.phase) * 0.10);
       raw.push({
-        ped, world, alpha, dir: ped.dir, side: ped.side, scale: ped.scale,
+        ped, world, alpha, dir, side, scale: ped.scale,
         stridePhase, moving, waiter: false, radius: 0.44 * ped.scale,
         group: 'crowd', fixed: false,
       });
@@ -294,6 +290,74 @@ export class Crowd {
     }
     this.items.sort((a, b) => b.depth - a.depth);
     return this.items;
+  }
+
+  // The path, as a pure function of the loop phase. `u` is timeline.u.
+  _crosserAt(ped, u, motionT) {
+    const sway = (ph) => Math.sin((TAU * 2 * motionT) / LOOP + ph) * 0.055;
+    if (u < 0.18) {
+      // Walk in along the sidewalk from the cell seam. They start exactly on
+      // the boundary, so the neighbour cell's people can continue the flow
+      // when the set is tiled.
+      const k = smootherstep(0.0, 0.17, u);
+      const idle = Math.sin((TAU * 2 * motionT) / LOOP + ped.phase) * 0.07;
+      return {
+        x: lerp(ped.approach.x, ped.start.x + idle * k, k),
+        z: lerp(ped.approach.z, ped.start.z, k) + sway(ped.phase + 1.57) * k,
+        moving: k > 0.02 && k < 0.985,
+        distance: k * Math.abs(ped.approach.x - ped.start.x),
+        // They walk in from the boundary plane, so they fade there and not in
+        // the middle of the pavement.
+        alpha: smoothstep(0.0, 0.03, u),
+      };
+    }
+    if (u > 0.80) {
+      // Standing at the kerb before the wrap; a slow weight shift, no drift.
+      const idle = Math.sin((TAU * 2 * motionT) / LOOP + ped.phase) * 0.07;
+      return {
+        x: ped.start.x + idle,
+        z: ped.start.z + sway(ped.phase + 1.57),
+        moving: false,
+        distance: 0,
+        // Hidden: they have finished the walk and the loop is about to take
+        // them back to the seam. A fade over the last second, no pop.
+        alpha: 1 - smoothstep(0.795, 0.815, u),
+      };
+    }
+    const s = this.timeline.crossAt(ped.delay * ped.pace, u);
+    if (s < 0.999) {
+      const w = bezier2(ped.start, ped.ctrl, ped.end, s);
+      const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
+      return {
+        x: w.x + ped.side.x * sw,
+        z: w.z + ped.side.z * sw,
+        moving: true,
+        distance: s * ped.pathLength,
+        // Walk out into the far pavement, then dissolve before the wrap.
+        alpha: 1 - smoothstep(0.74, 0.80, u),
+      };
+    }
+    const d = this.timeline.drainAt(u) * (ped.kind === 'stroll' ? 4.5 : 8);
+    return {
+      x: ped.end.x + ped.dir.x * d,
+      z: ped.end.z + ped.dir.z * d,
+      moving: d > 0.001,
+      distance: ped.pathLength + d,
+      alpha: 1 - smoothstep(0.74, 0.80, u),
+    };
+  }
+
+  // Which way a standing person is facing: along the walk on the approach, then
+  // turned towards the crossing as they arrive at the kerb.
+  _facing(ped, u) {
+    if (u < 0.17 && ped.approachDir) {
+      const t = smootherstep(0.09, 0.17, u);
+      const x = ped.approachDir.x * (1 - t) + ped.dir.x * t;
+      const z = ped.approachDir.z * (1 - t) + ped.dir.z * t;
+      const l = Math.hypot(x, z) || 1;
+      return { x: x / l, z: z / l };
+    }
+    return ped.dir;
   }
 
   _makeItem(r, camera, params, detail = { props: 1, windows: 1 }) {

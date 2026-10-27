@@ -2,10 +2,14 @@
 //
 //   A tile is a modular 3D volume: a cut-away box of city that you can lift
 //   out, inspect, and snap next to another tile. Think snow globe, diorama,
-//   theatre set. Everything inside is procedural; the frame around it is the
-//   only "engine" object and it is deliberately drawn like a physical model:
-//   a plinth, four corner posts, wall-thickness caps on the open faces, and a
-//   small engraved label.
+//   theatre set. Everything inside is procedural, and every cell is built from
+//   the SAME rules, so cells butt together without a seam: the street, the
+//   kerbs, the paving and the elevated line all continue across the boundary.
+//
+//   The boundary itself is a plane and nothing more — glass panes on the closed
+//   sides and a lid, with no posts, rails or cut caps. Hardware on the edge
+//   would read as a frame around one cell and would break the moment two cells
+//   sit side by side, which is exactly what LoD needs to do.
 //
 // Coordinate conventions (shared by every module):
 //   x → right, y → up, z → toward the viewer.
@@ -26,11 +30,15 @@ export const TILE = {
   floorY: 0,
   wallX: -15,
   wallZ: -14,
-  // Thickness of the shell: the walls, floor slab and cut caps.
+  // Thickness of the shell: the walls and the floor slab.
   shell: 0.55,
-  post: 0.30,
-  rail: 0.26,
 };
+
+// The road is as wide as the cell allows and is symmetric about z = 0: two
+// travel lanes with a real passing gap, plus a parking bay at each kerb. Both
+// edges live here rather than in world.js so `groundYAt` (and therefore every
+// camera and every foot) can use them without a circular import.
+export const ROAD_EDGE = { back: -5.9, front: 5.9 };
 
 export const SIDEWALK_Y = 0.16;
 
@@ -104,8 +112,8 @@ export function clampLevel(v) {
 // Convenience: y of the walking surface at any x/z inside the tile.
 // Sidewalk curbs get a short ramp so crossing feet do not pop.
 export function groundYAt(x, z) {
-  const front = 4.2;   // ROAD.z1
-  const back = -5.0;   // ROAD.z0
+  const front = ROAD_EDGE.front;
+  const back = ROAD_EDGE.back;
   if (z > front) return SIDEWALK_Y;
   if (z < back) return SIDEWALK_Y;
   const d = Math.min(front - z, z - back);

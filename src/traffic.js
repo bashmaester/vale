@@ -327,7 +327,7 @@ export class Traffic {
 
   update(camera, timeline, params, detail = { props: 1 }) {
     const tr = timeline.train();
-    this.trainX = lerp(-22, 22, tr);
+    this.trainX = lerp(TILE.x0 - 11.0, TILE.x1 + 11.0, tr);
     this.trainAlpha = smoothstep(0.01, 0.08, tr) * (1 - smoothstep(0.92, 0.99, tr));
     // Parked cars stay parked for the whole loop; nothing fades, nothing pops.
     this.parkedItems = [];
@@ -376,6 +376,29 @@ export class Traffic {
     const gap = 4.6;
     const y = 10.85;
     const z = -12.95;
+
+    // The train belongs to the cell, not to the whole set: it slides in and out
+    // through the cut faces instead of hanging off the end of the model. Clip
+    // to the projected window of the cell at the train's own depth; a little
+    // slack absorbs the perspective offset between the front and back of a car.
+    const c = p.ctx;
+    const pad = 0.35;
+    const corners = [
+      camera.project(v3(TILE.x0 - pad, 9.2, z + 0.85)),
+      camera.project(v3(TILE.x1 + pad, 9.2, z + 0.85)),
+      camera.project(v3(TILE.x1 + pad, 12.6, z + 0.85)),
+      camera.project(v3(TILE.x0 - pad, 12.6, z + 0.85)),
+    ];
+    let clipped = false;
+    if (corners.every(Boolean)) {
+      c.save();
+      c.beginPath();
+      c.moveTo(corners[0].x, corners[0].y);
+      for (let i = 1; i < corners.length; i++) c.lineTo(corners[i].x, corners[i].y);
+      c.closePath();
+      c.clip();
+      clipped = true;
+    }
     for (let i = 0; i < cars; i++) {
       const x = this.trainX + (i - (cars - 1) / 2) * gap;
       const isCab = i === 0 || i === cars - 1;
@@ -441,6 +464,7 @@ export class Traffic {
         glowAt(p.ctx, q.x, q.y, q.scale * 2.4, '216,190,150', 0.10 * A);
       }
     }
+    if (clipped) c.restore();
   }
 
   draw(p, camera, timeline, params) {

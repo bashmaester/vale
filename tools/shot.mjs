@@ -22,6 +22,9 @@ const times = String(arg('t', '3,7,11,15,19')).split(',').map(Number);
 const outDir = resolve(arg('out', '.shots'));
 const prefix = arg('prefix', 'plate');
 
+const { setPalette } = await import('../src/palette.js');
+const pal = arg('palette', null);
+if (pal) setPalette(pal);
 const { Scene } = await import('../src/scene.js');
 const { Timeline } = await import('../src/timeline.js');
 const { createCanvas } = await import('./canvas-env.mjs');
@@ -30,6 +33,15 @@ mkdirSync(outDir, { recursive: true });
 
 const scene = new Scene(W, H);
 scene.cameraController.hudEnabled = false;
+
+// --set caseFrame=1,walls=3 — apply scene params before rendering.
+const setArg = arg('set', null);
+if (setArg) {
+  for (const kv of String(setArg).split(',')) {
+    const [k, v] = kv.split('=');
+    if (k) scene.setParam(k.trim(), Number(v));
+  }
+}
 
 // Optional camera override for framing experiments:
 //   --eye 9,13,46 --target -4,3,-1 --fov 36

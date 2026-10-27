@@ -3,7 +3,7 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 11, v0.1.3), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 12, v0.1.4), branch `arena/bab4bc10-vale`.
 
 ---
 
@@ -71,6 +71,34 @@ Recent fixes that matter (all verified with stills):
 Measured in this build: `npm run verify` passes, `npm run build` is 141.5 KiB,
 luminance 46.8–60.3 % dark at 900×506, and the LoD contact sheet shows the three
 tiers degrading as designed.
+
+### Turn 12 — glass planes, wide street, tileable cells, palettes
+
+Four things changed under the film, and one of them is structural:
+
+1. **The case is glass.** `environment.collectFrame()` returns four panes and a
+   lid (soft gradient + one diagonal sheen) and nothing else — no posts, no
+   rails, no cut caps, no plinth, no label. `TILE.post` and `TILE.rail` are gone.
+   Rationale: any hardware on the boundary belongs to one cell and would break
+   the moment two cells are side by side, which is what tiling is for.
+2. **The street is 11.8 m wide.** `ROAD_EDGE` in `tile.js` is the only place the
+   road edges are written down; `groundYAt`, the sidewalks, the crossing, the
+   signals, the parking bays, the wait zones and the pedestrian flows all derive
+   from it. Lanes at z ±2.6, parking at ±4.85, crossing 4.6 m.
+3. **Cells tile.** `src/cells.js` paints a complete cell — ground, road, kerbs,
+   paving joints, world-periodic lane markings, zebra, elevated line, four
+   jittered lots with window grids, lamps, trees — from the same rules as the
+   hero, offset by whole cells. `bufferStyle` = `developed | wireframe | points`;
+   developed cells are solid (a faded cell leaves a tone step at the seam) and
+   their detail is chosen by distance, which is where LoD will hook in. The
+   train is clipped to the projected window of its own cell.
+4. **Palettes.** `src/palette.js` grades every colour handed to the Painter:
+   paper→ink ramp, per-palette gamma and contrast, accents preserved, glows
+   scaled down for light palettes. Möbius (authored), Patent sketch, Ink, B/W,
+   Custom (four colour wells, persisted). The static-set cache keys on the
+   palette version.
+
+Keybinds: `Tab` panel, `\` stats, `H` hide all UI, `C` camera.
 
 ### Turn 11 — frame budget, GPU-side look graph, walls, 3×3 buffer
 
@@ -300,6 +328,8 @@ Still open from the same list: vehicle glazing at L0, and a CI screenshot job
 | `src/shaders.js` / `src/graph.js` | print finish presets and node graph |
 | `src/renderer.js` | WebGL2 fullscreen pass, `bypass` for raw plate |
 | `src/lab.js` | hidden lab UI |
+| `src/cells.js` | one complete neighbour cell: ground, street, block, props, rail |
+| `src/palette.js` | colour palettes + the grade every mark passes through |
 | `src/sidebar.js` | hidden scene-control sidebar (Tab) |
 | `src/style.css` | film screen, lab, camera HUD, `.sb-*` sidebar |
 | `tools/shot.mjs` | stills renderer (`--t`, `--eye`, `--target`, `--fov`) |

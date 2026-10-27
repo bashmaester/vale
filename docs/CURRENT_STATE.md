@@ -1,6 +1,6 @@
 # VALE — current state
 
-**Last updated:** 2026-10-27 (Turn 11 — frame budget, branch `arena/bab4bc10-vale`)
+**Last updated:** 2026-10-27 (Turn 12 — tileable cells and palettes, branch `arena/bab4bc10-vale`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
@@ -10,10 +10,13 @@ drives the sample, not the deliverable.
 
 ## 1. What the build is
 
-One self-contained `index.html` (~159 KiB), silent, autoplaying, no external
-assets. Tags: `v0.1.2` (Turn 10), `v0.1.3` (this turn). It renders one tile of a rainy street corner inside a physical-looking
-case: plinth, four corner posts, wall-thickness caps on the cut faces, engraved
-label. Everything inside the case is generated from code every frame.
+One self-contained `index.html` (~177 KiB), silent, autoplaying, no external
+assets. Tags: `v0.1.2` (Turn 10), `v0.1.3` (Turn 11), `v0.1.4` (this turn).
+It renders one tile of a rainy street corner as a *cell* of a tiled set: the
+boundary is glass planes and a lid, with no posts, rails, cut caps or plinth, so
+the cell can butt against another without a seam. Everything inside is generated
+from code every frame, and neighbouring cells are painted from the same rules
+(`src/cells.js`) with detail falling off by distance.
 
 Pipeline: procedural 3D world → perspective projection → 2D ink plate + field
 texture → WebGL2 print shader (`src/shaders.js`, node graph in `src/graph.js`).
@@ -31,11 +34,28 @@ Runtime switches:
 | `?hud=0` | hides the camera help line |
 | `?scale=0.7` | pins the render scale (also disables the adaptive governor) |
 | `?stats=1` | opens the stats overlay at boot |
+| `?palette=patent\|ink\|bw\|mobius\|custom` | boots into a colour palette |
 | `?capture=1` | keeps `preserveDrawingBuffer` on, for canvas readback |
 | `?ui=1` / `?panel=1` | shows the UI at boot (it is hidden by default) |
 
 `window.VALE = { graph, scene, renderer, lab, sidebar, state, stats, perf, W, H,
-DURATION, setQuality, setUI }`.
+DURATION, setQuality, setUI, setPalette, palette }`.
+
+### Turn 12 — what changed
+
+- **Glass case**: four panes plus a lid, gradient + sheen, no posts/rails/plinth.
+- **Street**: 11.8 m wide (`ROAD_EDGE`), lanes ±2.6, parking at the kerbs,
+  4.6 m crossing, signal arms 4.3 m.
+- **Crowd**: heading sampled from the path a fraction of a second ahead, so
+  turns are anticipated and nobody slides sideways; still bit-exact per loop.
+- **Train**: clipped to the cell, so it enters and leaves through the cut faces.
+- **Cells**: `src/cells.js` + `bufferStyle = developed | wireframe | points`;
+  the eight neighbours are complete cells with their own block, markings and
+  street furniture, at a detail level that falls off with distance.
+- **Palettes**: Möbius, Patent sketch, Ink, B/W, Custom (`src/palette.js`);
+  paper/ink ramp with gamma + contrast and accent preservation, applied at the
+  Painter, so the whole plate (and therefore the finished print) changes.
+- **Keys**: `Tab` panel · `\` stats · `H` hide all UI · `C` camera.
 
 ### Turn 11 controls
 

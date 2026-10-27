@@ -2,6 +2,67 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 12: glass planes, a wider street, tileable cells, palettes
+
+**User feedback:** “let the glass box just [be] planes without frames along the
+edges”; every neighbouring cell must be fully developed and self-contained so
+cells can be tiled (the train must sit inside its own cell); the street must be
+wide enough for cars to pass naturally; people must move naturally, not like
+hover bots with instant circumnavigation; `Tab` stays the sidebar and the stats
+overlay moves to `\`; add palette options alongside styles — patent sketch, ink,
+b/w, möbius and a custom user palette.
+
+### Changed
+
+- **The case is glass, not carpentry.** `collectFrame()` now draws four panes
+  and a lid — a soft vertical gradient plus one diagonal sheen each — and no
+  posts, rails, cut caps, plinth or label. `TILE.post` / `TILE.rail` are gone.
+  A frame along an edge would read as hardware around *one* cell and would break
+  the moment two cells sit side by side.
+- **Street widened from 9.2 m to 11.8 m.** `ROAD_EDGE` in `tile.js` is the single
+  source of truth (`groundYAt` uses it, so every foot and every camera follows).
+  Lanes at z ±2.6 (5.2 m apart, 3.3 m of passing clearance), parking bays at
+  z ±4.85, crossing 4.6 m wide, signal arms 4.3 m, wait zones and pedestrian
+  flows moved out to the new kerbs.
+- **Crowd motion is now heading-driven.** `_crosserAt()` returns the path as a
+  pure function of loop phase; the heading is a central difference over ±0.4 s,
+  blended out of a resting pose. People turn *towards* a corner before they
+  reach it, walk along the pavement on the approach leg instead of sliding
+  sideways, and settle into a slow weight shift when they stop. Still bit-exact
+  over the loop (the determinism check passes).
+- **The train belongs to its cell.** It is clipped to the projected window of
+  the tile at its own depth, so it slides in and out through the cut faces
+  instead of hanging off the end of the model.
+- **Lane markings are world-periodic.** Dashes are laid out on a 6 m world grid
+  (`cells.js`), so a cell boundary lands exactly on a period and the centre line
+  continues across the seam.
+- **Keybinds:** `Tab` opens the sidebar (unchanged), `\` toggles the stats
+  overlay, `H` hides/shows all UI. The footer and the console greeting say so.
+- **Neighbour cells are real cells.** `src/cells.js` paints ground, road, kerbs,
+  paving joints, world-periodic markings, a zebra crossing, the elevated line,
+  four jittered building lots with window grids, lamps and trees from the same
+  rules as the hero. `bufferStyle` is now `developed` (default) / `wireframe` /
+  `point cloud`; developed cells are drawn solid, because a faded cell leaves a
+  tone step at the seam.
+- **Palettes.** `src/palette.js` grades every colour the Painter is handed:
+  a paper→ink ramp with per-palette gamma and contrast plus accent preservation.
+  Five palettes: *Möbius* (the authored night), *Patent sketch* (cream paper,
+  blue-black ink, vermilion stamps), *Ink* (monochrome on black), *B/W*
+  (black on white) and *Custom* (four colour wells, remembered in
+  `localStorage`). `glowScale` keeps the additive glows from burning out a light
+  palette. The cached set keys on the palette version.
+- **Style presets** `patent`, `ink`, `bw` and `mobius` join `linocut`, `plate`,
+  `riso`, `newsprint` and `blueprint` in the print-finish graph.
+- Sidebar: a new **Palette** section with swatches and custom wells, the print
+  section renamed **Style**, buffer style options, and the new key hints.
+
+### Added
+
+- `?palette=patent|ink|bw|mobius|custom` to boot into a palette.
+- `window.VALE.setPalette(id, custom)` / `window.VALE.palette()`.
+- `Painter.alphaMul` (fade a whole neighbour cell without touching call sites)
+  and `Scene.invalidateStatic()`.
+
 ## 2026-10-27 — Turn 11: the frame budget pass
 
 **User feedback:** still not smooth; add a stats overlay and switches for every

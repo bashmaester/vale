@@ -164,6 +164,28 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Libe
 }
 
 /* --- stats overlay ------------------------------------------------------ */
+.sb-swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin: 2px 0 8px; }
+.sb-swatch {
+  position: relative; display: flex; align-items: center; gap: 5px;
+  min-height: 34px; padding: 4px 6px; border-radius: 4px; cursor: pointer;
+  border: 1px solid rgba(239,233,216,.18); color: #f2efe6;
+  font: inherit; font-size: 10px; text-align: left; overflow: hidden;
+}
+.sb-swatch.on { border-color: #56c7b7; box-shadow: inset 0 0 0 1px rgba(86,199,183,.55); }
+.sb-swatch-dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45);
+}
+.sb-swatch-name {
+  position: relative; z-index: 1; padding: 1px 3px; border-radius: 2px;
+  background: rgba(6,10,8,.62); white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sb-colors { display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px 8px; margin-bottom: 6px; }
+.sb-color { display: flex; align-items: center; gap: 5px; font-size: 10px; color: #9fb2a5; }
+.sb-color input[type="color"] {
+  width: 22px; height: 18px; padding: 0; border: 1px solid rgba(239,233,216,.22);
+  border-radius: 3px; background: none; cursor: pointer;
+}
 .stats {
   position: fixed;
   top: 14px;

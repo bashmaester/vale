@@ -3,8 +3,10 @@
 VALE is an engine foundation for a cosy procedural city sim. The unit of the
 engine is a **tile**: a modular 3D volume — a cut-away box of city that can be
 lifted out, inspected and snapped beside another tile. The sample scene is one
-such tile, presented in a physical-looking case (plinth, corner posts, cut-face
-caps, engraved label) so the modularity is visible.
+such tile, presented inside a glass case — four panes and a lid, no posts or
+rails — so the modularity is visible without any hardware along the boundary.
+Neighbouring cells are complete copies of the same rules (`src/cells.js`), which
+is what lets the street run straight through a seam.
 
 Everything inside the tile is generated every frame. Nothing is loaded.
 
@@ -93,8 +95,28 @@ drawFrameFront`
 - **Furniture**: street trees (tapered trunk, root flares, 4–6 primary limbs,
   leaf cluster per tip, cast shadow), lamps and their pooled light, bollards,
   a poster column, a bicycle, boxes and crates.
-- **Frame**: the case — plinth below `y0 − 0.35`, corner posts, cut-face caps,
-  an engraved label plate.
+- **Boundary**: the case — four glass panes and a lid, each a soft vertical
+  gradient with one diagonal sheen. No posts, rails, caps, plinth or label: the
+  boundary is a plane so that two cells can meet there.
+
+### Cells and tiling
+
+`src/cells.js` paints any cell other than the hero: the same floor slab, road,
+kerbs, paving joints, world-periodic lane markings (6 m grid, so a cell boundary
+lands on a period), a zebra crossing, the elevated line, four jittered building
+lots with window grids, lamps and trees. `bufferStyle` selects `developed`,
+`wireframe` or `point cloud`; developed cells are drawn solid and their detail
+falls off with distance from the camera.
+
+### Palettes
+
+`src/palette.js` owns the colour of the plate. Every string the `Painter` is
+given goes through `grade()`: a monotone paper→ink ramp with a per-palette gamma
+and contrast, plus accent preservation for anything with real chroma. `mobius`
+is an identity pass, so the default look costs one comparison. Light palettes
+scale the additive glows down (`glowScale`) and repaint the plate clear colour,
+which is how the same geometry reads as ink on cream paper. The static-set cache
+keys on `paletteVersion()`.
 
 ---
 

@@ -5,22 +5,36 @@
 // faces are +z (front) and +x (right).
 //
 //   z -14 ────────── back wall / elevated line
-//   z -8.6..-5.0     far sidewalk (buildings, shopfronts)
-//   z -5.0..4.2      road, two lanes
-//   z  4.2..10.5     near sidewalk (the stage: people, trees, lamps)
+//   z -14..-5.9      far sidewalk (buildings, shopfronts)
+//   z -5.9..5.9      road: two travel lanes + a parking bay at each kerb
+//   z  5.9..10.5     near sidewalk (the stage: people, trees, lamps)
+//
+// Every z below is measured from the road edges in tile.js, so widening the
+// street (or tiling the cell) does not leave stray kerbs behind.
 //
 // Everything here is small and declarative so the environment, crowd, traffic
 // and weather modules share one set of rules.
 
 import { clamp } from './math.js';
-import { TILE, SIDEWALK_Y, groundYAt } from './tile.js';
+import { TILE, SIDEWALK_Y, ROAD_EDGE, groundYAt } from './tile.js';
 
-export const ROAD = { x0: TILE.x0, x1: TILE.x1, z0: -5.0, z1: 4.2 };
+// 11.8 m of asphalt: two 3.5 m travel lanes with a 5.2 m centre-to-centre
+// spacing (a bus and a car pass with room to spare) plus a parking bay at
+// each kerb.
+export const ROAD = { x0: TILE.x0, x1: TILE.x1, z0: ROAD_EDGE.back, z1: ROAD_EDGE.front };
+
+// Kerb offsets, in world z, for anything that wants to stand just off the road.
+export const KERB = {
+  front: ROAD.z1 + 0.55,        // lamp posts, signal poles
+  back: ROAD.z0 - 0.55,
+  frontIn: ROAD.z1 - 1.0,       // parking bays, drain grates
+  backIn: ROAD.z0 + 1.0,
+};
 
 // Kept for modules that still speak in road rectangles.
 export const ROAD_H = ROAD;
 export const ROAD_V = { x0: 0.0, x1: 0.0, z0: ROAD.z0, z1: ROAD.z1 };
-export const INTERSECTION = { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 };
+export const INTERSECTION = { x0: -5.2, x1: -0.6, z0: ROAD.z0, z1: ROAD.z1 };
 
 // Two raised slabs: the far sidewalk (buildings) and the near one (stage).
 export const SIDEWALKS = [
@@ -31,35 +45,38 @@ export const SIDEWALKS = [
 export const CORNER = SIDEWALKS[0];
 
 // The single crossing. Pedestrians walk along z; zebra bars run along x.
+const CROSSING = { x0: -5.2, x1: -0.6, z0: ROAD.z0, z1: ROAD.z1 };
 export const CROSSWALKS = {
-  main: { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 },
-  west: { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 },
-  east: { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 },
-  north: { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 },
-  south: { x0: -4.2, x1: -0.8, z0: ROAD.z0, z1: ROAD.z1 },
+  main: CROSSING,
+  west: CROSSING,
+  east: CROSSING,
+  north: CROSSING,
+  south: CROSSING,
   diagonalHalfWidth: 2.0,
   diagonalReach: 0.0,
   centerRadius: 0.0,
 };
 
-// One lane each way. `offset` is the fixed z of the lane centre.
+// One lane each way, 5.2 m apart centre to centre. `offset` is the fixed z of
+// the lane centre; a car is 1.85 m wide, so two vehicles pass with 3.3 m of
+// clearance instead of shaving each other's mirrors.
 export const LANES = [
-  { id: 'E', axis: 'x', offset: 2.15, dir: 1 },
-  { id: 'W', axis: 'x', offset: -2.15, dir: -1 },
+  { id: 'E', axis: 'x', offset: 2.6, dir: 1 },
+  { id: 'W', axis: 'x', offset: -2.6, dir: -1 },
 ];
 
-// Legal kerbside slots, parallel to the road.
+// Legal kerbside slots, parallel to the road, clear of the travel lanes.
 export const PARKING = [
-  { id: 'front_curb', axis: 'x', x: 7.4, z: 3.32, dir: 1 },
-  { id: 'back_curb', axis: 'x', x: -7.2, z: -4.10, dir: -1 },
+  { id: 'front_curb', axis: 'x', x: 7.4, z: ROAD.z1 - 1.05, dir: 1 },
+  { id: 'back_curb', axis: 'x', x: -7.2, z: ROAD.z0 + 1.05, dir: -1 },
 ];
 
 // Two poles just outside the crossing, each with an arm over the road.
 // yaw 0 faces +x, yaw PI faces -x. The front pole's head faces the camera so
 // the signal beat reads on screen.
 export const SIGNAL_POSITIONS = [
-  { id: 'front', x: -5.15, z: 4.85, yaw: 0, toward: { x: 0, z: -1 }, arm: 3.4 },
-  { id: 'back', x: 0.30, z: -5.65, yaw: Math.PI, toward: { x: 0, z: 1 }, arm: 3.4 },
+  { id: 'front', x: -6.05, z: KERB.front, yaw: 0, toward: { x: 0, z: -1 }, arm: 4.3 },
+  { id: 'back', x: 1.05, z: KERB.back, yaw: Math.PI, toward: { x: 0, z: 1 }, arm: 4.3 },
 ];
 
 // Facades sit on the far sidewalk. `face` is which cut face carries the shop.
@@ -100,10 +117,10 @@ export const LIGHT_SOURCES = [
 
 // Waiting zones. Weights bias the crowd toward the crossing itself.
 export const WAIT_ZONES = [
-  { id: 'cross_front', weight: 0.40, x0: -7.4, x1: 0.4, z0: 4.75, z1: 6.9 },
-  { id: 'cross_back', weight: 0.20, x0: -7.4, x1: 0.4, z0: -7.3, z1: -5.35 },
-  { id: 'shop_front', weight: 0.26, x0: 2.2, x1: 11.4, z0: 4.9, z1: 7.6 },
-  { id: 'left_front', weight: 0.14, x0: -13.4, x1: -8.4, z0: 5.4, z1: 9.4 },
+  { id: 'cross_front', weight: 0.40, x0: -8.0, x1: 0.8, z0: 6.1, z1: 7.9 },
+  { id: 'cross_back', weight: 0.20, x0: -8.0, x1: 0.8, z0: -7.9, z1: -6.2 },
+  { id: 'shop_front', weight: 0.26, x0: 2.2, x1: 11.4, z0: 6.1, z1: 8.2 },
+  { id: 'left_front', weight: 0.14, x0: -13.4, x1: -8.4, z0: 6.4, z1: 9.6 },
 ];
 
 // Pedestrian motion. Crossings run along z; strolling runs along x. Every flow
@@ -111,19 +128,19 @@ export const WAIT_ZONES = [
 // single line.
 export const FLOWS = [
   { id: 'cross_s', kind: 'cross', weight: 0.19,
-    bounds: { x0: -3.85, x1: -1.15, z0: 4.7, z1: 6.2 }, delta: { x: 0.0, z: -10.9 }, bend: 0.5 },
+    bounds: { x0: -4.85, x1: -1.0, z0: 6.0, z1: 7.6 }, delta: { x: 0.0, z: -12.0 }, bend: 0.5 },
   { id: 'cross_n', kind: 'cross', weight: 0.15,
-    bounds: { x0: -3.85, x1: -1.15, z0: -6.2, z1: -4.7 }, delta: { x: -0.3, z: 10.9 }, bend: -0.5 },
+    bounds: { x0: -4.85, x1: -1.0, z0: -7.6, z1: -6.0 }, delta: { x: -0.3, z: 12.0 }, bend: -0.5 },
   { id: 'cross_diag', kind: 'cross', weight: 0.10,
-    bounds: { x0: -3.9, x1: -1.2, z0: 4.7, z1: 6.0 }, delta: { x: 6.2, z: -10.5 }, bend: 0.7 },
+    bounds: { x0: -4.9, x1: -1.1, z0: 6.0, z1: 7.4 }, delta: { x: 6.2, z: -11.6 }, bend: 0.7 },
   { id: 'front_e', kind: 'stroll', weight: 0.18,
     bounds: { x0: -13.6, x1: -4.4, z0: 7.4, z1: 9.9 }, delta: { x: 15.0, z: -0.7 }, bend: 1.1 },
   { id: 'front_w', kind: 'stroll', weight: 0.16,
     bounds: { x0: 4.2, x1: 13.6, z0: 7.4, z1: 9.9 }, delta: { x: -15.0, z: 0.6 }, bend: -1.0 },
   { id: 'back_e', kind: 'stroll', weight: 0.11,
-    bounds: { x0: -13.2, x1: -5.8, z0: -7.2, z1: -5.35 }, delta: { x: 14.0, z: 0.2 }, bend: 0.6 },
+    bounds: { x0: -13.2, x1: -5.8, z0: -8.0, z1: -6.3 }, delta: { x: 14.0, z: 0.2 }, bend: 0.6 },
   { id: 'shop_front', kind: 'stroll', weight: 0.11,
-    bounds: { x0: 1.6, x1: 9.6, z0: 5.2, z1: 7.4 }, delta: { x: -8.0, z: 0.4 }, bend: 0.8 },
+    bounds: { x0: 1.6, x1: 9.6, z0: 6.1, z1: 8.0 }, delta: { x: -8.0, z: 0.4 }, bend: 0.8 },
 ];
 
 // Puddles are procedural but seeded: they pool at the kerbs and under lights.

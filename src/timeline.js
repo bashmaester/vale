@@ -30,12 +30,16 @@ export class Timeline {
   }
   stopSignal() { return 1 - this.walkSignal(); }
   cross() { return smootherstep(0.18, 0.68, this.u); }
-  crossWithDelay(delay) {
+  // Pure in `u` so the crowd can also ask "where would the crossing be a
+  // fraction of a second from now?" when it works out which way to face.
+  crossAt(delay, u) {
     const a = 0.18 + delay * 0.075;
     const b = 0.66 + delay * 0.055;
-    return smootherstep(a, b, this.u);
+    return smootherstep(a, b, u);
   }
-  drain() { return smoothstep(0.68, 0.82, this.u); }
+  crossWithDelay(delay) { return this.crossAt(delay, this.u); }
+  drainAt(u) { return smoothstep(0.68, 0.82, u); }
+  drain() { return this.drainAt(this.u); }
   empty() {
     return smoothstep(0.805, 0.855, this.u) * (1 - smoothstep(0.925, 0.975, this.u));
   }

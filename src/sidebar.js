@@ -8,6 +8,7 @@
 // Sections: Camera · Scene · Texture · Palette · Case · Playback.
 import { PRESETS } from './graph.js';
 import { SCENE_PARAM_DEFS } from './scene.js';
+import { PALETTES, setPalette, currentPalette } from './palette.js';
 
 const el = (tag, className, text) => {
   const n = document.createElement(tag);
@@ -197,6 +198,66 @@ export class Sidebar {
     return wrap;
   }
 
+  // Colour swatches: one button per palette, each showing its own paper and
+  // ink, so the choice reads at a glance rather than as a word in a list.
+  swatches({ value, onChange, get }) {
+    const wrap = el('div', 'sb-swatches');
+    const btns = new Map();
+    for (const pal of Object.values(PALETTES)) {
+      const b = el('button', 'sb-swatch');
+      b.type = 'button';
+      b.title = pal.label;
+      b.dataset.palette = pal.id;
+      b.style.background = `linear-gradient(135deg, ${pal.paper} 0 52%, ${pal.ink} 52% 100%)`;
+      const dot = el('span', 'sb-swatch-dot');
+      dot.style.background = pal.accent;
+      b.appendChild(dot);
+      b.appendChild(el('span', 'sb-swatch-name', pal.label));
+      b.addEventListener('click', () => { onChange(pal.id); });
+      btns.set(pal.id, b);
+      wrap.appendChild(b);
+    }
+    const sync = () => {
+      const cur = get ? get() : value;
+      for (const [id, b] of btns) b.classList.toggle('on', id === cur);
+    };
+    sync();
+    this.rows.push({ kind: 'swatch', input: null, sync });
+    return wrap;
+  }
+
+  // Four colour wells for the custom palette. Native pickers: no library, no
+  // assets, and they work on every platform the film runs on.
+  customColors() {
+    const wrap = el('div', 'sb-colors');
+    const defs = [
+      ['paper', 'paper'], ['ink', 'ink'], ['accent', 'accent'], ['accent2', 'accent 2'],
+    ];
+    for (const [key, label] of defs) {
+      const lab = el('label', 'sb-color');
+      const inp = document.createElement('input');
+      inp.type = 'color';
+      inp.value = PALETTES.custom[key];
+      inp.addEventListener('input', () => {
+        setPalette('custom', { [key]: inp.value });
+        this.scene.invalidateStatic && this.scene.invalidateStatic();
+      });
+      lab.appendChild(inp);
+      lab.appendChild(el('span', null, label));
+      wrap.appendChild(lab);
+    }
+    const sync = () => {
+      const cur = PALETTES.custom;
+      const inputs = wrap.querySelectorAll('input');
+      if (inputs.length === 4) {
+        inputs[0].value = cur.paper; inputs[1].value = cur.ink;
+        inputs[2].value = cur.accent; inputs[3].value = cur.accent2;
+      }
+    };
+    this.rows.push({ kind: 'colors', input: null, sync });
+    return wrap;
+  }
+
   buttonRow(label, onClick, cls) {
     const b = el('button', `sb-btn ${cls || ''}`.trim(), label);
     b.type = 'button';
@@ -210,7 +271,7 @@ export class Sidebar {
     const root = this.root;
     root.appendChild(el('h2', 'sb-heading', 'VALE · scene controls'));
     root.appendChild(el('p', 'sb-note',
-      '\\ hides all UI. C cycles the camera. Tab opens this panel.'));
+      'Tab panel · \\ stats · H hide UI · C camera'));
 
     // Camera ---------------------------------------------------------------
     const cam = section('Camera', 'Steady shots for the film, or take control.');
@@ -240,6 +301,21 @@ export class Sidebar {
       get: () => this.director.hudEnabled,
     }));
     root.appendChild(cam);
+
+    // Palette ---------------------------------------------------------------
+    const look = section('Palette', 'Paper and ink for the whole plate.');
+    look.appendChild(this.swatches({
+      value: currentPalette().id,
+      onChange: (id) => {
+        setPalette(id);
+        this.scene.invalidateStatic && this.scene.invalidateStatic();
+        this.refresh();
+      },
+      get: () => currentPalette().id,
+    }));
+    look.appendChild(this.customColors());
+    look.appendChild(el('p', 'sb-sub', 'The custom wells edit the Custom palette and are remembered between visits.'));
+    root.appendChild(look);
 
     // Scene ----------------------------------------------------------------
     const sc = section('Scene', 'Live parameters of the procedural tile.');
@@ -326,8 +402,8 @@ export class Sidebar {
     tex.appendChild(texRow);
     root.appendChild(tex);
 
-    // Palette --------------------------------------------------------------
-    const pal = section('Palette', 'Print presets and colour separation.');
+    // Style ---------------------------------------------------------------
+    const pal = section('Style', 'Print finish: hatch, bleed, posterize and paper.');
     pal.appendChild(this.select({
       label: 'preset',
       value: this.preset,
@@ -418,7 +494,7 @@ export class Sidebar {
     root.appendChild(cs);
 
     // Buffer volume --------------------------------------------------------
-    const bf = section('Buffer volume', 'The 3×3 set: the eight neighbouring cells, drawn cheap.', false);
+    const bf = section('Buffer volume', 'The 3×3 set: the eight neighbouring cells. Each is a full cell built from the same rules, so the street tiles across the seam.', false);
     const grid = el('div', 'sb-grid');
     const cells = [
       ['nw', 'NW'], ['n', 'N'], ['ne', 'NE'],
@@ -454,12 +530,12 @@ export class Sidebar {
     bf.appendChild(this.select({
       label: 'neighbour style',
       value: String(this.scene.params.bufferStyle),
-      options: [['0', 'wireframe'], ['1', 'point cloud']],
+      options: [['0', 'developed'], ['1', 'wireframe'], ['2', 'point cloud']],
       onChange: (v) => this.scene.setParam('bufferStyle', Number(v)),
       get: () => String(this.scene.params.bufferStyle),
     }));
     bf.appendChild(this.slider({
-      label: 'neighbour opacity',
+      label: 'ghost opacity (wire / points)',
       min: 0, max: 1, step: 0.01,
       value: this.scene.params.bufferOpacity,
       onInput: (v) => this.scene.setParam('bufferOpacity', v),

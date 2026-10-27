@@ -15,6 +15,7 @@ import {
   collectFrame,
 } from './environment.js';
 import { drawBufferCells, BUFFER_CELLS } from './neighbors.js';
+import { grade, paletteVersion, PLATE_CLEAR } from './palette.js';
 
 export const SCENE_PARAM_DEFS = {
   crowdDensity: { value: 1.0, min: 0.2, max: 2.0, step: 0.01, label: 'crowd density' },
@@ -131,7 +132,7 @@ export class Scene {
     const ctx = this.pp.ctx;
     ctx.save();
     ctx.globalCompositeOperation = 'source-over';
-    ctx.fillStyle = '#050605';
+    ctx.fillStyle = grade(PLATE_CLEAR);
     ctx.fillRect(0, 0, this.W, this.H);
     ctx.restore();
   }
@@ -182,7 +183,7 @@ export class Scene {
     // `boil` is in the key on purpose: the hand-drawn jitter regenerates at
     // ~7.5 Hz, so a cached set must repaint when it ticks, or the artwork stops
     // boiling while the people and rain keep going.
-    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${this.pp.boil}|${this.W}x${this.H}`;
+    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${paletteVersion()}|${this.pp.boil}|${this.W}x${this.H}`;
     const ref = { x: 0, y: 3.2, z: 0 };
     let needsRepaint = key !== this._staticKey || !this._staticPose;
     let dx = 0, dy = 0;
@@ -215,6 +216,9 @@ export class Scene {
     this._staticShift.x = dx; this._staticShift.y = dy;
     return this._staticShift;
   }
+
+  // Drop the cached set (palette change, resize, a param that is baked in).
+  invalidateStatic() { this._staticKey = ''; }
 
   // Resolve procedural LoD for this frame from the tile's projected height.
   resolveDetail(camera) {
@@ -274,7 +278,8 @@ export class Scene {
     //    must be able to cover them.
     const cells = this.bufferMask();
     if (cells.size) {
-      drawBufferCells(this.pp, camera, cells, this.params.bufferStyle === 1 ? 'points' : 'wire', this.params.bufferOpacity);
+      const style = this.params.bufferStyle === 1 ? 'wire' : this.params.bufferStyle === 2 ? 'points' : 'full';
+      drawBufferCells(this.pp, camera, cells, style, this.params.bufferOpacity);
     }
     tick('buffer');
 

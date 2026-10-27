@@ -4,6 +4,7 @@ import { Scene } from './scene.js';
 import { Lab } from './lab.js';
 import { Sidebar } from './sidebar.js';
 import { StatsPanel } from './stats.js';
+import { loadPalette, setPalette, currentPalette } from './palette.js';
 import { DURATION } from './timeline.js';
 import { clamp } from './math.js';
 
@@ -40,6 +41,10 @@ const state = {
   paused: q.has('paused'),
   speed: initialSpeed,
 };
+
+// Restore the palette before the first frame, so the cached set is painted in
+// the right ink rather than being graded twice.
+loadPalette();
 
 const graph = new ShaderGraph();
 graph.applyPreset(presetName);
@@ -129,19 +134,26 @@ function setUI(show) {
 document.body.classList.add('ui-hidden');
 window.addEventListener('keydown', (e) => {
   // Only text entry swallows the shortcut: a focused slider or checkbox must
-  // not stop `\\` from hiding the UI.
+  // not stop a key from working.
   const t = e.target || {};
   const tag = (t.tagName || '').toLowerCase();
   const typing = tag === 'textarea' || (tag === 'input' && !['range', 'checkbox', 'radio', 'button'].includes((t.type || '').toLowerCase()));
   if (typing) return;
-  if (e.key === '\\') { e.preventDefault(); setUI(!ui.shown); }
+  // Tab opens the panel (sidebar.js owns that key). The stats overlay used to
+  // be on Tab as well, which meant the two fought each other: it now lives on
+  // the backslash, and H hides everything.
+  if (e.key === '\\') { e.preventDefault(); stats.toggle(); }
+  else if (e.key === 'h' || e.key === 'H') { e.preventDefault(); setUI(!ui.shown); }
 });
 window.VALE.setUI = setUI;
 window.VALE.ui = ui;
+window.VALE.setPalette = (id, custom) => setPalette(id, custom);
+window.VALE.palette = currentPalette;
 
 if (q.has('lab')) { setUI(true); lab.open(); }
 if (q.get('stats') === '1') stats.toggle(true);
 if (q.has('ui') || q.has('panel')) setUI(true);
+if (q.has('palette')) setPalette(q.get('palette'));
 
 // --- quality governor ------------------------------------------------------
 // One adjustment every ~1.5 s, in 5 % steps, with a dead band between 13.5 and
@@ -222,6 +234,6 @@ requestAnimationFrame(frame);
 document.addEventListener('visibilitychange', () => { last = performance.now(); });
 
 console.log(
-  '%cVALE%c — Tab opens scene controls. C cycles camera: cinematic → first person → third person → drone. ?lab=1 opens the patch bay.',
+  '%cVALE%c — Tab panel · \\ stats · H hide UI · C camera (drone by default). ?palette=patent ?lab=1',
   'color:#56c7b7;font-weight:bold', 'color:#9fb2a5'
 );

@@ -29,6 +29,7 @@ Useful URLs:
 | `index.html?cam=fps` | first-person walk (also `third`, `drone`, `cinematic`) |
 | `index.html?shot=crane` | cinematic shot: `rig`, `tripod`, `crane`, `orbit`, `detail` |
 | `index.html?ui=1` | opens the scene-control sidebar (also `?panel=1`) |
+| `index.html?palette=patent` | boots into a palette (`mobius`, `patent`, `ink`, `bw`, `custom`) |
 | `index.html?scale=0.7` | renders the plate/shader at 70 % for slower machines |
 | `index.html?hud=0` | disables the tiny camera help line |
 | `index.html?preset=riso` | starts with the Risograph look |
@@ -36,8 +37,9 @@ Useful URLs:
 | `index.html?w=1920&h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&paused=1&t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts: `\` shows/hides the whole UI (it starts hidden, and the
-camera starts in drone mode), `L` lab, `Tab` scene controls. Inside the lab: `Space`
+Keyboard shortcuts: `Tab` opens the scene controls (the UI starts hidden and
+the camera starts in drone mode), `\` toggles the stats overlay, `H` hides/shows
+all UI, `C` cycles the camera, `L` opens the lab. Inside the lab: `Space`
 play/pause, `R` reset, `Ctrl/Cmd+S` save a PNG frame (a bare `S` used to save one
 on every step backwards — it no longer does anything outside the lab). Camera: `C` cycles cinematic → first person →
 third person → drone, `1`–`4` jump straight to a mode, `V` returns to the

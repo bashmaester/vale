@@ -1,23 +1,24 @@
 // Buffer cells: the eight neighbours of the hero tile.
 //
-// The engine builds a volume out of tiles. Only the centre cell is rendered at
-// full fidelity; the neighbours exist so the diorama reads as part of a larger
-// city, and they are drawn in a deliberately cheap style — wireframe boxes or a
-// point cloud — with an adjustable opacity and per-cell toggles (all off by
-// default).
+// The engine builds a volume out of tiles. Every cell is drawn from the same
+// rules, so a neighbour is a real, correctly-offset copy of the city — the
+// street runs straight through the seam and the block repeats. The style is a
+// choice: `full` paints the cell properly (with detail falling off with
+// distance, which is the hook for LoD), `wire` and `points` are inspection
+// views. Per-cell toggles, all off by default.
 //
 // Everything here is generated from the same tile constants as the hero cell,
 // so a neighbour is a real, correctly-offset volume, not a decorative backdrop.
 
 import { v3 } from './math.js';
 import { TILE, TILE_COLORS as C } from './tile.js';
-import { BUILDING_LOTS, ROAD, SIDEWALKS, CROSSWALKS } from './world.js';
-import { hash11 } from './math.js';
+import { BUILDING_LOTS, ROAD, CROSSWALKS } from './world.js';
+import { hash11, clamp } from './math.js';
+import { drawCell, CELL_W, CELL_D } from './cells.js';
 
 const BONE = (a) => `rgba(239,233,216,${a})`;
 
-export const CELL_W = TILE.x1 - TILE.x0;   // 30
-export const CELL_D = TILE.z1 - TILE.z0;   // 24.5
+export { CELL_W, CELL_D };
 
 // dx, dz in cell units, plus a label for the UI.
 export const BUFFER_CELLS = [
@@ -53,10 +54,25 @@ function boxWire(p, camera, cx, cy, cz, w, h, d, opts) {
  * @param style    'wire' | 'points'
  * @param alpha    0..1 global opacity
  */
-export function drawBufferCell(p, camera, cell, style = 'wire', alpha = 0.35) {
+export function drawBufferCell(p, camera, cell, style = 'full', alpha = 0.35) {
   if (alpha <= 0.01) return;
   const ox = cell.dx * CELL_W;
   const oz = cell.dz * CELL_D;
+
+  if (style === 'full') {
+    // Procedural LoD for the neighbours: the cell next door keeps most of its
+    // detail, one more step out keeps half, and the corners are sketch marks.
+    const cx = (TILE.x0 + TILE.x1) / 2 + ox;
+    const cz = (TILE.z0 + TILE.z1) / 2 + oz;
+    const dist = Math.hypot(cx - camera.eye.x, cz - camera.eye.z, camera.eye.y * 0.35);
+    const d = clamp(1.05 - dist / 62, 0.18, 1);
+    // A developed cell is the same city as the hero, so it is drawn solid:
+    // fading it would leave a visible tone step at the seam, which is exactly
+    // what tiling has to avoid. `bufferOpacity` stays a control for the ghost
+    // styles only.
+    drawCell(p, camera, d, cell.dx, cell.dz, 1);
+    return;
+  }
   const seedBase = 9000 + (cell.dx + 1) * 31 + (cell.dz + 1) * 7;
 
   // Ground outline: the cell footprint, so the extension of the street grid is
