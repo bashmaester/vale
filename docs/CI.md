@@ -48,7 +48,9 @@ Steps:
 10. `actions/deploy-pages@v4`
 
 The deployed URL is exposed as `steps.deployment.outputs.page_url` in the
-`github-pages` environment.
+`github-pages` environment. For this repository it resolves to
+**https://bashmaester.github.io/vale/**; the docs index is at
+`https://bashmaester.github.io/vale/docs/index.html`.
 
 ## Generated vs human docs
 

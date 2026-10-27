@@ -27,6 +27,8 @@ earlier “go pure 2D” assessment; the scene stays 3D underneath and 2D in out
 - `scripts/update-docs.mjs` and `npm run docs`: generated `BUILD.md`,
   `DEPLOY_STATUS.md`, `manifest.json` and `docs/index.html`.
 - Human-authored `docs/HANDOFF.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `CI.md`.
+- First successful GitHub Pages deployment on this branch: workflow run
+  `40521585370`, live at `https://bashmaester.github.io/vale/`.
 
 ### Changed
 

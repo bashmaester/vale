@@ -4,8 +4,8 @@
 | --- | --- |
 | Status | deployed by GitHub Actions |
 | Branch | `arena/082e9ffd-vale` |
-| Commit | `d7776408` |
-| Built | 2026-10-27T14:28:37.909Z |
+| Commit | `c4269060` |
+| Built | 2026-10-27T14:31:40.075Z |
 | Film | [../index.html](../index.html) |
 | Docs index | [index.html](index.html) |
 | Handoff | [HANDOFF.md](HANDOFF.md) |

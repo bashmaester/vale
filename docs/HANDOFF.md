@@ -136,8 +136,16 @@ Open:
 - `index.html?w=1920&h=1080` — higher internal resolution
 
 Deployment is automatic on `git push origin arena/082e9ffd-vale`. The workflow
-uploads `_site/` (film + `docs/`) through `actions/deploy-pages`. The deployed
-docs index is at `docs/index.html` on the Pages site.
+uploads `_site/` (film + `docs/`) through `actions/deploy-pages`.
+
+Live site for this repository: **https://bashmaester.github.io/vale/**
+
+- film: `https://bashmaester.github.io/vale/`
+- lab: `https://bashmaester.github.io/vale/?lab=1`
+- docs index: `https://bashmaester.github.io/vale/docs/index.html`
+- handoff: `https://bashmaester.github.io/vale/docs/HANDOFF.md`
+
+The first successful Pages workflow for this turn was run `40521585370`.
 
 ---
 

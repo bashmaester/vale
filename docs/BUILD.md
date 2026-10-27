@@ -1,8 +1,8 @@
 # Build metadata
 
-- **Commit:** `d7776408d125e5f09e3042c0cd9900113a3847ed` (`d7776408`)
+- **Commit:** `c42690604160bc4380833fe4e52c85577c6d2212` (`c4269060`)
 - **Branch:** `arena/082e9ffd-vale`
-- **Built:** 2026-10-27T14:28:37.909Z
+- **Built:** 2026-10-27T14:31:40.075Z
 - **Package version:** 1.0.0
 - **Self-contained film:** `index.html` — 91,171 bytes
 - **CI run:** local
