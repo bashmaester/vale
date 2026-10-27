@@ -8,7 +8,7 @@
 // Sections: Camera · Scene · Texture · Palette · Case · Playback.
 import { PRESETS } from './graph.js';
 import { Scene, SCENE_PARAM_DEFS } from './scene.js';
-import { BUFFER_CELLS } from './neighbors.js';
+import { KINDS } from './tiles.js';
 import { PALETTES, setPalette, currentPalette } from './palette.js';
 
 const el = (tag, className, text) => {
@@ -494,87 +494,130 @@ export class Sidebar {
     }));
     root.appendChild(cs);
 
-    // Buffer volume --------------------------------------------------------
-    const bf = section('Buffer volume', 'The 3×3 set: the eight neighbouring cells. Each is a full cell built from the same rules, so the street tiles across the seam.', false);
-    const grid = el('div', 'sb-grid');
-    const cells = [
-      ['nw', 'NW'], ['n', 'N'], ['ne', 'NE'],
-      ['w', 'W'], [null, '●'], ['e', 'E'],
-      ['sw', 'SW'], ['s', 'S'], ['se', 'SE'],
-    ];
-    cells.forEach(([id, text], i) => {
-      if (!id) {
-        const mid = el('span', 'sb-grid-hero', text);
-        mid.title = 'The hero tile, always rendered';
-        grid.appendChild(mid);
-        return;
+    // Tile world -----------------------------------------------------------
+    const tw = section('Tile world', 'The city is a grid of tiles. Every street runs on a seam between two tiles, so the block is always clipped to the inside of its own tile: a building cannot stand on a street. Click a tile to cycle its kind.', true);
+
+    // The minimap. Same layout the world has, so a click lands on the tile the
+    // user is pointing at.
+    const mini = el('div', 'sb-mini');
+    mini.title = 'Click: next kind · Shift-click: previous · Right-click: reset to block';
+    tw.appendChild(mini);
+
+    const legend = el('div', 'sb-legend');
+    tw.appendChild(legend);
+
+    const paintMini = () => {
+      const n = this.scene.worldSize || 3;
+      mini.style.gridTemplateColumns = `repeat(${n}, 1fr)`;
+      mini.textContent = '';
+      legend.textContent = '';
+      for (let j = 0; j < n; j++) {
+        for (let i = 0; i < n; i++) {
+          const idx = j * n + i;
+          const kind = this.scene.tiles[idx] || 'block';
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = `sb-tile k-${kind}`;
+          b.dataset.kind = kind;
+          b.dataset.i = String(idx);
+          b.title = `tile ${i + 1},${j + 1} — ${kind}`;
+          const mid = (i === Math.floor(n / 2) && j === Math.floor(n / 2));
+          if (mid) b.classList.add('hero');
+          b.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            this.scene.cycleTile(idx, ev.shiftKey ? -1 : 1);
+            paintMini();
+          });
+          b.addEventListener('contextmenu', (ev) => {
+            ev.preventDefault();
+            this.scene.setTile(idx, 'block');
+            paintMini();
+          });
+          mini.appendChild(b);
+        }
       }
-      const b = document.createElement('button');
-      b.type = 'button';
-      b.className = 'sb-cell';
-      b.textContent = text;
-      b.dataset.cell = id;
-      // Bit order is the *buffer list* order, not the grid order: the grid has
-      // a gap for the hero in the middle, so a grid index would address the
-      // wrong neighbour (E landed on SW).
-      const bit = 1 << BUFFER_CELLS.findIndex((c) => c.id === id);
-      const on = () => (this.scene.params.bufferCells & bit) === bit;
-      const paint = () => b.classList.toggle('on', on());
-      b.addEventListener('click', () => {
-        this.scene.setParam('bufferCells', on()
-          ? (this.scene.params.bufferCells & ~bit)
-          : (this.scene.params.bufferCells | bit));
-        paint();
-      });
-      paint();
-      this.rows.push({ kind: 'cell', input: b, sync: paint });
-      grid.appendChild(b);
-    });
-    bf.appendChild(grid);
-    bf.appendChild(this.select({
-      label: 'layout',
-      value: '0',
-      options: Scene.LAYOUTS.map((l, i) => [String(i), l.label]),
-      onChange: (v) => { this.scene.applyLayout(Number(v)); this.refresh(); },
-      get: () => String(this.scene.params.layout | 0),
+      for (const k of KINDS) {
+        const sw = el('span', `sb-sw k-${k.id}`, k.label);
+        legend.appendChild(sw);
+      }
+    };
+    paintMini();
+    this.rows.push({ kind: 'mini', input: mini, sync: paintMini });
+
+    tw.appendChild(this.slider({
+      label: 'grid size',
+      min: 0, max: 3, step: 1,
+      value: this.scene.params.worldSize | 0,
+      onInput: (v) => { this.scene.params.worldSize = v | 0; this.scene.rebuildWorld(); paintMini(); },
+      get: () => this.scene.params.worldSize | 0,
+      format: (v) => `${[3, 5, 7, 9][v | 0]} × ${[3, 5, 7, 9][v | 0]}`,
     }));
-    bf.appendChild(this.select({
-      label: 'neighbour kind',
-      value: String(this.scene.params.neighbourKind),
-      options: [
-        ['0', 'auto (street E/W, block N/S)'],
-        ['1', 'all street'],
-        ['2', 'all block'],
-        ['3', 'all yard'],
-      ],
-      onChange: (v) => this.scene.setParam('neighbourKind', Number(v)),
-      get: () => String(this.scene.params.neighbourKind),
+
+    tw.appendChild(this.select({
+      label: 'preset',
+      value: 'grid',
+      options: [['', 'choose…'], ...Scene.PRESETS.map((p) => [p.id, p.label])],
+      onChange: (v) => {
+        if (!v) return;
+        this.scene.applyPreset(v);
+        paintMini();
+        this.refresh();
+      },
+      get: () => '',
     }));
-    bf.appendChild(this.select({
-      label: 'neighbour style',
-      value: String(this.scene.params.bufferStyle),
-      options: [['0', 'developed'], ['1', 'wireframe'], ['2', 'point cloud']],
-      onChange: (v) => this.scene.setParam('bufferStyle', Number(v)),
-      get: () => String(this.scene.params.bufferStyle),
+
+    tw.appendChild(this.slider({
+      label: 'seed',
+      min: 1, max: 9999, step: 1,
+      value: this.scene.params.worldSeed | 0,
+      onInput: (v) => this.scene.reseed(v | 0),
+      get: () => this.scene.params.worldSeed | 0,
+      format: (v) => String(v | 0),
     }));
-    bf.appendChild(this.slider({
-      label: 'ghost opacity (wire / points)',
-      min: 0, max: 1, step: 0.01,
-      value: this.scene.params.bufferOpacity,
-      onInput: (v) => this.scene.setParam('bufferOpacity', v),
-      get: () => this.scene.params.bufferOpacity,
-    }));
-    bf.appendChild(this.buttonRow('none', () => {
-      this.scene.setParam('bufferCells', 0);
+
+    const seedRow = el('div', 'sb-btns');
+    seedRow.appendChild(this.buttonRow('new seed', () => {
+      this.scene.reseed(1 + Math.floor(Math.random() * 9999));
+      paintMini();
       this.refresh();
-    }, 'ghost'));
-    bf.appendChild(this.buttonRow('all eight', () => {
-      this.scene.setParam('bufferCells', 255);
-      this.refresh();
-    }, 'ghost'));
-    root.appendChild(bf);
+    }));
+    seedRow.appendChild(this.buttonRow('copy link', () => {
+      const url = this.scene.toUrl();
+      if (navigator.clipboard) navigator.clipboard.writeText(url).catch(() => {});
+      history.replaceState(null, '', url);
+      seedRow.lastChild.textContent = 'copied';
+    }));
+    tw.appendChild(seedRow);
+
+    tw.appendChild(this.toggleRow({
+      label: 'diagonal crossings',
+      value: this.scene.params.diagCross !== 0,
+      onChange: (v) => { this.scene.setParam('diagCross', v ? 1 : 0); this.scene.invalidateStatic(); },
+      get: () => this.scene.params.diagCross !== 0,
+    }));
+    root.appendChild(tw);
 
     // Playback -------------------------------------------------------------
+    // The elevated train is its own system: its own rail, its own clock and its
+    // own controls, so it can be switched off without touching the street.
+    // Tiles for the line (viaduct, station, terminus) are the next step; for now
+    // the line runs on the north street's seam.
+    const tr = section('Elevated train', 'The line is separate from the street grid: it has its own clock and can be switched off on its own.', false);
+    tr.appendChild(this.toggleRow({
+      label: 'train',
+      value: this.scene.params.featTrain !== 0,
+      onChange: (v) => { this.scene.params.featTrain = v ? 1 : 0; this.scene.invalidateStatic(); },
+      get: () => this.scene.params.featTrain !== 0,
+    }));
+    tr.appendChild(this.slider({
+      label: 'speed',
+      min: 0.2, max: 4, step: 0.05,
+      value: this.scene.params.trainSpeed,
+      onInput: (v) => { this.scene.params.trainSpeed = v; },
+      get: () => this.scene.params.trainSpeed,
+      format: (v) => `${Number(v).toFixed(2)}×`,
+    }));
+
     const pb = section('Playback');
     const pbRow = el('div', 'sb-btns');
     this.playBtn = this.buttonRow(this.state.paused ? 'Play' : 'Pause', () => {

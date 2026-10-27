@@ -24,12 +24,12 @@
 //   procedural descriptions are sampled more coarsely.
 
 export const TILE = {
-  x0: -15, x1: 15,
-  z0: -14, z1: 10.5,
+  x0: -45, x1: 45,
+  z0: -36.75, z1: 36.75,
   y0: -1.6, y1: 15.6,
   floorY: 0,
-  wallX: -15,
-  wallZ: -14,
+  wallX: -45,
+  wallZ: -36.75,
   // Thickness of the shell: the walls and the floor slab.
   shell: 0.55,
 };
@@ -109,21 +109,14 @@ export function clampLevel(v) {
   return Math.max(0, Math.min(2, Math.round(n)));
 }
 
-// Convenience: y of the walking surface at any x/z inside the tile.
-// Sidewalk curbs get a short ramp so crossing feet do not pop.
-export function groundYAt(x, z) {
-  const front = ROAD_EDGE.front;
-  const back = ROAD_EDGE.back;
-  if (z > front) return SIDEWALK_Y;
-  if (z < back) return SIDEWALK_Y;
-  const d = Math.min(front - z, z - back);
-  const t = Math.max(0, Math.min(1, d / 0.55));
-  return SIDEWALK_Y * (1 - t);
-}
-
 export function tileScreenHeight(camera) {
   const a = camera.project({ x: TILE.x0, y: TILE.y0, z: TILE.z1 });
   const b = camera.project({ x: TILE.x1, y: TILE.y1, z: TILE.z1 });
   if (!a || !b) return 9999;
   return Math.abs(a.y - b.y);
 }
+
+// The walking surface depends on where the streets are, which is the tile
+// world rather than this module; re-exported here because every consumer
+// already talks to the tile for its geometry.
+export { groundYAt } from './world.js';

@@ -10,12 +10,15 @@ import {
   lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel, TILE,
 } from './tile.js';
 import {
-  drawWalls, drawGroundSlab, drawStreet, drawSideStreet, drawPaving,
-  drawRoadMarkings, drawRail, drawBuildings, southRowItems, drawSignals,
-  drawFurniture, drawReflections, drawFlicker, collectFrame,
+  drawWalls, drawGroundSlab, drawRail, drawReflections, drawFlicker,
+  collectFrame, drawBackdrop,
 } from './environment.js';
-import { drawBufferCells, BUFFER_CELLS, CELL_D } from './neighbors.js';
-import { defaultKindFor } from './cells.js';
+import { drawWorld, drawSignalLamps } from './cells.js';
+import {
+  buildWorld, DEFAULT_WORLD, KIND_IDS, kindIndex,
+} from './tiles.js';
+import { setWorld } from './world.js';
+import { BANDS } from './world.js';
 import { grade, paletteVersion, PLATE_CLEAR } from './palette.js';
 
 export const SCENE_PARAM_DEFS = {
@@ -49,12 +52,16 @@ export const SCENE_PARAM_DEFS = {
   featSignals: { value: 1, min: 0, max: 1, step: 1, label: 'signals' },
   featFlicker: { value: 1, min: 0, max: 1, step: 1, label: 'lamp flicker' },
 
-  // --- buffer cells (0 = hidden; neighbours are off by default) ------------
-  bufferStyle: { value: 0, min: 0, max: 1, step: 1, label: 'buffer style (0 wire)' },
-  bufferOpacity: { value: 0.35, min: 0, max: 1, step: 0.01, label: 'buffer opacity' },
-  bufferCells: { value: 0, min: 0, max: 255, step: 1, label: 'buffer cells (bitmask)' },
-  neighbourKind: { value: 0, min: 0, max: 3, step: 1, label: 'neighbour kind (0 auto)' },
-  layout: { value: 0, min: 0, max: 4, step: 1, label: 'layout preset (0 auto)' },
+  // --- the tile world ------------------------------------------------------
+  // The whole city is described by these two numbers plus the kind of each
+  // tile, and that is enough to put it in a URL (see `Scene.fromUrl`).
+  worldSeed: { value: 1, min: 1, max: 9999, step: 1, label: 'world seed' },
+  worldSize: { value: 1, min: 0, max: 3, step: 1, label: 'world size (3/5/7/9)' },
+  // Diagonal crossings across a paved crossing square.
+  diagCross: { value: 1, min: 0, max: 1, step: 1, label: 'diagonal crossings' },
+  // The elevated line is its own system, with its own switch and its own speed.
+  featTrain: { value: 1, min: 0, max: 1, step: 1, label: 'elevated train' },
+  trainSpeed: { value: 1, min: 0.2, max: 4, step: 0.05, label: 'train speed' },
 };
 
 function defaults() {
@@ -76,6 +83,12 @@ export class Scene {
   constructor(W, H) {
     this.W = W; this.H = H;
     this.params = defaults();
+    // The world has to exist before the crowd is built: the crowd reads the
+    // street furniture out of it, and a crowd built against an empty world
+    // places people inside the lamp posts.
+    this.tiles = DEFAULT_WORLD.slice();
+    this.world = null;
+    this.rebuildWorld();
     this.plate = makeCanvas(W, H, false);
     this.field = makeCanvas(W, H, false);
     this.pp = new Painter(this.plate.getContext('2d'), W, H);
@@ -102,6 +115,67 @@ export class Scene {
     this.weather = new Weather(W, H);
     this.lod = { level: 0, px: 999, id: 'hero' };
     this.detail = makeDetail(0);
+  }
+
+  // Rebuild the tile grid from `this.tiles` + the params, and hand the result
+  // to world.js so the crowd and the traffic know where the streets are.
+  rebuildWorld() {
+    const sizes = [3, 5, 7, 9];
+    const size = sizes[clamp(this.params.worldSize | 0, 0, 3)];
+    const ids = [];
+    for (let i = 0; i < size * size; i++) ids.push(this.tiles[i] || 'block');
+    this.tiles = ids;
+    this.worldSize = size;
+    this.world = buildWorld({ size, ids, seed: Math.max(1, this.params.worldSeed | 0) });
+    setWorld(this.world);
+    this._staticKey = '';
+    return this.world;
+  }
+
+  setTile(i, kindId) {
+    if (i < 0 || i >= this.tiles.length) return false;
+    if (!KIND_IDS.includes(kindId)) return false;
+    this.tiles[i] = kindId;
+    this.rebuildWorld();
+    return true;
+  }
+
+  cycleTile(i, dir = 1) {
+    const k = kindIndex(this.tiles[i]);
+    this.setTile(i, KIND_IDS[(k + dir + KIND_IDS.length) % KIND_IDS.length]);
+    return this.tiles[i];
+  }
+
+  /** A stable, URL-sized description of the whole scene. */
+  worldKey() {
+    return `${this.params.worldSize}|${Math.max(1, this.params.worldSeed | 0)}|${this.params.diagCross | 0}|${this.tiles.join('.')}`;
+  }
+
+  /**
+   * The whole scene as a URL: seed, size and one kind letter per tile.
+   * `?world=1234&size=1&tiles=0.0.3...` — nothing else is needed to rebuild it.
+   */
+  toUrl(base = location.href) {
+    const u = new URL(base);
+    u.searchParams.set('world', String(Math.max(1, this.params.worldSeed | 0)));
+    u.searchParams.set('size', String(this.params.worldSize | 0));
+    u.searchParams.set('tiles', this.tiles.map((t) => kindIndex(t)).join('.'));
+    u.searchParams.set('diag', String(this.params.diagCross | 0));
+    return u.toString();
+  }
+
+  fromUrl(search = '') {
+    const q = new URLSearchParams(search);
+    if (q.has('size')) this.params.worldSize = clamp(Number(q.get('size')) || 1, 0, 3);
+    if (q.has('world')) this.params.worldSeed = clamp(Number(q.get('world')) || 1, 1, 9999);
+    if (q.has('diag')) this.params.diagCross = Number(q.get('diag')) ? 1 : 0;
+    if (q.has('tiles')) {
+      const want = [3, 5, 7, 9][clamp(this.params.worldSize | 0, 0, 3)] ** 2;
+      const list = q.get('tiles').split('.').map((v) => KIND_IDS[clamp(Number(v) || 0, 0, KIND_IDS.length - 1)]);
+      this.tiles = list.slice(0, want);
+    }
+    this.rebuildWorld();
+    return this;
   }
 
   setViewport(W, H) {
@@ -140,48 +214,45 @@ export class Scene {
     ctx.restore();
   }
 
-  // Which tile a neighbour is: 'street', 'block' or 'yard'. Auto follows the
-  // edge rule (east/west continue the street, north/south are more block), and
-  // the param forces one kind for every neighbour so a seam can be inspected.
-  // Layout presets: a whole neighbour pattern, so the ways cells connect can be
-  // inspected in one click instead of toggling eight buttons. Each preset also
-  // sets which cells are on — that is the point, a layout is a layout.
-  static LAYOUTS = [
-    // `auto` is the honest default: east and west continue the street, north
-    // and south are more block, which leaves a T junction at each end of the
-    // module. `grid` is the same module tiled into a full street grid — every
-    // neighbour carries its own street, so the block between them closes up.
-    { id: 'auto', label: 'auto — street E/W, block N/S', cells: 0b010111010, kind: 'auto' },
-    { id: 'grid', label: 'grid — streets on all four sides', cells: 0b111111111, kind: 'street' },
-    { id: 'row', label: 'row — E and W only', cells: 0b010101010, kind: 'street' },
-    { id: 'block', label: 'block field — no side streets', cells: 0b111111111, kind: 'block' },
-    { id: 'yard', label: 'yard — street with open lots', cells: 0b010111010, kind: 'yard' },
+  // Presets are whole tile patterns: they are what the minimap starts from and
+  // what `?tiles=` saves, so a preset is just a kind per tile.
+  static PRESETS = [
+    { id: 'grid', label: 'grid — one block per tile', make: (n) => new Array(n * n).fill('block') },
+    { id: 'cross', label: 'cross — a paved crossing at the centre', make: (n) => {
+      const a = new Array(n * n).fill('block');
+      const c = Math.floor(n / 2) * n + Math.floor(n / 2);
+      a[c] = 'intersection';
+      return a;
+    } },
+    { id: 'avenue', label: 'avenue — blocks run east–west', make: (n) => {
+      const a = new Array(n * n).fill('block');
+      for (let j = 0; j < n; j++) a[Math.floor(n / 2) * n + j] = 'block_ew';
+      return a;
+    } },
+    { id: 'row', label: 'shop rows — low blocks at the front', make: (n) => {
+      const a = new Array(n * n).fill('block');
+      for (let i = 0; i < n; i++) a[(n - 1) * n + i] = 'row';
+      return a;
+    } },
+    { id: 'yard', label: 'yards — open lots behind the street', make: (n) => {
+      const a = new Array(n * n).fill('block');
+      for (let i = 0; i < n; i++) a[i] = 'yard';
+      return a;
+    } },
   ];
 
-  applyLayout(i) {
-    const L = Scene.LAYOUTS[clamp(i | 0, 0, Scene.LAYOUTS.length - 1)];
-    this.params.layout = i | 0;
-    this.params.bufferCells = L.cells;
-    this.params.neighbourKind = L.kind === 'street' ? 1 : L.kind === 'block' ? 2 : L.kind === 'yard' ? 3 : 0;
+  applyPreset(id) {
+    const P = Scene.PRESETS.find((p) => p.id === id) || Scene.PRESETS[0];
+    const n = [3, 5, 7, 9][clamp(this.params.worldSize | 0, 0, 3)];
+    this.tiles = P.make(n);
+    this.rebuildWorld();
+    return P;
   }
 
-  neighbourKindFor(cell) {
-    const mode = this.params.neighbourKind | 0;
-    if (mode === 1) return 'street';
-    if (mode === 2) return 'block';
-    if (mode === 3) return 'yard';
-    return defaultKindFor(cell.dx, cell.dz);
-  }
-
-  // Bitmask → set of buffer cell ids (bit order matches BUFFER_CELLS).
-  bufferMask() {
-    const mask = new Set();
-    const bits = this.params.bufferCells | 0;
-    if (!bits) return mask;
-    for (let i = 0; i < BUFFER_CELLS.length; i++) {
-      if (bits & (1 << i)) mask.add(BUFFER_CELLS[i].id);
-    }
-    return mask;
+  reseed(seed) {
+    this.params.worldSeed = clamp(seed | 0, 1, 9999) || 1;
+    this.rebuildWorld();
+    return this.params.worldSeed;
   }
 
   // --- the cached set ----------------------------------------------------
@@ -200,27 +271,25 @@ export class Scene {
     far.setBoil(this.pp.boil);
     drawWalls(far, camera, detail, this.params);
 
-    // Near layer: everything from the ground up.
+    // Near layer: the city, one tile at a time.
     const p = this.sp;
     p.ctx.setTransform(1, 0, 0, 1, 0, 0);
     p.ctx.clearRect(0, 0, this.W, this.H);
     p.setBoil(this.pp.boil);
+    drawBackdrop(p, camera, detail);
     drawGroundSlab(p, camera);
-    drawStreet(p, camera, detail);
-    drawSideStreet(p, camera, detail);
-    drawPaving(p, camera, detail);
-    drawRoadMarkings(p, camera, this.timeline);
-    drawRail(p, camera);
+    if (this.params.featTrain) drawRail(p, camera);
     for (const it of collectFrame(p, camera, this.params)) if (it.group === 'far') it.draw(p);
-    drawBuildings(p, camera, detail, this.timeline);
-    drawFurniture(p, camera, detail, this.timeline);
+    drawWorld(p, camera, this.world, detail, {
+      detail, diag: this.params.diagCross !== 0,
+    });
   }
 
   _ensureStatic(camera, detail) {
     // `boil` is in the key on purpose: the hand-drawn jitter regenerates at
     // ~7.5 Hz, so a cached set must repaint when it ticks, or the artwork stops
     // boiling while the people and rain keep going.
-    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${paletteVersion()}|${this.pp.boil}|${this.W}x${this.H}`;
+    const key = `${detail.level}|${this.params.caseFrame}|${this.params.walls}|${paletteVersion()}|${this.pp.boil}|${this.W}x${this.H}|${this.worldKey()}`;
     const ref = { x: 0, y: 3.2, z: 0 };
     let needsRepaint = key !== this._staticKey || !this._staticPose;
     let dx = 0, dy = 0;
@@ -311,19 +380,7 @@ export class Scene {
       mark = n;
     };
 
-    // 1) Buffer cells go down first: they are neighbours, so the hero volume
-    //    must be able to cover them.
-    const cells = this.bufferMask();
-    const bufferStyle = this.params.bufferStyle === 1 ? 'wire' : this.params.bufferStyle === 2 ? 'points' : 'full';
-    if (cells.size) {
-      // The cells behind the hero are part of its backdrop; the ones in front
-      // of it are not, and must be drawn over it further down.
-      drawBufferCells(this.pp, camera, cells, bufferStyle, this.params.bufferOpacity,
-        (c) => c.dz <= 0, (c) => this.neighbourKindFor(c));
-    }
-    tick('buffer');
-
-    // 2) Cached layers. The far layer is only the closed walls; the train runs
+    // 1) Cached layers. The far layer is only the closed walls; the train runs
     //    between it and the set, which is why it no longer paints over the
     //    buildings. Both layers are repainted only when the camera drifts.
     const shift = this._ensureStatic(camera, detail);
@@ -337,13 +394,20 @@ export class Scene {
     // nothing in it, and a full-frame blit of an empty canvas still costs a
     // full frame of work.
     if (this.params.walls) blit(this.staticFar);
-    if (this.params.featTraffic) this.traffic.drawTrain(this.pp, camera, timeline, this.params);
     tick('train');
     blit(this.static);
     tick('set');
+    // The train is its own system with its own clock (see the Elevated train
+    // panel). It rides over the set: an elevated line three streets back, drawn
+    // after the city, is the cheapest way to keep it reading as a viaduct.
+    if (this.params.featTrain) this.traffic.drawTrain(this.pp, camera, timeline, this.params);
 
     // 3) Signals animate through the cycle; lamps flicker on looped noise.
-    if (this.params.featSignals) drawSignals(this.pp, camera, timeline);
+    if (this.params.featSignals) {
+      // Signal heads are painted with the set; only their lit lamp moves, so it
+      // goes over the cached layer like the lamp flicker does.
+      drawSignalLamps(this.pp, camera, this.world, timeline.u);
+    }
     if (this.params.featFlicker) drawFlicker(this.pp, camera, timeline.t);
     tick('signals');
 
@@ -369,26 +433,8 @@ export class Scene {
         draw: (p) => { for (const d of it.draws) d(p); },
       });
     }
-    // Neighbour cells in front of the hero.
-    if (cells.size) {
-      const nearer = new Set([...cells].filter((id) => {
-        const c = BUFFER_CELLS.find((b) => b.id === id);
-        return c && c.dz > 0;
-      }));
-      if (nearer.size) {
-        const q = camera.project(v3(0, 1.5, TILE.z1 + CELL_D * 0.5));
-        drawables.push({
-          depth: q && Number.isFinite(q.depth) ? q.depth : 1e6,
-          draw: (p) => drawBufferCells(p, camera, nearer, bufferStyle, this.params.bufferOpacity,
-            null, (c) => this.neighbourKindFor(c)),
-        });
-      }
-    }
-    // The row of shops across the street: nearer than the crowd, so it sorts
-    // with them instead of being baked into the set behind them.
-    for (const it of southRowItems(camera, detail)) drawables.push(it);
-    // Near case members (plinth, posts, rails) sort with the scene so a post
-    // in front of a vehicle occludes it and the plinth never floats.
+    // Case members (the glass boundary) sort with the scene so the set can
+    // occlude them and they never float over a vehicle.
     for (const it of frameItems) {
       if (it.group !== 'near') continue;
       drawables.push({ depth: it.depth, draw: it.draw });

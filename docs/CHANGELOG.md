@@ -2,6 +2,77 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-27 — Turn 16: the set is a grid of tiles
+
+**User feedback:** the scene was meant to be an intersection and deserves a 3×3
+grid of tiles, not one; once tiles were added, buildings stood on the street;
+the tile kinds wanted are an intersection, a solo block, a block that extends
+EW and one that extends NS; a minimap like the buffer zone, up to at least 5×5,
+with the original scene built out of 3×3; tile kinds cyclable and the world
+regenerable from a new seed; the whole scene storable as seed + url; crosswalks
+only on the corners that match the tile type, optionally a crosswalk-only tile
+and diagonal crossings; no parked cars; people must not be able to push cars;
+street lights and traffic lights in the right places; the elevated train a
+separate system with its own tiles and controls; no camera-facing sign on the
+truck; no circular car shadows.
+
+### The tile world
+
+- **A street lives on a seam, never inside a tile.** `src/tiles.js` is now the
+  single source of truth. A tile declares which of its four edges carry a
+  street half (`BITS { n1, e2, s4, w8 }`); a seam exists only when *both*
+  tiles on it ask for it, so two halves always make one 7.2 m carriageway with
+  2.4 m pavements. Every street therefore runs exactly down the middle of a
+  shared boundary, which is what makes the grid tile at all.
+- **Kinds** (`KINDS`, `KIND_IDS`): `block` (solo block — streets on all four
+  sides, buildings in the middle), `block_ew` (streets north and south, the
+  block runs on east–west), `block_ns` (the mirror), `row` (a low shop row),
+  `yard` (an open lot), `intersection` (four streets, a paved crossing in the
+  middle, no buildings) and `park` (no streets at all).
+- **3×3 by default, up to 9×9.** The main street (the seam at z = +12.25) and
+  its cross street (x = +15) are always built, so the film's corner is always
+  an intersection whatever the minimap is set to.
+- **Buildings cannot stand on a street.** Lots are generated inside each
+  tile's interior box and `lot()` clamps them to it, so a lot that asks for the
+  pavement is pushed back rather than drawn over it. The two rows of a block
+  now meet in the middle, so a block has no gap to see the far street through.
+- **The minimap editor** (`sidebar.js`, "Tile world"): click a tile to cycle its
+  kind, shift-click back, right-click to reset, plus grid size 3/5/5/7/9,
+  presets, a seed slider with *new seed*, *copy link*, and a diagonal-crossings
+  toggle. `.sb-tile.k-<kind>` in `style.css` colours every kind so the map reads
+  as a plan.
+- **The whole scene is seed + url.** `scene.toUrl()` writes
+  `?world=&size=&tiles=…&diag=`; `scene.fromUrl()` reads it back, `worldKey()`
+  is in the static-cache key so a change repaints the set.
+
+### Drawing fixes
+
+- **The glass-box look is gone.** Three separate causes: `p.box` strokes *all
+  twelve* edges unless `edges: false` is passed (every block was a wireframe),
+  the roof cornice ran across the wall instead of along it (a fin of glass
+  through the block), and roofs were gated on `detail.roofs`, a field that no
+  LoD level has, so they were never drawn.
+- **One depth-sorted list per frame.** Ground planes go down first, far to near;
+  then lots, props, crossings and the four signal heads of every junction sort
+  together by projected depth (lots by their nearest box corner). A tile used to
+  be painted as a unit, which let a crossing two tiles away print through a
+  near shopfront.
+- **Cars**: parked cars are gone; every vehicle loops the street as a film set
+  does, stopping at the stop line for the pedestrian window. The shadow is a
+  ground footprint quad, not a circle, and the taxi's roof sign is a 3D box.
+- **People cannot push cars**: vehicles enter the crowd solver as a row of
+  fixed discs along their own axis, so a pedestrian walks round a car and never
+  moves it.
+- **The elevated train is its own system**: its own panel with a switch and a
+  0.2–4× speed, its own clock (`timeline.train(speed)`), its own rail. Tiles for
+  the line are the next step.
+
+### Tooling
+
+- `tools/shot.mjs` grew `--tiles`, `--size`, `--seed` and `--preset2`, so the
+  tile world can be rendered from the command line; `--eye/--target/--fov` is
+  unchanged.
+
 ## 2026-10-27 — Turn 14: cells that tile by edge, and a pavement you can walk round
 
 **User feedback:** a cell must tile with its neighbours — an EW-street tile either

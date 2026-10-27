@@ -127,41 +127,53 @@ body { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Libe
   border-radius: 4px; padding: 5px 9px; font: inherit; }
 .sb-btn:hover { background: #1b2a22; border-color: #56c7b7; }
 
-/* --- performance section: 3x3 buffer grid ------------------------------- */
-.sb-grid {
+/* --- tile world: the minimap editor ------------------------------------ */
+.sb-mini {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 4px;
-  margin: 8px 0 10px;
+  gap: 3px;
+  margin: 8px 0 8px;
 }
-.sb-cell {
-  height: 34px;
+.sb-tile {
+  aspect-ratio: 4 / 3.4;
   cursor: pointer;
   border: 1px solid #2b3a32;
+  border-radius: 3px;
   background: #0b120e;
-  color: #6f8377;
-  border-radius: 4px;
-  font: inherit;
-  font-size: 10px;
-  letter-spacing: .08em;
+  padding: 0;
+  position: relative;
+  transition: border-color .12s ease, background .12s ease;
 }
-.sb-cell:hover { border-color: #56c7b7; color: #cdd8cb; }
-.sb-cell.on {
-  border-color: #56c7b7;
-  color: #06100c;
-  background: #56c7b7;
-  box-shadow: inset 0 0 0 1px rgba(6,16,12,.35);
+.sb-tile::after {
+  content: '';
+  position: absolute;
+  inset: 22%;
+  border-radius: 1px;
+  background: #24352c;
 }
-.sb-grid-hero {
-  height: 34px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px dashed #3a4b41;
-  border-radius: 4px;
-  color: #9fb2a5;
-  font-size: 12px;
+.sb-tile:hover { border-color: #56c7b7; }
+.sb-tile.hero { box-shadow: inset 0 0 0 1px rgba(86,199,183,.55); }
+/* One colour per kind, so the minimap reads as a plan rather than a grid of
+   identical buttons. */
+.sb-tile.k-block::after { background: #3d4f45; inset: 24% 20%; }
+.sb-tile.k-block_ew::after { background: #46604f; inset: 34% 6%; }
+.sb-tile.k-block_ns::after { background: #46604f; inset: 6% 34%; }
+.sb-tile.k-row::after { background: #9a6a3c; inset: 26% 8%; }
+.sb-tile.k-yard::after { background: #4a4a3a; inset: 20%; }
+.sb-tile.k-intersection::after { background: #2f6f68; inset: 12%; }
+.sb-tile.k-park::after { background: #2f5a44; inset: 16%; border-radius: 50%; }
+.sb-legend { display: flex; flex-wrap: wrap; gap: 4px 8px; margin: 0 0 8px;
+  font-size: 9px; letter-spacing: .06em; color: #8ba294; text-transform: uppercase; }
+.sb-sw { display: inline-flex; align-items: center; gap: 4px; }
+.sb-sw::before {
+  content: ''; width: 7px; height: 7px; border-radius: 1px; background: #3d4f45;
+  border: 1px solid #2b3a32;
 }
+.sb-sw.k-block_ew::before { background: #46604f; }
+.sb-sw.k-block_ns::before { background: #46604f; }
+.sb-sw.k-row::before { background: #9a6a3c; }
+.sb-sw.k-yard::before { background: #4a4a3a; }
+.sb-sw.k-intersection::before { background: #2f6f68; }
+.sb-sw.k-park::before { background: #2f5a44; border-radius: 50%; }
 
 /* --- stats overlay ------------------------------------------------------ */
 .sb-swatches { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin: 2px 0 8px; }

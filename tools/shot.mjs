@@ -43,12 +43,18 @@ if (setArg) {
   }
 }
 
-// --layout row|corner|block|yard — apply a neighbour layout preset.
-const layoutArg = arg('layout', null);
-if (layoutArg) {
-  const i = Scene.LAYOUTS.findIndex((l) => l.id === layoutArg);
-  if (i >= 0) scene.applyLayout(i);
+// --tiles "0.0.3,..." — the tile world as kind indices, plus --size and --seed.
+const tilesArg = arg('tiles', null);
+if (arg('size', null) != null) scene.params.worldSize = Number(arg('size'));
+if (arg('seed', null) != null) scene.params.worldSeed = Number(arg('seed'));
+if (tilesArg) {
+  const { KIND_IDS } = await import('../src/tiles.js');
+  scene.tiles = String(tilesArg).split('.').map((v) => KIND_IDS[Number(v) | 0] || 'block');
+  scene.rebuildWorld();
 }
+// --preset grid|cross|avenue|row|yard — a whole tile pattern.
+const presetArg = arg('preset2', null) || arg('tilepreset', null);
+if (presetArg) scene.applyPreset(presetArg);
 
 // Optional camera override for framing experiments:
 //   --eye 9,13,46 --target -4,3,-1 --fov 36

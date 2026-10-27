@@ -11,7 +11,7 @@ import { v3, clamp, lerp, easeInOut, quadLerp, smoothstep, smootherstep } from '
 import { separate } from './collision.js';
 import { TILE } from './tile.js';
 import { LOOP, loopFrac, wrapRange, boundaryAlpha } from './loop.js';
-import { ROAD, PARKING, LANES, CROSSWALKS, sanitizePark } from './world.js';
+import { ROAD, LANES, CROSSWALKS } from './world.js';
 
 const BONE = (a) => `rgba(239,233,216,${a})`;
 
@@ -120,13 +120,17 @@ export function drawVehicle(p, camera, item) {
   const flip = { ...spec, dir: 1 };
   const seed = 7 + prof.w * 3.1;
 
-  // Contact shadow on the wet road.
-  const sh = camera.project(v3(world.x, 0.015, world.z));
-  if (sh) {
-    p.ellipse(sh.x, sh.y, sh.scale * prof.w * 0.58, sh.scale * prof.d * 0.62, {
-      fill: 'rgba(0,0,0,0.6)', stroke: false, alpha: alpha * 0.7,
-    });
-  }
+  // Contact shadow on the wet road: the vehicle's own footprint, projected,
+  // with the corners pulled in a little. A car is a box, so its shadow is a
+  // quad - an ellipse reads as a balloon under the wheels.
+  const shx = prof.w * 0.5, shz = prof.d * 0.5;
+  const sha = spec.dir > 0 ? 0.16 : -0.16;
+  p.projectPoly(camera, [
+    v3(world.x - shx + sha, 0.016, world.z - shz + 0.05),
+    v3(world.x + shx + sha, 0.016, world.z - shz + 0.05),
+    v3(world.x + shx + sha, 0.016, world.z + shz - 0.05),
+    v3(world.x - shx + sha, 0.016, world.z + shz - 0.05),
+  ], { fill: 'rgba(0,0,0,0.55)', stroke: false, alpha: alpha * 0.75, jitter: 0.3, seed: seed + 90 });
 
   wheels(p, camera, world, spec, prof, alpha);
 
@@ -194,10 +198,10 @@ export function drawVehicle(p, camera, item) {
         p.line([a, b], { color: '#0b1210', width: 1.2, alpha: alpha * 0.95, jitter: 0.1, seed: seed + 20 + i, double: false });
       }
       // Door.
-      const d0 = quadLerp(wq, 0.62, 0.1), d1 = quadLerp(wq, 0.86, 0.9);
-      p.rect(d0[0], d0[1], d1[0] - d0[0], d1[1] - d0[1], {
-        fill: 'rgba(6,9,7,0.65)', stroke: BONE(0.45), width: 0.6, alpha, jitter: 0.12, seed: seed + 30,
-      });
+      p.poly([
+        quadLerp(wq, 0.62, 0.1), quadLerp(wq, 0.86, 0.1),
+        quadLerp(wq, 0.86, 0.9), quadLerp(wq, 0.62, 0.9),
+      ], { fill: 'rgba(6,9,7,0.65)', stroke: BONE(0.45), width: 0.6, alpha, jitter: 0.12, seed: seed + 30 });
       // Destination blind.
       const b0 = quadLerp(wq, 0.12, 0.02), b1 = quadLerp(wq, 0.44, 0.02);
       p.line([b0, b1], { color: PALETTE.teal, width: 2.0, alpha: alpha * 0.9, jitter: 0.1, seed: seed + 31, double: false });
@@ -313,11 +317,7 @@ export function drawVehicle(p, camera, item) {
 
 export class Traffic {
   constructor(params = {}) {
-    this.specs = VEHICLE_SPECS().map((s) => {
-      if (!s.park) return { ...s };
-      const p = sanitizePark(s.park.x, s.park.z, 0.8);
-      return { ...s, park: { x: p.x, z: p.z } };
-    });
+    this.specs = VEHICLE_SPECS().map((s) => ({ ...s }));
     this.trainX = -40;
     this.trainAlpha = 0;
     this.parkedItems = [];
@@ -326,46 +326,31 @@ export class Traffic {
   }
 
   update(camera, timeline, params, detail = { props: 1 }) {
-    const tr = timeline.train();
-    this.trainX = lerp(TILE.x0 - 11.0, TILE.x1 + 11.0, tr);
+    const tr = timeline.train(params.trainSpeed);
+    this.trainX = lerp(TILE.x0 - 14.0, TILE.x1 + 14.0, tr);
     this.trainAlpha = smoothstep(0.01, 0.08, tr) * (1 - smoothstep(0.92, 0.99, tr));
-    // Parked cars stay parked for the whole loop; nothing fades, nothing pops.
+    // Nothing is parked at the kerb: a 7.2 m street with two 3.6 m lanes gives
+    // every moving vehicle room to pass without either of them swerving.
     this.parkedItems = [];
     this.movingItems = [];
     const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
-    const span = 21;
     for (const spec of this.specs) {
-      if (spec.park) {
-        this.parkedItems.push({
-          spec, world: { x: spec.park.x, z: spec.park.z }, alpha: 0.95,
-          radius: 2.4, group: 'vehicle', fixed: true, depth: 0, moving: false,
-          // Footprint for the crowd's steering: a capsule along the car's own
-          // axis, not a disc. A 2.6 m disc around a parked car reaches the far
-          // side of the pavement and pushes pedestrians around a car that is
-          // not there.
-          half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
-          across: (PROFILES[spec.type] || PROFILES.car).d / 2,
-        });
-      } else {
-        const world = { x: movingCarX(spec, timeline.u), z: spec.lane };
-        // Vehicles fade only as they cross the case boundary on their way out.
-        const alpha = boundaryAlpha(world.x, world.z, TILE, buffer, 'fade');
-        this.movingItems.push({
-          spec, world, alpha,
-          radius: 2.6, group: 'vehicle', fixed: false, moving: true, depth: 0,
-          half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
-          across: (PROFILES[spec.type] || PROFILES.car).d / 2,
-        });
-      }
+      const world = { x: movingCarX(spec, timeline.u), z: spec.lane };
+      // Vehicles fade only as they cross the set boundary on their way out.
+      const alpha = boundaryAlpha(world.x, world.z, TILE, buffer, 'fade');
+      this.movingItems.push({
+        spec, world, alpha,
+        // `fixed: true` is the "people cannot push a car" rule: the crowd
+        // solver treats the vehicle as immovable and yields to it.
+        radius: 2.6, group: 'vehicle', fixed: true, moving: true, depth: 0,
+        half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
+        across: (PROFILES[spec.type] || PROFILES.car).d / 2,
+      });
     }
     separate([...this.parkedItems, ...this.movingItems], {
       iterations: 2, padding: 0.25,
       bounds: { x0: TILE.x0 + 1, x1: TILE.x1 - 1, z0: ROAD.z0 + 0.1, z1: ROAD.z1 - 0.1 },
     });
-    for (const it of this.parkedItems) {
-      const s = sanitizePark(it.world.x, it.world.z, 0.8);
-      it.world.x = s.x; it.world.z = s.z;
-    }
     for (const it of [...this.parkedItems, ...this.movingItems]) {
       const q = camera.project(v3(it.world.x, 0.8, it.world.z));
       it.depth = q ? q.depth : 0;
@@ -490,8 +475,8 @@ export class Traffic {
 //   0.95 – 1.00  out of frame (the wrap happens where it cannot be seen)
 function movingCarX(spec, u) {
   const cw = CROSSWALKS.main;
-  const span = 21;
-  const stop = spec.dir > 0 ? cw.x0 - 2.9 : cw.x1 + 2.9;
+  const span = 46;
+  const stop = spec.dir > 0 ? cw.x0 - 3.0 : cw.x1 + 3.0;
   const from = spec.dir > 0 ? -span : span;
   const to = spec.dir > 0 ? span : -span;
   const d = spec.delay || 0;
@@ -504,14 +489,6 @@ function movingCarX(spec, u) {
 
 function VEHICLE_SPECS() {
   return [
-    {
-      id: 'park_front', type: 'van', axis: 'x',
-      dir: PARKING[0].dir, park: { x: PARKING[0].x, z: PARKING[0].z }, color: PALETTE.teal,
-    },
-    {
-      id: 'park_back', type: 'car', axis: 'x',
-      dir: PARKING[1].dir, park: { x: PARKING[1].x, z: PARKING[1].z }, color: PALETTE.ink,
-    },
     // Moving vehicles loop the block like a film set: one continuous lap of the
     // road per loop (the taxi takes two), wrapping far outside the case where
     // nobody can see it. `offset` staggers them against each other.

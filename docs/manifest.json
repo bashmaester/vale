@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-10-27T21:36:00.951Z",
+  "generatedAt": "2026-10-27T22:57:12.829Z",
   "branch": "arena/bab4bc10-vale",
-  "commit": "bd878b64aaeba6c72ed8f04eba0784e33d7c398f",
-  "shortCommit": "bd878b64",
+  "commit": "c385bf272c15386073cd274872f727613a2ec08c",
+  "shortCommit": "c385bf27",
   "runId": "local",
   "runUrl": null,
   "version": "1.0.0",
-  "indexBytes": 200064,
+  "indexBytes": 180982,
   "docs": [
     "CURRENT_STATE.md",
     "HANDOFF.md",

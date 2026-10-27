@@ -54,7 +54,13 @@ export class Timeline {
     return smoothstep(0.90, 0.965, this.u);
   }
   parkedAlpha() { return 1 - smoothstep(0.885, 0.945, this.u); }
-  train() { return smootherstep(0.30, 0.76, this.u); }
+  // The elevated line is its own system: it has its own window in the loop and
+  // its own speed multiplier, so it can be slowed or stopped without touching
+  // the traffic.
+  train(speed = 1) {
+    const k = Math.max(0.05, Number(speed) || 1);
+    return smootherstep(0.30, 0.30 + 0.46 / k, this.u);
+  }
   reflectionReform() { return smoothstep(0.78, 0.94, this.u); }
   rainPulse() {
     return 0.9 + 0.08 * Math.sin(this.u * Math.PI * 2) + 0.08 * this.walkSignal();

@@ -51,6 +51,9 @@ graph.applyPreset(presetName);
 
 const scene = new Scene(RW, RH);
 scene.setParams(PRESETS[presetName].scene || {});
+// The whole city is seed + size + one kind per tile, so it can be restored from
+// the URL alone. `?world=1&size=0&tiles=...` — nothing else is needed.
+scene.fromUrl(location.search);
 
 const canvas = document.getElementById('screen');
 const renderer = new Renderer(canvas, graph, RW, RH);

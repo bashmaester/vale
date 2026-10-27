@@ -395,7 +395,9 @@ export class Crowd {
       for (let k = 0; k <= steps; k++) {
         const f = steps === 0 ? 0 : (k / steps) * 2 - 1;
         fixedProps.push({
-          world: { x: o.world.x + f * half, z: o.world.z },
+          world: o.axis === 'z'
+            ? { x: o.world.x, z: o.world.z + f * half }
+            : { x: o.world.x + f * half, z: o.world.z },
           radius: across, alpha: 1, fixed: true, group: 'vehicle',
         });
       }
