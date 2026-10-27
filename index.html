@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Vale — Procedural World Kit</title>
+  <link rel="stylesheet" href="/styles/main.css">
+</head>
+<body class="mode-live">
+  <div id="canvas-container"></div>
+  
+  <div id="editor-overlay" class="hidden">
+    <div class="editor-panel left">
+      <h3>Scene Graph</h3>
+      <div id="scene-tree"></div>
+      <h3>Modules</h3>
+      <div id="module-palette"></div>
+    </div>
+    <div class="editor-panel right">
+      <h3>Properties</h3>
+      <div id="properties-panel"></div>
+      <h3>Connections</h3>
+      <div id="connections-panel"></div>
+    </div>
+  </div>
+
+  <div id="toolbar">
+    <button id="mode-toggle" class="mode-btn">Live View</button>
+    <button id="scene-selector">Scenes</button>
+    <button id="audio-toggle">🔊 Audio</button>
+    <div id="scene-label"></div>
+  </div>
+
+  <div id="info-panel">
+    <span id="fps-counter"></span>
+    <span id="module-count"></span>
+  </div>
+
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
