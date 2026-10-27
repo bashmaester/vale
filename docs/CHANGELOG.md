@@ -40,7 +40,14 @@ avoidance still looks "funny and unnatural".
   5.455 m; the worst single step is 0.796 m, and it is a single-frame correction
   where a body threads between two props, not a teleport.
 - **The side streets carry their own markings:** asphalt through the full cell
-  depth, kerbs along the inner edge with stone ticks, and a wet band.
+  depth, kerbs along the inner edge with stone ticks, a courtesy crossing where
+  the pavement picks up again, and a wet band.
+- **Walking past the furniture is a nudge, not a shove:** the people-vs-props
+  pass runs two iterations with a small cap and a lateral bias, so brushing past
+  a lamp post or a planter reads as a step aside. Displacements are capped
+  (`maxOffset 0.42` furniture, `0.18` crowd) and every body is weighted by its
+  opacity instead of being switched off, which is what used to pop a fading
+  pedestrian half a metre sideways.
 
 ### Fixed
 
