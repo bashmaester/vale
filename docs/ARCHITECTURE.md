@@ -239,6 +239,20 @@ The scene (`src/scene.js`) draws in this order, each stage timed into
 6. people + vehicles, sorted by projected depth
 7. rain, then the field texture
 
+### Tests that cover the GPU path
+
+`npm run verify` runs, in order: `check` (bundle), `build`, `boot` (module boot
+with a DOM shim), **`boot:bundle`** (extracts the inline script from the built
+`index.html`, evaluates it, drives six frames, and with `--gl` runs them through
+`tools/strict-gl.mjs` — a WebGL2 stand-in that throws on wrong-kind arguments),
+**`renderer`** (unit tests for upload/draw counts, node-stripping rebuilds, and
+the dead-pass fallback), `finite` and `determinism`.
+
+The strict stand-in exists because the headless canvas harness has no WebGL: it
+took the 2D fallback every time, so a renderer that threw on a real context
+still passed every test. Anything that only runs on a GPU needs
+`boot:bundle --gl` or `renderer-smoke` to be covered.
+
 `src/stats.js` is a self-contained overlay (no CDN): fps, ms, a 120-sample bar
 graph with 16.7/33.3 ms guides, per-stage bars and the live feature flags.
 

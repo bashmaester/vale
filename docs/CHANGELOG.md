@@ -54,9 +54,10 @@ each neighbour switchable and off by default; hide the UI until `\` is pressed.
   canvas stayed black — the failure was invisible in Node because the headless
   harness has no WebGL and took the 2D fallback every time. The program is now
   built first, the attribute is bound (and re-bound whenever the program is
-  rebuilt), and `tools/renderer-smoke.mjs` runs the renderer against a strict
-  WebGL2 stand-in that rejects wrong-kind arguments, so this class of bug fails
-  the build instead of the page.
+  rebuilt), and two new tests cover the path that used to be untested:
+  `tools/renderer-smoke.mjs` (unit, strict GL) and `tools/boot-bundle.mjs --gl`
+  (boots the *built* bundle through the real WebGL path). Both are in
+  `npm run verify`; reintroducing the boot order makes them fail.
 - The renderer can no longer die silently: a GPU pass that produces nothing for
   three frames falls back to the 2D composite (logging the reason and the
   renderer string), `?renderer=2d` forces that path, and frame errors are shown
