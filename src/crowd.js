@@ -355,9 +355,13 @@ export class Crowd {
     const draws = [];
     const push = (fn) => draws.push(fn);
     const rich = detail.windows > 0.5;
+    // Procedural LoD for figures: below ~24 px of body height a person is a
+    // silhouette, a head and a hint of accessories. Anything finer is
+    // sub-pixel work that cannot be seen.
+    const fine = bodyPx > 24;
 
     // Shadow: a short soft ellipse, not a hole in the ground.
-    push((p) => {
+    if (fine) push((p) => {
       p.ellipse(foot.x, foot.y + Math.max(0.6, bodyPx * 0.035), Math.max(1.6, bodyPx * 0.22), Math.max(0.7, bodyPx * 0.075), {
         fill: 'rgba(0,0,0,0.58)', stroke: false, alpha: A * 0.4,
       });
@@ -488,7 +492,7 @@ export class Crowd {
     // reads as a dome from above instead of a floating disc.
     const umb = r.ped.hasUmbrella ? r.ped.umb : null;
     if (umb) {
-      const rimN = umb.style === 'pointed' ? 8 : 9;
+      const rimN = fine ? (umb.style === 'pointed' ? 8 : 9) : 6;
       const lift = r.ped.umbrellaLift || 1.0;
       const domeH = (umb.style === 'pointed' ? 0.40 : umb.style === 'flat' ? 0.22 : 0.30) * sc * lift;
       const rimH = 1.42 * sc * lift + bob;
@@ -520,7 +524,7 @@ export class Crowd {
         }
         push((p) => {
           p.polys(lower, { fill: umb.fill, alpha: A, jitter: 0.06 });
-          p.polys(upper, { fill: umb.fill, alpha: A, jitter: 0.06 });
+          if (fine) p.polys(upper, { fill: umb.fill, alpha: A, jitter: 0.06 });
           // Shaded far half of the canopy: gives the dome a lit side and a dark
           // side even when it is seen almost edge-on.
           const far = [];

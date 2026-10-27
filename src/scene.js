@@ -288,7 +288,10 @@ export class Scene {
       if (x || y) this.pp.ctx.drawImage(canvas, x, y);
       else this.pp.ctx.drawImage(canvas, 0, 0);
     };
-    blit(this.staticFar);
+    // The far layer only holds the closed walls. With the diorama open there is
+    // nothing in it, and a full-frame blit of an empty canvas still costs a
+    // full frame of work.
+    if (this.params.walls) blit(this.staticFar);
     if (this.params.featTraffic) this.traffic.drawTrain(this.pp, camera, timeline, this.params);
     tick('train');
     blit(this.static);

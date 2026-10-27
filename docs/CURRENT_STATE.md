@@ -65,9 +65,12 @@ source, and nothing is compiled into the shader unless it contributes:
 - The field pass is skipped (blank field cached) when rain and puddles are off.
 - An adaptive governor moves the render scale 45–100 % to hold 60 fps.
 
-Node benchmark (1440×810, 60-frame average, features ablated one at a time):
-42.5 ms all on; 31.3 crowd off; 34.5 vehicles off; ~36.3 rain / puddles /
-reflections off; 26.7 at 75 % scale; 17.7 at 50 %; 17.0 with everything off.
+Node benchmark (1440×810, real-time pacing, 120 frames): **31.3 ms** with
+everything on, down from 54.7 ms at the start of the turn. Ablation: crowd off
+21.5, vehicles off 26.1, rain + puddles off 21.9, signals off 28.7, walls closed
+30.3. The static set is cached, so it costs ~1.6 ms a frame instead of 39 ms
+(it repaints on ~13 % of frames). Resolution remains the biggest single lever:
+75 % ≈ 27 ms, 50 % ≈ 18 ms.
 
 ### Camera controllers (modular)
 

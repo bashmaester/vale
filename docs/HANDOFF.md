@@ -87,22 +87,24 @@ rather than more micro-tuning:
    `preserveDrawingBuffer` is opt-in (`?capture=1`). That flag alone costs a
    frame copy in every browser.
 
-Measured in Node (`@napi-rs/canvas`, 1440×810, 60-frame average). These rank
-costs, they do not predict browser timings:
+Three more structural wins landed after the first numbers: the set is painted
+into a cached layer and re-blitted (repainting on ~13 % of frames or when the
+line boil ticks), empty layers are not blitted at all, and emitter glows blit a
+cached sprite instead of building a gradient per call. Measured in Node
+(`@napi-rs/canvas`, 1440×810, real-time pacing, 120 frames) — these rank costs,
+they do not predict browser timings:
 
 | Case | ms/frame |
 | --- | --- |
-| everything on | 42.5 |
-| crowd off | 31.3 |
-| vehicles off | 34.5 |
-| rain off | 36.5 |
-| puddles off | 36.5 |
-| reflections off | 36.2 |
-| signals off | 37.2 |
-| flicker off | 38.4 |
+| everything on | 31.3 (was 54.7 at the start of the turn) |
+| crowd off | 21.5 |
+| rain + puddles off | 21.9 |
+| vehicles off | 26.1 |
+| signals off | 28.7 |
+| walls closed | 30.3 |
+| reflections off | 30.9 |
 | render scale 0.75 | 26.7 |
 | render scale 0.5 | 17.7 |
-| every feature off | 17.0 |
 
 The lesson: the plate is painted on the CPU, so **pixels are the budget**. Every
 subsystem is now a switch, and the governor trades resolution instead of frames.
