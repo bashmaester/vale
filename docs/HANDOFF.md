@@ -3,7 +3,37 @@
 **Purpose:** resume this project in a fresh session without re-deriving
 anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
-**Last reviewed:** 2026-10-27 (Turn 14), branch `arena/bab4bc10-vale`.
+**Last reviewed:** 2026-10-27 (Turn 16), branch `arena/bab4bc10-vale`.
+
+---
+
+## 0. Read this first (Turn 16)
+
+The set is now a **grid of tiles**, not one module. `src/tiles.js` is the only
+place that decides where a street is:
+
+- a tile declares street halves on its four edges (`BITS { n1, e2, s4, w8 }`);
+- a seam exists only when *both* tiles on it ask for a street, so the
+  carriageway is always shared and always 7.2 m with 2.4 m pavements;
+- a tile's lots are generated inside its interior box and `lot()` clamps them
+  there, so **a building cannot be placed on a street**;
+- `KINDS` is the vocabulary: `block` (solo block), `block_ew`, `block_ns`,
+  `row`, `yard`, `intersection`, `park`;
+- the world is 3×3 by default (5×5 / 7×7 / 9×9 available). The main street
+  (seam z = +12.25) and its cross street (x = +15) are always built, so the
+  film's corner is always an intersection.
+
+Everything else hangs off that: `src/world.js` derives the stage (road, kerbs,
+lanes, crosswalks, wait zones, crowd flows, street props) from the built world;
+`src/cells.js` paints every tile, one depth-sorted item list per frame;
+`src/sidebar.js` has the minimap editor plus the seed / copy-link / diagonal
+controls and an Elevated train panel.
+
+The whole scene is `?world=&size=&tiles=…&diag=` (see `scene.toUrl()`).
+
+Known gaps for the next session: the train still rides on the north street
+(it wants its own tiles), the cross street has no traffic yet, and the far
+tiles lose their window count with distance rather than their sills.
 
 ---
 

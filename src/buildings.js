@@ -85,10 +85,10 @@ function drawWindows(p, b, face, detail, seed) {
         quadLerp(face.quad, u0, v0), quadLerp(face.quad, u1, v0),
         quadLerp(face.quad, u1, v1), quadLerp(face.quad, u0, v1),
       ];
-      const isLit = h < 0.17 * lit;
+      const isLit = h < 0.12 * lit;
       const fill = isLit
-        ? (h < 0.04 ? 'rgba(190,140,52,0.86)' : 'rgba(206,198,180,0.72)')
-        : (hash21(c + 4.1, r + 8.3) > 0.72 ? 'rgba(38,120,114,0.55)' : 'rgba(7,9,10,0.97)');
+        ? (h < 0.04 ? 'rgba(186,136,50,0.80)' : 'rgba(198,190,172,0.50)')
+        : (hash21(c + 4.1, r + 8.3) > 0.9 ? 'rgba(34,104,100,0.30)' : 'rgba(7,9,10,0.97)');
       p.poly(quad, { fill, stroke: BONE(isLit ? 0.48 : 0.22), width: 0.5, jitter: 0.16, seed: seed + c * 3 + r * 7 });
       if (detail.windows > 0.5) {
         p.line([quadLerp(face.quad, (u0 + u1) / 2, v0), quadLerp(face.quad, (u0 + u1) / 2, v1)],
@@ -170,6 +170,8 @@ function drawAwning(p, camera, b, fr, seed) {
     yy,
     b.z + fr.n.z * (fr.halfN + out) + fr.t.z * a,
   );
+
+
   const aq = p.projectPoly(camera, [
     P(-aw, y, 0.02), P(aw, y, 0.02), P(aw, y - 0.30, 0.95), P(-aw, y - 0.30, 0.95),
   ], {
@@ -327,18 +329,6 @@ export function drawLot(p, camera, b, detail, seed = 1) {
     }
   }
 
-  // Cornice: a lip of volume at the roof line, just proud of the facade.
-  if (px > 34) p.box(camera, [
-    b.x + fr.n.x * (fr.halfN * 0.92),
-    b.h - 0.16,
-    b.z + fr.n.z * (fr.halfN * 0.92),
-  ], fr.alongX
-    ? [0.42, 0.34, b.d + 0.24]
-    : [b.w + 0.24, 0.34, 0.42], {
-    fill: '#111116', stroke: BONE(0.5), width: 0.8, alpha: 0.98,
-    seed: seed + 560, jitter: 0.14, edgeAlpha: 0.75, edges: false,
-  });
-
   drawShopfront(p, camera, b, facade, detail, seed + 100);
 
   const P = (a, yy, out) => v3(
@@ -347,6 +337,25 @@ export function drawLot(p, camera, b, detail, seed = 1) {
     b.z + fr.n.z * (fr.halfN + out) + fr.t.z * a,
   );
 
+  // Cornice: a lip of volume at the roof line, just proud of the facade. It is
+  // placed in the facade frame — a box with the bar across the wall instead of
+  // along it reads as a pane of glass slicing through the block.
+  if (px > 34 && facade) {
+    p.projectLine(camera, [
+      P(-fr.halfT * 1.02, b.h - 0.02, 0.16), P(fr.halfT * 1.02, b.h - 0.02, 0.16),
+    ], {
+      color: BONE(0.34), width: 2.2, alpha: 0.9, jitter: 0.16, seed: seed + 560, double: false,
+    });
+    p.projectLine(camera, [
+      P(-fr.halfT * 1.02, b.h - 0.26, 0.10), P(fr.halfT * 1.02, b.h - 0.26, 0.10),
+    ], {
+      color: BONE(0.18), width: 1.1, alpha: 0.8, jitter: 0.14, seed: seed + 561, double: false,
+    });
+  } else if (px > 34) {
+    p.projectLine(camera, [P(-fr.halfT, b.h - 0.02, 0.1), P(fr.halfT, b.h - 0.02, 0.1)], {
+      color: BONE(0.3), width: 1.8, alpha: 0.85, jitter: 0.16, seed: seed + 560, double: false,
+    });
+  }
   // Entrance canopy, door and address plate on the taller, non-shop blocks.
   if (!b.shop && facade && px > 40) {
     const gy1 = 1 - 0.2 / b.h;

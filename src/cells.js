@@ -417,7 +417,7 @@ export function drawWorld(p, camera, world, detail, opts = {}) {
     const dist = Math.hypot(cx - camera.eye.x, cz - camera.eye.z);
     return { t, depth: q && Number.isFinite(q.depth) ? q.depth : 1e6, dist };
   }).sort((a, b) => b.depth - a.depth);
-  for (const it of list) it.d = clamp(1.2 - it.dist / 96, 0.16, 1);
+  for (const it of list) it.d = clamp(1.2 - it.dist / 118, 0.15, 1);
 
   // 1) Every ground plane first, far to near. The plinths are flat, so they can
   //    all go down before anything stands on them.
@@ -442,7 +442,7 @@ export function drawWorld(p, camera, world, detail, opts = {}) {
     } else if (it.t.mid === 'park') {
       items.push({ depth: it.depth, draw: (pp) => drawPark(pp, camera, it.t, it.d, {}) });
     }
-    if (it.d >= 0.17) {
+    if (it.d >= 0.14) {
       for (let i = 0; i < it.t.lots.length; i++) {
         const b = it.t.lots[i];
         // The sort key is the nearest corner of the box: a tall block two
@@ -460,8 +460,8 @@ export function drawWorld(p, camera, world, detail, opts = {}) {
         const seed = it.t.seed + 500 + i * 131;
         const d = it.d;
         const spec = {
-          windows: clamp(d, 0.3, 1) * (detail ? detail.windows : 1),
-          windowLight: clamp(d, 0.3, 1) * (detail ? detail.windowLight : 1),
+          windows: clamp(d, 0.78, 1) * (detail ? detail.windows : 1),
+          windowLight: clamp(d, 0.45, 1) * (detail ? detail.windowLight : 1),
           props: d > 0.4 ? (detail ? detail.props : 1) : 0,
           near: clamp((d - 0.2) / 0.8, 0, 1),
         };
