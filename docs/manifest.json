@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-10-27T14:31:40.075Z",
+  "branch": "arena/082e9ffd-vale",
+  "commit": "c42690604160bc4380833fe4e52c85577c6d2212",
+  "shortCommit": "c4269060",
+  "runId": "local",
+  "runUrl": null,
+  "version": "1.0.0",
+  "indexBytes": 91171,
+  "docs": [
+    "HANDOFF.md",
+    "ARCHITECTURE.md",
+    "CHANGELOG.md",
+    "CI.md",
+    "BUILD.md",
+    "DEPLOY_STATUS.md",
+    "index.html"
+  ]
+}

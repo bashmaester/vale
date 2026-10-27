@@ -1,0 +1,17 @@
+{
+  "name": "vale",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A silent 20-second 3D-to-2D print film of a rainy Tokyo crossing.",
+  "scripts": {
+    "build": "node build.mjs",
+    "docs": "node scripts/update-docs.mjs",
+    "deploy:local": "npm run build && npm run docs",
+    "dev": "npm run build && python3 -m http.server 8000 --bind 0.0.0.0",
+    "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}
