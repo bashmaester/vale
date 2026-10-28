@@ -45,9 +45,13 @@ loop time (`rig`); `npm run verify` catches it.
 
 ### Verified and shipped
 
-- Commit **`bf9b8c5`**, branch `arena/45e6b5a9-vale`, CI run **40677436785**
-  (`build-and-deploy`) **success**. `npm run verify` green: finite check clean,
-  determinism bit-exact at `t=0/20`, `t=4.5/24.5`, `t=11/31`.
+- Code: commit **`bf9b8c5`** ("Traffic and crowd loop across the whole
+  neighbourhood"), CI run **40677436785** **success**.
+- Docs: commit **`b432be3`** (this record), CI run **40688872997** **success** —
+  the live site therefore serves `b432be3`, whose `index.html` is byte-identical
+  to `bf9b8c5`'s.
+- `npm run verify` green on the shipped tree: finite check clean, determinism
+  bit-exact at `t=0/20`, `t=4.5/24.5`, `t=11/31`.
 - Stills at 2560×1440: `/home/user/shots/t19/t0.png`, `t11.png`.
 - Default world (5×5): 9 circuits, 18 cars, 36 strollers, 419 m of pavement.
 - Build 182.5 KiB. `docs/DEPLOY_STATUS.md` regenerated via `npm run docs`.
