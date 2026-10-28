@@ -1,8 +1,68 @@
 # VALE — session handoff
 
+## ⚠️ BRANCH CORRECTION — read before trusting anything below
+
+**This branch (`arena/45e6b5a9-vale`) is NOT the tip of the project.**
+
+On 2026-10-28 a session started here believing `main` (`de04b9a`, PR #1) was the
+newest work. That was wrong. The clone was single-branch and only `main` +
+the new working branch were visible, so the newer branch was never seen.
+
+The real tip of the project is **`arena/bab4bc10-vale`** (`6a57a47`,
+2026-10-27 23:00), and it is **21 commits ahead** of `main`, with `main` fully
+contained in it. It is the same lineage — not a competing fork:
+
+```
+a71d529 initial ─▶ d33eb94f (engine/world kit)
+                     ╲ de04b9a  (PR #1, arena/082e9ffd-vale)
+                        ╲ 2dbcace → … → 6a57a47   arena/bab4bc10-vale  ← TIP
+                           ╲ b5f212d              arena/45e6b5a9-vale  ← this branch
+```
+
+See `docs/shots/compare-branches.jpg` for the side-by-side and
+`docs/BRANCH_COMPARISON.md` for the full audit.
+
+**What `bab4bc10` is:** the project brief changed. In that session the user
+redefined the goal:
+
+> “we are building the foundations for a cosy indie sim game engine. the key
+> aspect is that everything is procedurally generated with procedural LoD … the
+> scene as a modular 3d volume (almost like a snow globe or a vignette that we
+> can use to build tiles from.”
+
+So it is **an engine foundation, not a film**. `bab4bc10` has a tile engine
+(`src/tiles.js`, `src/cells.js`), a minimap editor (`src/sidebar.js`), LoD, a
+frame-budget pass, a real 20 s bit-exact loop, and a 14-file test suite
+(`tools/`) wired into `npm run verify` — which passes on that branch.
+
+**This branch, by contrast,** is a first art pass on the *old* one-corner film
+reading of the brief. It is not wasted (see below) but it is built against a
+superseded brief and must not be treated as ahead.
+
+### Do not repeat this mistake
+
+- Read the brief in `docs/HANDOFF.md` on `arena/bab4bc10-vale` before planning.
+- Run `git ls-remote --heads origin` or `gh api repos/:owner/:repo/branches`
+  to see *all* branches, not just the ones this clone tracks.
+- The single-branch clone config is the trap: `remote.origin.fetch` was
+  `+refs/heads/main:refs/remotes/origin/main` plus this branch only.
+
+### Status of the live site
+
+Pushing this branch triggered the any-branch Pages workflow, so
+**https://bashmaester.github.io/vale/ currently serves `b5f212d`, this branch's
+build, and it overwrote `bab4bc10`'s deploy.** Run `40599010516` was the last
+`bab4bc10` deployment. This sandbox's integration has no Actions write scope,
+so it cannot re-run or dispatch a workflow for `bab4bc10` (403). Restoring the
+site requires a push to `bab4bc10` (any trivial commit), which should happen
+before any further push from this branch.
+
+---
+
 **Purpose:** resume this project in another session without losing context.
 
-**Last reviewed:** 2026-10-28 (Turn 6). Branch `arena/45e6b5a9-vale`.
+**Last reviewed:** 2026-10-28. Branch `arena/45e6b5a9-vale` — ⚠️ **behind
+`arena/bab4bc10-vale`; see the branch correction above.**
 
 **Read in this order:**
 
@@ -15,7 +75,11 @@
 
 ---
 
-## 0. TL;DR for the next session
+## 0. TL;DR for the next session (scoped to *this* branch)
+
+> For the real project state, read the handoff on `arena/bab4bc10-vale` instead.
+> Everything below describes only the superseded film pass that lives here.
+
 
 The single biggest process failure — **no one could look at the film** — is
 fixed. There is now a working headless screenshot path

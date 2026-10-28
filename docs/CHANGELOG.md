@@ -65,6 +65,17 @@ Four root causes, none of which are visible from reading the code:
   gating and the new camera documented.
 - `docs/CURRENT_STATE.md`, `docs/HANDOFF.md`, `docs/CI.md`: refreshed.
 
+### Correction (added 2026-10-28, later the same session)
+
+This whole entry was authored against the wrong base. `main` (`de04b9a`) is not
+the newest work: `arena/bab4bc10-vale` (`6a57a47`) is 21 commits ahead, and the
+brief there is an **indie sim engine foundation**, not a one-corner film. This
+turn's art pass is therefore on a superseded reading of the brief, and the
+screenshots show `bab4bc10` is both richer visually and far ahead in
+architecture, LoD, tests and loop determinism. See `docs/BRANCH_COMPARISON.md`
+for what is worth salvaging (the screenshot harness, the shaded-mass fix, the
+painter's ordering, the coverage gating).
+
 ### Result
 
 The film now reads as a night street corner with solid building masses, a

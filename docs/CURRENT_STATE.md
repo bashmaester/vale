@@ -1,5 +1,11 @@
 # VALE — current state (frank snapshot)
 
+> ⚠️ **This file describes `arena/45e6b5a9-vale` only, which is 21 commits
+> BEHIND `arena/bab4bc10-vale` and built against a superseded reading of the
+> brief.** The project is now an indie sim **engine foundation** with a tileable
+> volume, not a one-corner film. See `docs/BRANCH_COMPARISON.md` and the branch
+> correction at the top of `docs/HANDOFF.md` before believing anything below.
+
 **Last updated:** 2026-10-28 (Turn 6), after the first real screenshot pass.
 
 The previous version of this file (2026-10-27) recorded “no browser screenshot

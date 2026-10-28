@@ -5,6 +5,11 @@ render. Every earlier turn tuned the look by reasoning about code, and the
 result was a build the user called "very underwhelming". A headless screenshot
 path now exists so that cannot happen again by default.
 
+> ⚠️ This harness matters more than this branch does. The branch is superseded
+> (`docs/BRANCH_COMPARISON.md`), but the harness is portable and worth carrying
+> to `arena/bab4bc10-vale`. It already works against that build — it honours the
+> same `?paused=`/`?t=` params.
+
 **Rule:** after any change to `src/environment.js`, `src/camera.js`,
 `src/crowd.js`, `src/weather.js`, `src/draw.js` or `src/shaders.js`, take
 stills and *look at them* before claiming the change landed.
@@ -76,6 +81,7 @@ screenshotting the 2D fallback, not the real print pipeline.
 | `before-t12.jpg` | CROSS (before this pass) | transparent buildings, unreadable crowd |
 | `after-t0.jpg` | WAIT | solid masses, street reads, paper windows |
 | `after-t16.jpg` | TRAFFIC | empty street, backdrop depth, signals |
+| `compare-branches.jpg` | t=0 | `bab4bc10` (ahead) vs this branch — see `BRANCH_COMPARISON.md` |
 
 ## What the comparison already established
 
