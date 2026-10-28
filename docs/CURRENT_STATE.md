@@ -1,10 +1,42 @@
 # VALE — current state
 
-**Last updated:** 2026-10-27 (Turn 16 — the set is a grid of tiles, branch `arena/bab4bc10-vale`)
+**Last updated:** 2026-10-28 (Turn 19 — the whole neighbourhood is alive, branch `arena/45e6b5a9-vale`, `bf9b8c5`)
 **Framing:** this is now an **engine foundation**, not a film. The sample scene is
 a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
 fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
 drives the sample, not the deliverable.
+
+---
+
+## 0. Turn 19 in one screen (read this first; sections below are older)
+
+The set is a **5×5 grid by default** (`?size=` up to 9), and traffic and people
+now use the entire grid instead of the centre tile.
+
+| System | Derived from | Counts at 5×5 | Loop behaviour |
+| --- | --- | --- | --- |
+| Streets | tile seams (`roadLines()`) | 4 x-lines, 4 z-lines | static |
+| Car circuits | one per enclosed block (`blockCircuits()`) | **9 circuits** | whole laps per 20 s |
+| Cars | `planCars()`, seeded per car | **18** (2–3 per block) | own lap count, dwell, speed, phase |
+| Pavements | one run per block frontage (`pavementRuns()`) | **36 runs, 419 m** | – |
+| Strollers | one per frontage, own sub-span | **36** | own phase, out and back |
+| Crowd total | stage flows + lanes + strollers | 132 items | whole cycles per 20 s |
+
+Rules that must hold, learned the hard way this turn:
+
+- **Every random element gets its own cycle, and every cycle must close inside
+  20 s.** Whole laps (cars) or whole round trips (strollers), never a phase that
+  drifts across the loop boundary — otherwise `npm run determinism` fails.
+- **A car stops at a stop line, not at a crossing.** The stop is
+  `HALF_ROAD + 0.9 + half` before the ring corner, measured to the car's **nose**:
+  the nose rests 6.30 m from the junction centre, 2.70 m clear of the box.
+- **The dynamic layer (cars, people) has no depth test against the baked set.**
+  Any block that hides a moving thing is re-inserted into the *same* depth sort
+  (`scene.js` `_hiddenLots()` + `cells.js` `SET_LOTS`). Paint before or after
+  that sort and things either cover wrongly or get covered wrongly.
+- **The crowd's fade box follows the built world.** It used to be one tile, which
+  silently drew 78 of 132 walkers at alpha 0 — the neighbourhood looked empty
+  with no error anywhere.
 
 ---
 

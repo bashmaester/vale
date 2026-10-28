@@ -151,6 +151,25 @@ keys on `paletteVersion()`.
 
 ## 4. Vehicles (`traffic.js`)
 
+**Motion model (Turn 19).** A vehicle drives a *circuit*, never a straight
+span. `world.js` derives the network from the tiles — `roadLines()` gives the
+distinct street centre lines and `blockCircuits()` gives one closed lane ring
+around every block they enclose (inset `LANE_OFFSET = HALF_ROAD * 0.5` = 1.8 m,
+which puts the lane in the right-hand carriageway). Each circuit exposes
+`ring` (in travel order), `length`, `w`, `d`, plus `circuitStops(c, gap)`, the
+arc lengths just short of each corner, and `circuitPoint(c, s)` →
+`{x, z, axis, dir, edge}`.
+
+`planCars()` draws every car's body, colour, lap count, dwell, speed and start
+phase from one seeded RNG, so the plan is deterministic but nothing is shared.
+`carState(car, t)` maps loop time to arc length: a lap is five straight runs
+separated by four holds, one at each stop line. Because `laps` is an integer and
+the holds are interior, `t = 20` lands on exactly the `t = 0` frame with no fade
+and no teleport. The stop is measured to the **nose** (`gap = HALF_ROAD + 0.9 +
+half`), which is what keeps a waiting car behind the zebra rather than parked in
+the middle of the intersection. `axisPoint()` handles both axes, and the profile
+mirror for `dir < 0` mirrors about the travel axis, not always about x.
+
 Vehicles are extruded 2D profiles (`PROFILES`: car, van, taxi, bus) swept along
 the travel axis and projected. The near face gets a vertical gradient body fill
 (top-lit → bottom-dark), a pale roof rim, a wet sheen streak, a door seam and a
@@ -163,6 +182,19 @@ crossing on the timeline.
 ---
 
 ## 5. People (`crowd.js`)
+
+**Coverage (Turn 19).** `world.js` `pavementRuns()` emits one trimmed stretch of
+pavement per block frontage (trimmed 3 m at each end to stay out of the corner
+fillets). `crowd.js` gives every run a *stroller* walking its own sub-span out
+and back (`_strollerAt`), with its own phase, pace and turnaround — 36 runs and
+36 strollers at the default size, so every block frontage carries people. The
+walk is a scaled smoothstep, so a stroller eases to a stop at the end of the
+stretch instead of snapping round, and one round trip fits exactly in the loop.
+A full lap of the block would need ~4.7 m/s inside 20 s, which reads as running.
+
+The crowd's fade box (`this.box`) follows the **built world**, not `TILE`. It
+used to be one tile, which silently drew 78 of 132 walkers at alpha 0: the
+neighbourhood looked deserted with no error anywhere.
 
 Procedural people, last on the set:
 
@@ -317,6 +349,19 @@ it is part of the drawing, and freezing it would flatten the animation.
 
 At 1440×810 the set costs ~39 ms to paint, so this is the single biggest win:
 the layer repaints about 13 % of frames and the rest cost one blit.
+
+**The cost of that cache (Turn 19).** Cars and people are painted *after* the
+blit, so nothing depth-tests them against the baked buildings. While traffic was
+a single street that never mattered; once cars drove every street they read as
+parked on rooftops. The fix keeps the cache and adds no depth buffer: every lot
+painted into the set is recorded in `cells.js` `SET_LOTS` with the exact `spec`
+and `seed` used, and each frame `scene.js` `_hiddenLots(camera)` finds the lots
+whose box a moving item is behind (segment-vs-slab from `camera.eye`, six samples
+per car, two per walker — a handful of candidates a frame). Those lots are
+re-inserted into the **same** depth sort as the cars and people, so the ordering
+stays a single global sort and a repaint is pixel-identical to the original
+paint. Painting the blocks before that sort covers nothing; painting them after
+covers the near cars too.
 
 ### Glows
 

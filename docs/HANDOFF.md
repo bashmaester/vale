@@ -43,6 +43,46 @@ that sort is either covered wrongly or covers wrongly.
 **Still true from Turn 18:** the cinematic default must stay a pure function of
 loop time (`rig`); `npm run verify` catches it.
 
+### Verified and shipped
+
+- Commit **`bf9b8c5`**, branch `arena/45e6b5a9-vale`, CI run **40677436785**
+  (`build-and-deploy`) **success**. `npm run verify` green: finite check clean,
+  determinism bit-exact at `t=0/20`, `t=4.5/24.5`, `t=11/31`.
+- Stills at 2560×1440: `/home/user/shots/t19/t0.png`, `t11.png`.
+- Default world (5×5): 9 circuits, 18 cars, 36 strollers, 419 m of pavement.
+- Build 182.5 KiB. `docs/DEPLOY_STATUS.md` regenerated via `npm run docs`.
+
+### The other trap: the local branch ref rolls back
+
+Twice now a fresh session has opened with `HEAD` at `de04b9a` and ~30 phantom
+modifications, while the worktree actually held the newest committed files.
+**Do not `git checkout`/`git stash` anything.** Recover in four steps:
+
+```bash
+git fetch origin arena/45e6b5a9-vale
+# prove the worktree matches the pushed tip by content, not by status:
+while read -r f; do a=$(git rev-parse "FETCH_HEAD:$f"); b=$(git hash-object "$f"); \
+  [ "$a" = "$b" ] || echo "DIFF $f"; done < <(git ls-tree -r FETCH_HEAD --name-only)
+git reset --hard FETCH_HEAD   # only after the sweep prints nothing
+```
+
+Last sweep: 62 files in the tip, 0 missing, 0 differing.
+
+### Known follow-ups (Turn 19)
+
+- **Cars are no longer signal-coupled.** They stop at every junction for a short
+  dwell, independently of the crossing signal, so a car can pass through the
+  stage zebra while people are on it. The crowd solver keeps people off the
+  body, so they part around it rather than overlapping — but the old "traffic
+  holds for the crossing" choreography is gone. Open question: should the stage
+  crossing hold traffic outright for its ~9 s?
+- **Strollers turn around at the end of a frontage** instead of rounding the
+  block corner. A full lap of a 95 m block inside 20 s needs ~4.7 m/s, which
+  reads as running; the turnaround is the honest way to keep a human pace.
+- Corner *fillets* on the pavement are still only cut into the tiles, so a
+  stroller's straight frontage run passes through the fillet geometry. Visible
+  only when close to a corner.
+
 ---
 
 ## Turn 18 — what changed (2026-10-28)
