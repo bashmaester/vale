@@ -75,7 +75,6 @@ screenshotting the 2D fallback, not the real print pipeline.
 | `before-t0.jpg` | WAIT (before this pass) | wireframes in a void — the failure mode |
 | `before-t12.jpg` | CROSS (before this pass) | transparent buildings, unreadable crowd |
 | `after-t0.jpg` | WAIT | solid masses, street reads, paper windows |
-| `after-t0-detail.jpg` | WAIT | hatch + carve texture on the masses |
 | `after-t16.jpg` | TRAFFIC | empty street, backdrop depth, signals |
 
 ## What the comparison already established
