@@ -10,11 +10,21 @@
     "deploy:local": "npm run build && npm run docs",
     "dev": "npm run build && python3 -m http.server 8000 --bind 0.0.0.0",
     "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js",
+    "stills": "node tools/shot.mjs",
+    "lod": "node tools/lod.mjs",
+    "smoke": "node tools/smoke.mjs",
+    "boot": "node tools/boot-smoke.mjs",
+    "verify": "npm run check && npm run build && npm run boot && npm run boot:bundle && npm run renderer && npm run finite && npm run determinism",
+    "finite": "node tools/finite.mjs",
+    "determinism": "node tools/determinism.mjs",
+    "renderer": "node tools/renderer-smoke.mjs",
+    "boot:bundle": "node tools/boot-bundle.mjs --gl",
     "serve": "python3 -m http.server 8123 --bind 0.0.0.0",
     "setup:browser": "bash scripts/setup-headless.sh",
     "shots": "node scripts/shoot.mjs shots/latest 0,6,12,16 1440 810"
   },
   "devDependencies": {
+    "@napi-rs/canvas": "^0.1.80",
     "esbuild": "^0.25.12"
   }
 }

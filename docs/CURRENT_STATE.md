@@ -1,287 +1,318 @@
-# VALE — current state (frank snapshot)
+# VALE — current state
 
-> ⚠️ **This file describes `arena/45e6b5a9-vale` only, which is 21 commits
-> BEHIND `arena/bab4bc10-vale` and built against a superseded reading of the
-> brief.** The project is now an indie sim **engine foundation** with a tileable
-> volume, not a one-corner film. See `docs/BRANCH_COMPARISON.md` and the branch
-> correction at the top of `docs/HANDOFF.md` before believing anything below.
-
-**Last updated:** 2026-10-28 (Turn 6), after the first real screenshot pass.
-
-The previous version of this file (2026-10-27) recorded “no browser screenshot
-was possible in this sandbox” as the #1 blocker. That is solved: see
-`docs/SCREENSHOTS.md`. The first stills explained most of the “underwhelming”
-verdict, and the look was rebuilt from them.
-
-Read this before making another visual change. The repository has a working
-technical scaffold, but it should **not** be treated as a finished or approved
-look.
+**Last updated:** 2026-10-27 (Turn 16 — the set is a grid of tiles, branch `arena/bab4bc10-vale`)
+**Framing:** this is now an **engine foundation**, not a film. The sample scene is
+a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
+fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
+drives the sample, not the deliverable.
 
 ---
 
-## 1. What actually exists right now
+## 1. What the build is
 
-- A single self-contained `index.html`: silent, autoplaying 20s loop, no
-  external assets, no audio, no visible UI during normal playback.
-- Hybrid 3D→2D pipeline: procedural 3D world → perspective projection → 2D ink
-  plate + field data texture → WebGL2 node shader → print-like output.
-- Hidden lab (`?lab=1`) with node graph, scene params, camera tab, timeline
-  scrubber, presets and export controls.
-- User camera takeover (`?cam=orbit`, `?cam=fly`, `?hud=0`, WASD/QE, etc.).
-- GitHub Pages CI on **every branch**, plus `workflow_dispatch`.
-- A headless screenshot harness (`scripts/setup-headless.sh`,
-  `scripts/shoot.mjs`) with committed before/after stills in `docs/shots/`.
-- Human docs: `HANDOFF.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `CI.md`,
-  `CURRENT_STATE.md` (this file).
+One self-contained `index.html` (~177 KiB), silent, autoplaying, no external
+assets. Tags: `v0.1.3` (Turn 11), `v0.1.4` / `v0.1.5` (Turn 12), `v0.1.6`
+(Turn 15).
+It renders a **grid of tiles**: 3×3 by default, up to 9×9, every tile a kind
+from `src/tiles.js` (solo block, block E–W, block N–S, shop row, yard,
+intersection, park). Streets live on the seams between tiles and only exist when
+both tiles ask for them, so the carriageway is shared and the buildings are
+always clipped to the inside of their own tile. The boundary is
+glass planes and a lid, with no posts, rails, cut caps or plinth, so the cell can
+butt against another without a seam. Everything inside is generated
+from code every frame, and neighbouring cells are painted from the same rules
+(`src/cells.js`) with detail falling off by distance.
 
-### Current scene contents
+Pipeline: procedural 3D world → perspective projection → 2D ink plate + field
+texture → WebGL2 print shader (`src/shaders.js`, node graph in `src/graph.js`).
 
-- A **backdrop ring of 34 distant blocks** with sparse lit windows, drawn first
-  so the frame has depth instead of a void.
-- One built-out northeast street corner.
-- Two crossing road strips and four raised sidewalk boxes, each plane at its
-  own tone so carriageway, junction and curb read apart.
-- Four straight crosswalks, stop lines, lane dividers, arrows, manhole covers,
-  tactile paving.
-- Four cubic building volumes, **painted far-to-near as shaded solid masses**
-  with bright paper window openings, awnings, roof parapets, rooftop boxes,
-  accent stripes and oriented 3D signs.
-- Four traffic-light poles at the four intersection corners, each with a
-  vehicle head and pedestrian head.
-- Five vehicles: three parked at legal curbs, two moving in separated lanes,
-  plus a five-car overhead train.
-- ~122 tiny people (92 crossers + 30 waiters) with archetypes, coat shapes,
-  head shapes, umbrellas, long shadows, accessories and occasional companions.
-- Raindrop/puddle simulation: 220 persistent 3D raindrop particles, 8 puddle
-  polygons, ripple rings, splash spikes and ambient drips. Present and running,
-  but only faintly readable in a still — an open problem.
-- No `wet` canvas and no procedural wet-glass shader overlay. The shader `rain`
-  node is a disabled pass-through.
-- Camera: **street-level** three-quarter view of the NE corner, eye roughly
-  `[-15.5, 9.6, 17.5]`, target `[10.5, 4.1, -11.0]`. This replaced an aerial
-  plan that put the set in a third of the frame.
+Runtime switches:
 
-### Current code state
+| Switch | Effect |
+| --- | --- |
+| *(none)* | the film: 1440×810 (or viewport), 20 s loop, no UI |
+| `?finish=raw` / `?raw=1` | bypass the shader, show the raw ink plate |
+| `?lab=1` | hidden lab: node graph, params, camera tab, LoD forcing, export |
+| `?ui=1` / `?panel=1` | opens the scene-control sidebar (hidden by default) |
+| `?cam=cinematic\|fps\|third\|drone` | starts in a camera mode (`orbit`/`fly`/`auto`/`user` are aliases) |
+| `?shot=rig\|tripod\|crane\|orbit\|detail` | picks a cinematic shot |
+| `?hud=0` | hides the camera help line |
+| `?scale=0.7` | pins the render scale (also disables the adaptive governor) |
+| `?stats=1` | opens the stats overlay at boot |
+| `?palette=patent\|ink\|bw\|mobius\|custom` | boots into a colour palette |
+| `?capture=1` | keeps `preserveDrawingBuffer` on, for canvas readback |
+| `?ui=1` / `?panel=1` | shows the UI at boot (it is hidden by default) |
 
-- Working branch: `arena/45e6b5a9-vale` (cut from `main` at `de04b9a`).
-- `index.html` is generated from `src/` by `npm run build` and is committed.
-- Build / check / docs / shots commands pass locally.
-- Live site: https://bashmaester.github.io/vale/
+`window.VALE = { graph, scene, renderer, lab, sidebar, state, stats, perf, W, H,
+DURATION, setQuality, setUI, setPalette, palette }`.
 
----
+### Turn 12 — what changed
 
-## 2. The user’s latest assessment
+- **Glass case**: four panes plus a lid, gradient + sheen, no posts/rails/plinth.
+- **Street**: 11.8 m wide (`ROAD_EDGE`), lanes ±2.6, parking at the kerbs,
+  4.6 m crossing, signal arms 4.3 m.
+- **Crowd**: heading sampled from the path a fraction of a second ahead, so
+  turns are anticipated and nobody slides sideways; still bit-exact per loop.
+- **Train**: clipped to the cell, so it enters and leaves through the cut faces.
+- **Cells**: `src/cells.js` + `bufferStyle = developed | wireframe | points`;
+  the eight neighbours are complete cells with their own block, markings and
+  street furniture, at a detail level that falls off with distance.
+- **Palettes**: Möbius, Patent sketch, Ink, B/W, Custom (`src/palette.js`);
+  paper/ink ramp with gamma + contrast and accent preservation, applied at the
+  Painter, so the whole plate (and therefore the finished print) changes.
+- **Keys**: `Tab` panel · `\` stats · `H` hide all UI · `C` camera.
 
-The user’s exact latest feedback:
+### Turn 11 controls
 
-> “this is very underwhelming. document the current state, write a handoff,
-> commit and push and merge to main. write a handoff doc so we can continue in
-> another session. almost none of my notes ahve landed so you can include a
-> summary in the handoff”
+| Input | Effect |
+| --- | --- |
+| `\` | show / hide the entire UI (hidden on load) |
+| `Tab` | scene sidebar (while the UI is shown) |
+| `L` | lab |
+| `C`, `1`–`4` | cycle / jump camera mode — **drone is the default** |
+| hover the top-right | the sidebar handle fades in |
 
-Interpretation: **stop adding more code on top of the current look.** The next
-session should re-art-direct from the references, not assume the current scene
-is correct. The infrastructure is useful; the visual result is not approved.
+Sidebar sections: **Performance** (stats overlay, adaptive resolution, render
+scale, seven feature switches), **Buffer volume** (3×3 grid of neighbour
+toggles — all off by default — style wireframe/point cloud, opacity, none/all),
+**Case** (back wall, left wall, case boundaries, LoD), camera, scene, texture,
+palette, playback.
 
----
+### Frame budget
 
-## 3. Full summary of user notes (all turns)
+The plate is still painted on Canvas2D; the WebGL2 pass is the compositor. What
+changed this turn is that everything expensive can be switched off at the
+source, and nothing is compiled into the shader unless it contributes:
 
-### Original brief
+- Dead shader nodes are stripped at compile time (`ShaderGraph.isLive`).
+- Textures are allocated once and updated with `texSubImage2D`.
+- `preserveDrawingBuffer` is off unless `?capture=1`.
+- The field pass is skipped (blank field cached) when rain and puddles are off.
+- An adaptive governor moves the render scale 45–100 % to hold 60 fps.
 
-Create a silent, autoplaying 20-second film in one self-contained HTML file. A
-rainy Tokyo crossing in black / red / teal / white, with rough carved lines and
-visible print grain. One signal cycle drives umbrellas waiting, crossing,
-draining away, a briefly empty street, and returning traffic. Footsteps break
-gouged wet reflections. A train passes overhead. All artwork code-generated. No
-outside visual assets, no normal website UI, no audio.
+Node benchmark (1440×810, real-time pacing, 120 frames): **31.3 ms** with
+everything on, down from 54.7 ms at the start of the turn. Ablation: crowd off
+21.5, vehicles off 26.1, rain + puddles off 21.9, signals off 28.7, walls closed
+30.3. The static set is cached, so it costs ~1.6 ms a frame instead of 39 ms
+(it repaints on ~13 % of frames). Resolution remains the biggest single lever:
+75 % ≈ 27 ms, 50 % ≈ 18 ms.
 
-### Architecture / style corrections
+### Camera controllers (modular)
 
-- Hybrid **3D-2D** is required. The user explicitly rejected switching to pure
-  2D Canvas/SVG as the main architecture.
-- Focus on style, aesthetics, execution, shaders / TSL-like modular looks and
-  parametric creation.
-- Build a representation of structure and feeling, not a simulation.
-- Keep a mini modular node-based shader graph for experimenting with looks.
-- Keep user camera / fly-around capability.
-- Keep CI deploying to GitHub Pages at the end of every turn, and keep docs /
-  handoff current for interrupted sessions.
+`src/camera-modes.js` — `CameraMode` base (`enter/exit/update/onWheel/reset/place`)
+plus four controllers:
 
-### Crowd / world corrections
-
-- People must not overlap; they should scatter meaningfully.
-- Vehicles should be more than boxes: wheels and silhouettes.
-- Humans must walk rather than slide.
-- World rules must prevent cars on crosswalks and interpenetration.
-- Hatching should be expressive and non-uniform.
-- Use “tiny people” architectural-sketch references: small simple bodies, head
-  dots/shapes, solid coats/pants, varied umbrella silhouettes, ground shadows,
-  occasional pairs/bags/dogs/strollers. Less detail is fine if motion quality
-  and feeling are right.
-- All animation was too fast; slow it down while keeping camera movement.
-- People should cross in more directions than diagonals only.
-- People need more variety.
-
-### Set corrections
-
-- Rebuild the set with a proper sidewalk street and believable but not
-  over-detailed street geometry.
-- Traffic lights only where they belong.
-- Add a few buildings.
-- Add a few cars where they belong.
-- Build a **cubic volume scene / set**. Block out the big elements first, then
-  proceed smaller and add people at the end.
-- Focus on one corner rather than a giant scramble intersection.
-- Start with street and sidewalk.
-- Signs should be 3D and not always face the camera.
-
-### Wet / rain corrections
-
-- The procedural wet-glass fake overlay was too strong and broke the vibe.
-- Remove that overlay.
-- Rain and puddles look good and should remain.
-- Bring back a raindrop and puddle simulation, not a shader noise overlay.
-
-### Latest feedback
-
-- The cumulative result is “very underwhelming.”
-- “Almost none” of the visual notes have landed in a way the user can see.
-- The next session needs a handoff that records the notes and the gap between
-  code and visual outcome.
-
----
-
-## 4. What technically landed vs. what the stills show
-
-This table used to be guesswork. As of Turn 6 the “visual confidence” column is
-based on actual screenshots (`docs/shots/`), not on reading code.
-
-| Note | Technical implementation | Visual confidence |
+| Mode | Key | What it does |
 | --- | --- | --- |
-| Hybrid 3D→2D | Yes, custom camera/projection + WebGL2 shader graph | High |
-| One self-contained HTML | Yes | High |
-| 20s signal cycle | Yes | Medium |
-| Node-based shader graph | Yes, 8 nodes + lab | High |
-| User camera takeover | Yes | High |
-| Pages CI + docs | Yes | High |
-| Tiny people | Yes, archetypes/accessories | Medium — reads as a crowd mass; individual figures thin |
-| People don’t overlap | Yes, separation solver | Medium — verified in stills |
-| Walk rather than slide | Yes, distance-driven stride | **Unverified** — stills cannot show this |
-| More directions than diagonals | Yes, straight + diagonal + stroll | Medium |
-| Slower motion | Yes, `motionT = 0.62 × t` | Medium |
-| Proper sidewalk street | Yes, raised boxes + curbs | High — tone separation fixed this |
-| Cubic volume set | Yes, staged shaded boxes | Medium — solid now, blocky but intentional |
-| Traffic lights only at corners | Yes, four poles | Medium — present and oriented, small on screen |
-| Few buildings / cars where they belong | Yes, 4 buildings + 5 cars + 34-block backdrop | Medium |
-| Signs 3D, not billboards | Yes, `sign3D()` | Low — correct geometry, easy to miss at size |
-| Remove wet-glass overlay | Yes | High |
-| Raindrop / puddle sim | Yes, particles + ripples | Low — runs, barely reads in a still |
-| Rough carved lines / print grain | Yes, shader nodes | Medium — texture reads; marble swirls remain |
-| Expressive non-uniform hatch | Yes, shader code | Medium — now broken/directional, not marble |
-| Overall aesthetic / feeling | Partial | **Not approved** — first art pass only |
+| `CinematicMode` | `V` | the authored `CameraRig`, plus steady shots `rig`, `tripod`, `crane`, `orbit`, `detail` (`[` / `]` steps) |
+| `FpsMode` | `2` | eye height 1.66 m, walk 3.2 m/s, run 6.4, gentle bob, clamped inside the tile |
+| `ThirdPersonMode` | `3` | ground character with damped facing, orbit distance 1.8–12 m, wheel zoom |
+| `DroneMode` | `4` | free flight, `Q`/`E` down/up, `Shift` boost, wheel sets speed |
+
+`src/camera-director.js` owns the shared state (`eye/target/fov/roll/yaw/pitch/keys`),
+all window-level input (pointer look, wheel, keys; right-drag is ignored), the HUD,
+and `setMode / cycle / setShot / place / apply`. A new controller is one class plus
+one entry in `MODES`; no input code changes. `C` cycles, `1`–`4` jump directly.
+
+### Case frame and depth sorting
+
+`environment.collectFrame(p, camera, params)` returns frame members as
+`{ depth, draw, group }`. The back shell, cut faces, plinth and label are grouped
+`far` and drawn before the set; the near posts, rails and corner ticks are merged
+into the scene's depth-sorted drawable list (same `Camera.project().depth`
+convention as vehicles and people), so a post in front of a car occludes it and
+one behind it is hidden. `params.caseFrame = 0` removes the case entirely —
+verified by A/B stills (with rain disabled so the comparison is stable).
+
+### Sidebar (`src/sidebar.js`)
+
+Hidden by default; `Tab` or the ☰ handle opens it. Sections: **Camera** (mode,
+shot, HUD), **Scene** (crowd density, walk tempo, rain amount/speed, puddles,
+wind), **Texture** (smudge toggle, master plate-texture fader, hatch, contour,
+grain, fiber, vignette, "No smudge", "Reset"), **Palette** (preset, posterize,
+bleed, accent), **Case** (boundaries toggle, LoD), **Playback** (play/pause,
+restart, speed). 24 rows, each with a `sync()` that re-reads the live value, so
+external changes (lab, preset, keyboard) flow back into the panel.
 
 ---
 
-## 5. Likely root causes
+## 2. The tile (the engine unit)
 
-1. **No browser screenshot validation was possible** — now fixed, and it
-   immediately exposed the real bug (background-coloured box fills). This was
-   the biggest process failure and it cost several turns.
-2. **Technical scaffolding was mistaken for art direction.** Modules exist, but
-   composition, scale, density, contrast, rhythm and texture were not validated
-   against the references.
-3. **Too many simultaneous corrections.** The current code tries to satisfy
-   crowd, world rules, camera, CI, set, rain and shader graph all at once. The
-   result is coherent as a system but weak as an image.
-4. **The set was too sparse and floated in a void.** Fixed with a 34-block
-   backdrop ring and a much tighter camera; the set now fills the frame.
-5. **People may be too small or too uniform at final resolution.** More variety
-   was added in code, but the visual signal may be lost.
-6. **Rain/puddles may be too subtle.** The fake overlay was removed, but the
-   replacement sim may not read strongly enough.
-7. **Camera may be wrong.** A three-quarter corner view was chosen by
-   projecting key points, not by looking at a render.
-8. **Print shader may flatten everything.** The node graph is modular but may
-   be washing out the hand-carved / riso / linocut feeling.
+`src/tile.js` owns the unit and the LoD policy.
 
----
-
-## 6. Recommended next-session plan
-
-1. `npm run setup:browser` once, then `npm run shots`. Capture stills at WAIT,
-   CROSS, EMPTY and TRAFFIC and **look at them**.
-2. Compare the current frames against the notes (the supplied
-   architectural-sketch references are not in the repo; ask the user if they are
-   needed again):
-   - people size / density / shadows,
-   - building scale and silhouette,
-   - street/sidewalk readability,
-   - umbrella shapes,
-   - rain and puddle readability,
-   - black/red/teal/white balance,
-   - carved line and grain quality.
-3. Re-art-direct from the references. It is acceptable to discard large parts
-   of the current environment/camera/crowd code if they are blocking the image.
-4. Keep the hybrid 3D→2D architecture, self-contained output, hidden lab, user
-   camera and CI. These are the stable parts.
-5. Rebuild the set in visible stages and validate each stage with a screenshot:
-   - big road/sidewalk/building volumes,
-   - crosswalks, signals, cars,
-   - people,
-   - rain/puddles,
-   - shader finish.
-6. Tune the **still frame first**, then motion. Slower motion is only useful if
-   the figures and rain read clearly.
-7. Consider temporarily disabling the shader graph (`?preset=` or lab bypass)
-   to judge the raw ink plate, then re-enable the print finish.
-8. Only after the images feel right, re-check the 20s cycle and empty-street
-   beat.
-
----
-
-## 7. Invariants to keep
-
-- One self-contained `index.html`, silent autoplay, no external assets.
-- Hybrid 3D→2D pipeline; do not regress to pure 2D.
-- 20-second signal cycle with waiting → crossing → drain → empty → traffic.
-- Black / red / teal / white palette with rough carved lines and controlled
-  grain.
-- Hidden lab and camera HUD only; no normal website UI.
-- User camera takeover.
-- All artwork code-generated.
-- CI deploys to GitHub Pages on pushes.
-- Human docs stay current.
-- No procedural wet-glass overlay; rain/puddles should be a real simulation.
-
----
-
-## 8. Commands
-
-```bash
-npm install
-npm run build           # regenerate self-contained index.html
-npm run docs            # regenerate deploy metadata + docs/index.html
-npm run dev             # build + serve on :8000
-npm run check           # esbuild bundle check
+```
+TILE = { x0:-15, x1:15, z0:-14, z1:10.5, y0:-1.6, y1:15.6 }
 ```
 
-Useful URLs:
+- +z and +x are open, cut-away faces; the back wall (z = −14) and left wall
+  (x = −15) are closed. That asymmetry is deliberate: the camera sits in the
+  open corner, so one tile reads as a stage set and two tiles snap along x.
+- `SIDEWALK_Y = 0.16`, plinth bottom at `y0 − 0.35`.
+- `groundYAt(x, z)` returns the walking surface including kerb ramps, so
+  people and puddles never pop at the crossing.
 
-- `index.html` — clean film
-- `index.html?lab=1` — hidden lab
-- `index.html?lab=1&paused=1&t=7` — paused inspection frame
-- `index.html?cam=fly` — user fly camera
-- `index.html?preset=riso` — alternate print look
-- `index.html?w=1920&h=1080` — higher internal resolution
+### Procedural LoD
 
-Live site: https://bashmaester.github.io/vale/
+Three levels, chosen from the tile's projected screen height (`px`):
+
+| Level | Id | Min px | windows | props | crowd | rain | hatch |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 0 | `hero` | 520 | 1.00 | 1.00 | 1.00 | 1.00 | 1.00 |
+| 1 | `mid` | 300 | 0.55 | 0.55 | 0.62 | 0.60 | 0.55 |
+| 2 | `far` | 0 | 0.28 | 0.22 | 0.30 | 0.32 | 0.28 |
+
+There is **no separate low-poly model**. Every module receives the same
+`detail` budget object (`makeDetail`) and samples its *own* procedural
+description more coarsely: fewer window columns, fewer facade props, fewer
+people (deterministic, seeded subset), fewer raindrops and ripples, less hatch.
+`detail.allowed(fraction, seed)` is the shared sampler, so a given seed always
+produces the same subset at a given level — no popping between frames.
+
+`params.lod = −1` means auto; 0…2 forces a level (used by the lab and by
+`tools/shot.mjs`).
+
+Measured: at 720 px wide the three levels render as `hero` / `mid` / `far`
+(see `.shots/lod.png`), with the crowd thinning and window grids coarsening as
+expected.
 
 ---
 
-## 9. Bottom line
+## 3. Scene contents (all procedural)
 
-The repository is a working **technical scaffold**, not an approved film. The
-next session should treat the user’s notes as the specification and the current
-build as a rough prototype. The most important missing step is real visual
-validation against the references.
+- `src/world.js` — the data of one tile: `ROAD` (z −5.0…4.2), `SIDEWALKS`
+  (front 4.2→10.5, back −14→−5.0), `CROSSWALKS.main` (x −4.2…−0.8),
+  `LANES` (z ±2.15), 2 `PARKING` bays, 2 `SIGNAL_POSITIONS`, 4
+  `BUILDING_LOTS`, 7 `LIGHT_SOURCES`, 4 `WAIT_ZONES`, 7 `FLOWS`, 10 `PUDDLES`.
+- `src/environment.js` — staged drawing functions
+  `drawBackdrop → drawStreet → drawPaving → drawRoadMarkings → drawBuildings →
+  drawSignals → drawFurniture → drawRail → drawReflections → drawFrameBack →
+  drawFrameFront`.
+  Buildings: window grid with ~26 % lit (warm `#d8a03a`), mullions, sills,
+  balcony rails on taller lots; the secondary facade runs at 55 % density so a
+  block reads solid rather than transparent. Shopfronts: transom bar, counter
+  line, occasional silhouette behind the glass. Street trees: tapered trunk,
+  root flares, 4–6 primary limbs with two sub-branches each, a 9-sided leaf
+  cluster at every tip, cast shadow pool. Rain-worn zebra bars with scuffs.
+- `src/traffic.js` — `PROFILES` extrusions (car / van / taxi / bus), near face
+  shaded with a vertical gradient, roof rim, wet sheen streak, brake glow on
+  stopped vehicles, 4-car overhead train with a continuous lit band.
+- `src/crowd.js` — 34 × density crossers + 18 × density waiters, 6 archetypes,
+  one filled silhouette with a **leg split** per person, small head disc, arms
+  only when idle/detail allows, umbrellas built as rim + mid ring + apex with a
+  tilted canopy plane. LoD thins by a seeded hash, accessories drop first.
+- `src/weather.js` — 240 raindrops, 56 ripples, 10 tinted puddles (real
+  particle/puddle simulation; no wet-glass overlay anywhere).
+
+---
+
+## 4. Measured state (this build)
+
+- `npm run verify` (check → build → boot → finite) passes; `npm run build` →
+  141.5 KiB self-contained file.
+- Luminance this build: 900×506 **dark 46.8–60.3 %**, mid 32.5–42.1 %, bright
+  6.8–11.2 %; 640×360 dark 46.8–58.4 %. (Earlier 1440×810: dark 52.7–62.8 %.)
+  (Historical failure mode was 94 % dark; do not reintroduce heavy posterize +
+  vignette.)
+- Camera: `CameraRig` keys fitted against the full object extents
+  (x ±15.9, z −14.7…11.15, y −1.95…15.75). Eye ≈ `[9.4,14.6,38.8]`,
+  target ≈ `[−1.0,3.6,−2.2]`, fov 37.7–38.8, roll ±0.005.
+
+---
+
+## 4b. Build integrity
+
+`npm run verify` (check → build → boot) is the gate. `npm run boot` executes the
+built `index.html` bundle in Node with a DOM shim, drives six frames and fails on
+any startup error, so a corrupted or non-parsing bundle can no longer ship (the
+2026-10-27 blank deploy was a `$&` substitution bug in the build plus a TDZ error
+in `main.js`; both fixed, both now covered).
+
+## 4b. Determinism and performance (Turn 10)
+
+**The film is a perfect 20 s loop.** Nothing integrates over `dt`; every drop,
+person and vehicle is `f(seed, t)` with `f(seed, t+20) === f(seed, t)`.
+`npm run determinism` (part of `npm run verify`) renders t and t+20 from a cold
+scene and after a full playback and compares PNG bytes; it is bit-exact at
+three sample times. `src/loop.js` holds the primitives (periods quantised to
+`20 / integer`, seamless `loopNoise`, `boundaryAlpha`).
+
+**Loop over fade.** Crowd walkers enter from the tile edge, wait at the kerb,
+cross on the green and walk off the far side; alpha comes from
+`params.loopBuffer` (metres), so nothing dissolves mid-frame. Vehicles pull up
+to the stop line, wait out the pedestrian window, drive through and wrap
+off-screen. Rain drops fall on quantised periods and their ripples are derived
+from landing times.
+
+**Frame time** (Node canvas benchmark, same machine): 1440×810 **54.7 → 21.9
+ms**, 1280×720 15.7 ms, 900×506 11.6 ms. Two changes did most of it:
+
+1. `Scene._ensureStatic` paints the set once into a cached canvas and blits it
+   with a sub-pixel offset (repaint when the camera drifts > 2.5 px, when the
+   LoD changes, or at the loop point).
+2. The plate follows the viewport (≤ 1.25× DPR) instead of a fixed 1440×810;
+   `?scale=` / the sidebar render-scale row shrink the shader too.
+
+**`S` was the stutter.** `lab.js` bound a bare `S` to `saveFrame()`, so walking
+backwards in first person exported a full-resolution PNG every step. It now
+needs `Ctrl/Cmd+S` and only fires while the lab is open.
+
+## 4c. What this turn added
+
+- Modular camera modes + director, replacing the old orbit/fly controller
+  (`src/camera-control.js` deleted; nothing imports it).
+- Case-frame depth sorting with a `caseFrame` visibility toggle.
+- Sidebar panel with a smudge toggle and a relative master texture fader.
+- `PRESETS.linocut` softened at the preset level (hatch 0.20 → 0.11, contour
+  0.40 → 0.24, fiber 0.045 → 0.026, vignette 0.16 → 0.11). Editing node defaults
+  alone does nothing at runtime — `applyPreset` overwrites them at boot.
+
+## 5. Honest weaknesses
+
+1. **No real browser verification.** The sandbox has no browser (apt, the
+   Playwright CDN and puppeteer's Chrome download are all blocked), so the
+   ink plate is judged from `@napi-rs/canvas` stills; startup is validated by
+   `tools/boot-smoke.mjs`. The WebGL finish itself still has not been seen.
+2. **The front-left quadrant is still the thinnest area.** It has a bench,
+   planters, bollards, a poster column, a lamp and a tree, but they are small and
+   dark, so the corner reads as pavement.
+3. **People are still schematic.** They read correctly at 1× (silhouette,
+   head, umbrella) but close-up crops show a cone-like coat and a floating
+   canopy. That is acceptable for a *template*, not yet for a hero shot.
+4. **Vehicles are dark slabs.** The gradient and rim helped; interiors are not
+   modelled at all.
+5. **LoD 2 loses too much of the shopfronts.** Their lit windows survive, the
+   frames do not.
+6. **The smudge cannot be judged here.** The stills bypass the WebGL finish
+   passes, so hatch/detail/paper strengths must be eyeballed in a real browser.
+7. **Tiling is not yet demonstrated in-engine.** The tile is authored to snap
+   along x, but nothing renders two tiles side by side.
+
+---
+
+## 6. How to inspect
+
+```bash
+npm run check                                     # syntax/import gate
+node tools/shot.mjs --t 3,9,15,19 --prefix v30    # stills → .shots/
+node tools/shot.mjs --t 9 --eye 20,6,10 --target 0,4,0 --fov 30
+node tools/lod.mjs                                 # LoD contact sheet
+node tools/smoke.mjs                               # luminance sweep
+```
+
+Stills are always written with the shader bypassed so they can be measured and
+cropped; the crop recipe lives in `docs/HANDOFF.md`.
+
+---
+
+## 7. Next steps (ordered)
+
+1. Fill the front-left quadrant properly: a bus shelter with a lit panel, a bike
+   rack, café tables under an awning, and two or three more walkers on that
+   sidewalk.
+2. Second crowd pass: coat silhouettes that are less conical, umbrellas that
+   sit on the head instead of hovering.
+3. `tools/tiles.mjs`: render two tiles along x into one sheet to prove the
+   snapping and to show the seam.
+4. Vehicle interiors / glazing at L0 only.
+5. Get a browser into CI (GitHub Actions can screenshot the real WebGL output)
+   so the finish is finally validated.

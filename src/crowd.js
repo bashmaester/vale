@@ -1,52 +1,87 @@
-// Tiny architectural-sketch people, added last on top of the built-out set.
-// They remain projected 3D world points, but the silhouettes are varied:
-// archetypes, coat shapes, head shapes, long shadows, accessories, groups
-// and umbrella styles. No screen-space sprites and no fake wet footprints.
+// Tiny architectural-sketch people, added last on top of the built set.
+//
+// The rule for this scale: ONE solid silhouette per person (coat + legs as a
+// single closed shape), a head disc, and an umbrella dome. Detail beyond that
+// turns to noise at final resolution, so accessories are deliberately sparse.
+//
+// People are still projected 3D points: they stand on the real sidewalk
+// (including the kerb ramps), they walk beziers between kerbs, they are pushed
+// apart by a separation solver, and their size follows perspective.
+//
+// LoD thins the crowd deterministically (same seed → same people at the same
+// level) and strips accessories before it strips silhouettes.
+
 import { PALETTE } from './draw.js';
-import { v3, clamp, norm3, makeRng, hash11, TAU } from './math.js';
-import { separate, separateGroups, poissonDisk } from './collision.js';
+import { v3, clamp, lerp, norm3, makeRng, hash11, TAU, smoothstep, smootherstep } from './math.js';
+import { relax, poissonDisk } from './collision.js';
+import { groundYAt, TILE } from './tile.js';
+import { LOOP, boundaryAlpha } from './loop.js';
+
+// The crowd fades at the back and side edges only. The front (+z) edge is the
+// open face of the diorama and the near sidewalk runs along it — fading there
+// would dim the whole foreground row.
+const CROWD_BOX = { x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: TILE.z1 + 3.0 };
 import {
-  FLOWS, ROAD, isOnSidewalk, clampToWorld, weightedWaitZone,
+  FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone, STREET_PROPS,
 } from './world.js';
 
+// Walking pace for the flows that turn a corner, in m/s. A little under the
+// crowd's mean: somebody walking round a corner is not in a hurry, and a
+// slower pace is what makes the turn read as a turn instead of a swerve.
+const CORNER_SPEED = 1.15;
+
+// Canopy colours. The palette is carried mostly by umbrellas, so they get the
+// saturated values while the coats stay near-black.
 const UMBRELLAS = [
-  { fill: 'rgba(239,233,216,0.13)', stroke: PALETTE.ink, kind: 'white', style: 'dome', radius: 0.52 },
-  { fill: 'rgba(239,233,216,0.10)', stroke: PALETTE.ink, kind: 'white', style: 'flat', radius: 0.56 },
-  { fill: 'rgba(5,6,5,0.94)', stroke: PALETTE.ink, kind: 'black', style: 'dome', radius: 0.50 },
-  { fill: 'rgba(5,6,5,0.92)', stroke: PALETTE.ink, kind: 'black', style: 'pointed', radius: 0.48 },
-  { fill: 'rgba(43,184,174,0.78)', stroke: PALETTE.ink, kind: 'teal', style: 'dome', radius: 0.55 },
-  { fill: 'rgba(212,59,48,0.80)', stroke: PALETTE.ink, kind: 'red', style: 'pointed', radius: 0.50 },
-  { fill: 'rgba(239,233,216,0.16)', stroke: PALETTE.ink, kind: 'white', style: 'dome', radius: 0.60 },
-  { fill: 'rgba(93,105,97,0.72)', stroke: PALETTE.ink, kind: 'dim', style: 'flat', radius: 0.53 },
+  { fill: 'rgba(239,233,216,0.92)', stroke: '#0a0c0a', kind: 'white', style: 'dome', radius: 0.40 },
+  { fill: 'rgba(239,233,216,0.72)', stroke: '#0a0c0a', kind: 'white', style: 'flat', radius: 0.44 },
+  { fill: 'rgba(12,15,13,0.97)', stroke: PALETTE.ink, kind: 'black', style: 'dome', radius: 0.38 },
+  { fill: 'rgba(12,15,13,0.95)', stroke: PALETTE.ink, kind: 'black', style: 'pointed', radius: 0.36 },
+  { fill: 'rgba(43,184,174,0.95)', stroke: '#0a0c0a', kind: 'teal', style: 'dome', radius: 0.42 },
+  { fill: 'rgba(239,233,216,0.86)', stroke: '#0a0c0a', kind: 'white', style: 'pointed', radius: 0.46 },
+  { fill: 'rgba(52,60,54,0.95)', stroke: PALETTE.ink, kind: 'dim', style: 'flat', radius: 0.41 },
+  { fill: 'rgba(212,59,48,0.96)', stroke: '#0a0c0a', kind: 'red', style: 'pointed', radius: 0.38 },
+  { fill: 'rgba(10,13,11,0.97)', stroke: 'rgba(239,233,216,0.7)', kind: 'black', style: 'flat', radius: 0.44 },
 ];
 
+// Coats: opaque, mostly dark, a few carrying colour.
+// Coats have to sit a step above the pavement, or a dark figure reads as a
+// floating head and a pair of white trouser lines.
 const COATS = [
-  PALETTE.black,
-  'rgba(5,6,5,0.94)',
-  'rgba(239,233,216,0.09)',
-  'rgba(239,233,216,0.16)',
-  'rgba(43,184,174,0.52)',
-  'rgba(43,184,174,0.32)',
-  'rgba(212,59,48,0.54)',
-  'rgba(212,59,48,0.34)',
-  'rgba(93,105,97,0.55)',
-  'rgba(239,233,216,0.06)',
+  '#1b201e', '#20261f', '#252b26', '#171b19', '#2b312d', '#12160f',
+  'rgba(239,233,216,0.92)', 'rgba(239,233,216,0.88)', 'rgba(222,214,196,0.9)',
+  'rgba(93,105,97,0.92)', 'rgba(58,66,62,0.95)',
+  'rgba(43,184,174,0.80)', 'rgba(212,59,48,0.82)',
 ];
 
 const ARCHETYPES = [
-  { id: 'commuter', scale: [0.92, 1.12], coat: 'straight', head: 'round', umbrella: 0.88,
-    accessory: ['bag', 'briefcase', 'none', 'scarf'], gait: [0.90, 1.08], lean: [-0.04, 0.04] },
-  { id: 'student', scale: [0.84, 1.02], coat: 'hood', head: 'hood', umbrella: 0.52,
-    accessory: ['backpack', 'phone', 'none', 'bicycle'], gait: [1.00, 1.22], lean: [-0.07, 0.02] },
-  { id: 'elder', scale: [0.86, 1.02], coat: 'long', head: 'hat', umbrella: 0.92,
-    accessory: ['cane', 'scarf', 'none'], gait: [0.70, 0.88], lean: [0.02, 0.09] },
-  { id: 'child', scale: [0.68, 0.86], coat: 'short', head: 'round', umbrella: 0.60,
+  { id: 'commuter', scale: [0.98, 1.20], coat: 'straight', head: 'round', umbrella: 0.52,
+    accessory: ['bag', 'briefcase', 'none', 'none'], gait: [0.90, 1.08], lean: [-0.04, 0.04] },
+  { id: 'student', scale: [0.90, 1.08], coat: 'hood', head: 'hood', umbrella: 0.20,
+    accessory: ['backpack', 'phone', 'none'], gait: [1.00, 1.22], lean: [-0.07, 0.02] },
+  { id: 'elder', scale: [0.92, 1.08], coat: 'long', head: 'hat', umbrella: 0.62,
+    accessory: ['cane', 'none', 'none'], gait: [0.70, 0.88], lean: [0.02, 0.09] },
+  { id: 'child', scale: [0.72, 0.92], coat: 'short', head: 'round', umbrella: 0.22,
     accessory: ['balloon', 'child', 'none'], gait: [1.10, 1.34], lean: [-0.06, 0.06] },
-  { id: 'tourist', scale: [0.90, 1.10], coat: 'A', head: 'hat', umbrella: 0.76,
-    accessory: ['camera', 'map', 'bag', 'none'], gait: [0.84, 1.04], lean: [-0.05, 0.05] },
-  { id: 'worker', scale: [0.95, 1.16], coat: 'short', head: 'cap', umbrella: 0.68,
+  { id: 'tourist', scale: [0.96, 1.18], coat: 'A', head: 'hat', umbrella: 0.34,
+    accessory: ['camera', 'bag', 'none'], gait: [0.84, 1.04], lean: [-0.05, 0.05] },
+  { id: 'worker', scale: [1.00, 1.22], coat: 'short', head: 'cap', umbrella: 0.24,
     accessory: ['lunchbox', 'newspaper', 'none'], gait: [0.88, 1.06], lean: [-0.03, 0.06] },
 ];
+
+// Coats are split into dark and pale. Dark ones only need a whisper of edge —
+// a bright outline turns them into hollow wireframes on dark asphalt.
+function coatIsDark(coat) {
+  if (coat.startsWith('#') && coat.length === 7) {
+    const r = parseInt(coat.slice(1, 3), 16);
+    const g = parseInt(coat.slice(3, 5), 16);
+    const b = parseInt(coat.slice(5, 7), 16);
+    return (r + g + b) / 3 < 40;
+  }
+  const m = coat.match(/rgba\((\d+),(\d+),(\d+)/);
+  if (m) return (Number(m[1]) + Number(m[2]) + Number(m[3])) / 3 < 80;
+  return false;
+}
 
 function bezier2(p0, p1, p2, t) {
   const u = 1 - t;
@@ -54,6 +89,54 @@ function bezier2(p0, p1, p2, t) {
     x: u * u * p0.x + 2 * u * t * p1.x + t * t * p2.x,
     z: u * u * p0.z + 2 * u * t * p1.z + t * t * p2.z,
   };
+}
+
+// A rounded path through waypoints, walked at a constant pace.
+//
+// The waypoints are resampled by arc length and then smoothed, so the result is
+// monotone in the distance travelled — a body never stalls at a waypoint and
+// never jumps over one. Corners are rounded by smoothing in *space*, not by
+// easing the parameter: easing shortens the stride at every waypoint, which
+// reads as a stumble.
+function pathTable(pts) {
+  const RAW = 24;
+  const raw = [];
+  let total = 0;
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1], b = pts[i];
+    for (let k = 0; k < RAW; k++) {
+      const f = k / RAW;
+      const x = lerp(a.x, b.x, f), z = lerp(a.z, b.z, f);
+      if (raw.length) total += Math.hypot(x - raw[raw.length - 1].x, z - raw[raw.length - 1].z);
+      raw.push({ x, z, s: total });
+    }
+  }
+  const last = pts[pts.length - 1];
+  total += Math.hypot(last.x - raw[raw.length - 1].x, last.z - raw[raw.length - 1].z);
+  raw.push({ x: last.x, z: last.z, s: total });
+  // Smooth, keeping the ends pinned: this is what rounds the corners.
+  const R = 6;
+  const sm = raw.map((p, i) => {
+    if (i < 2 || i > raw.length - 3) return { ...p };
+    let sx = 0, sz = 0, n = 0;
+    for (let k = -R; k <= R; k++) {
+      const q = raw[clamp(i + k, 0, raw.length - 1)];
+      sx += q.x; sz += q.z; n++;
+    }
+    return { x: sx / n, z: sz / n, s: p.s };
+  });
+  return { pts: sm, total };
+}
+
+function alongPath(table, dist) {
+  const { pts, total } = table;
+  const d = clamp(dist, 0, total);
+  let k = 1;
+  while (k < pts.length - 1 && pts[k].s < d) k++;
+  const a = pts[k - 1], b = pts[k];
+  const span = b.s - a.s;
+  const f = span < 1e-9 ? 0 : clamp((d - a.s) / span, 0, 1);
+  return { x: lerp(a.x, b.x, f), z: lerp(a.z, b.z, f) };
 }
 
 function chooseFlow(rng) {
@@ -85,7 +168,8 @@ function makePerson(rng, id, extra = {}) {
     seed: rng.range(1, 100000),
     umb: rng.pick(UMBRELLAS),
     hasUmbrella: rng.chance(arch.umbrella),
-    umbrellaTilt: rng.range(-0.24, 0.24),
+    umbrellaTilt: rng.range(-0.20, 0.20),
+    umbrellaLift: rng.range(0.86, 1.14),
     coat: rng.pick(COATS),
     coatShape: arch.coat,
     headShape: arch.head,
@@ -94,8 +178,12 @@ function makePerson(rng, id, extra = {}) {
     gait: rng.range(arch.gait[0], arch.gait[1]),
     strideLen: rng.range(1.12, 1.72),
     pace: rng.range(0.82, 1.18),
-    shadowLen: rng.range(0.9, 1.9),
+    shadowLen: rng.range(1.0, 2.2),
     entourage: rng.chance(0.10) ? 1 : 0,
+    // Which side of the pavement they keep. Two people on the same path with
+    // different lanes pass each other instead of colliding, which is most of
+    // what makes a crowd read as natural.
+    lane: rng.range(-0.30, 0.30),
     ...extra,
   };
 }
@@ -110,47 +198,94 @@ export class Crowd {
 
   rebuild() {
     const rng = makeRng(918273);
-    const N = Math.round(92 * this.density);
+    const N = Math.round(34 * this.density);
     this.crossers = [];
+    // A body that is placed inside a lamp post can never be resolved by the
+    // solver: it just gets shoved back and forth. So the scatter already keeps
+    // clear of the furniture.
+    const nearProp = (x, z, pad) => {
+      for (const o of STREET_PROPS) {
+        const dx = x - o.x, dz = z - o.z;
+        const rr = o.r + pad;
+        if (dx * dx + dz * dz < rr * rr) return true;
+      }
+      return false;
+    };
+    this._nearProp = nearProp;
+
     const specs = [];
     for (const f of FLOWS) {
       const count = Math.floor(N * f.weight);
-      const pts = poissonDisk(count, f.bounds, 0.82, rng, (x, z) => isOnSidewalk(x, z));
+      const pts = poissonDisk(count, f.bounds, 0.92, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.52));
       for (const pt of pts) specs.push({ flow: f, start: pt });
     }
     let guard = 0;
-    while (specs.length < N && guard++ < N * 5) {
+    while (specs.length < N && guard++ < N * 6) {
       const f = chooseFlow(rng);
       const x = rng.range(f.bounds.x0, f.bounds.x1);
       const z = rng.range(f.bounds.z0, f.bounds.z1);
-      if (isOnSidewalk(x, z)) specs.push({ flow: f, start: { x, z } });
+      if (isOnSidewalk(x, z) && !nearProp(x, z, 0.52)) specs.push({ flow: f, start: { x, z } });
     }
     for (let i = 0; i < specs.length; i++) {
       const { flow, start } = specs[i];
-      const end = { x: start.x + flow.delta.x, z: start.z + flow.delta.z };
-      const dir = norm3(v3(flow.delta.x, 0, flow.delta.z));
+      // A corner flow is a waypoint path, absolute in the cell: the pavement it
+      // turns on is in the same place for everyone. The first point is the
+      // walker's own start, so the fan of people still reads as a crowd, and
+      // the last leg gives the walk-on direction.
+      const via = flow.via ? [{ x: start.x, z: start.z }, ...flow.via.map((v) => ({ x: v.x, z: v.z }))] : null;
+      const end = via
+        ? { x: via[via.length - 1].x, z: via[via.length - 1].z }
+        : { x: start.x + flow.delta.x, z: start.z + flow.delta.z };
+      const lastA = via ? via[via.length - 2] : start;
+      const dir = norm3(v3(end.x - lastA.x, 0, end.z - lastA.z));
       const side = { x: -dir.z, z: dir.x };
-      const bend = (flow.bend || 0) + rng.range(-1.0, 1.0);
+      const bend = (flow.bend || 0) + rng.range(-0.9, 0.9);
       const ctrl = {
         x: (start.x + end.x) / 2 + side.x * bend,
         z: (start.z + end.z) / 2 + side.z * bend,
       };
+      // Where this person comes from: a few metres along the pavement, on the
+      // side they would have walked from. A short walk-in at walking pace —
+      // starting them at the far edge of the tile made them sprint.
+      const sign = start.x > 0 ? 1 : -1;
+      const room = sign > 0 ? TILE.x1 - 0.6 - start.x : start.x - (TILE.x0 + 0.6);
+      const reach = Math.max(1.6, Math.min(4.6, room));
+      const approach = {
+        x: start.x + sign * reach,
+        z: start.z + rng.range(-0.15, 0.15),
+      };
+      const adx = start.x - approach.x, adz = start.z - approach.z;
+      const al = Math.hypot(adx, adz) || 1;
       this.crossers.push(makePerson(rng, i, {
         start, end, ctrl, dir, side, kind: flow.kind, flow: flow.id,
-        pathLength: Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
-        delay: clamp((Math.abs(start.x) - 10) / 12, 0, 1) * 0.22 + rng.range(0, 0.36),
+        approach, approachDir: { x: adx / al, z: adz / al },
+        // A single bezier from the near pavement to the side street cuts the
+        // corner straight across the road, which is the one thing a pedestrian
+        // never does; these flows carry absolute waypoints instead, walked at
+        // a constant pace through a rounded path.
+        table: via ? pathTable(via) : null,
+        pathLength: via
+          ? via.reduce((acc, p, k) => (k ? acc + Math.hypot(p.x - via[k - 1].x, p.z - via[k - 1].z) : 0), 0)
+          : Math.hypot(flow.delta.x, flow.delta.z) + Math.abs(bend) * 0.35,
+        delay: clamp((Math.abs(start.x) - 7) / 12, 0, 1) * 0.16 + rng.range(0, 0.30),
+        // A stroll keeps to its own pavement band for the whole walk. The band
+        // is what makes the pavement a place with lanes instead of an open
+        // plane: without it the bezier's bend and the walk-on drift carry
+        // people into the furniture line, and the solver then has to steer them
+        // out, which is the one job it does badly.
+        band: flow.kind === 'stroll' ? { z0: flow.bounds.z0 - 0.12, z1: flow.bounds.z1 + 0.12 } : null,
       }));
     }
 
-    const M = Math.round(30 * this.density);
+    const M = Math.round(18 * this.density);
     this.waiters = [];
     for (let i = 0; i < M; i++) {
       const zone = weightedWaitZone(rng);
-      const pts = poissonDisk(1, zone, 0.78, rng, (x, z) => isOnSidewalk(x, z));
-      const base = pts[0] || { x: 13, z: -13 };
+      const pts = poissonDisk(1, zone, 0.86, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.50));
+      const base = pts[0] || { x: -2.6, z: 5.8 };
       const dir = norm3(v3(-base.x, 0, -base.z));
       this.waiters.push(makePerson(rng, 10000 + i, {
-        base: { x: base.x + rng.range(-0.15, 0.15), z: base.z + rng.range(-0.15, 0.15) },
+        base: { x: base.x + rng.range(-0.1, 0.1), z: base.z + rng.range(-0.1, 0.1) },
         dir, side: { x: -dir.z, z: dir.x }, kind: 'wait', flow: 'WAIT',
       }));
     }
@@ -161,396 +296,526 @@ export class Crowd {
     this.rebuild();
   }
 
-  update(camera, timeline, params, obstacles = []) {
+  update(camera, timeline, params, obstacles = [], detail = { crowd: 1, windows: 1, props: 1 }) {
+    this.timeline = timeline;
     const u = timeline.u;
+    const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
     const motionT = timeline.motionT;
+    // Integer cycles per loop: a sine that does not complete whole cycles inside
+    // the 20 s loop would make t=0 and t=20 different frames.
+    const osc = (cycles, phase) => Math.sin((TAU * cycles * motionT) / LOOP + phase);
     const crowdA = timeline.crowdAlpha();
     const waiterA = timeline.waiterAlpha();
     const wind = params.wind == null ? 0.6 : params.wind;
     const tempo = clamp(params.walkSpeed == null ? 1 : params.walkSpeed, 0.3, 2) * 0.62;
+    // Half-width of the sampling window used to work out a heading, in loop
+    // phase. 0.02 = 0.4 s at the 20 s loop: long enough to average out the
+    // sway, short enough that a corner still reads as a corner.
+    const TURN = 0.02;
     const raw = [];
 
     for (const ped of this.crossers) {
-      let world, moving = false, distance = 0;
-      if (u > 0.80 || u < 0.18) {
-        const idle = Math.sin(motionT * 0.72 + ped.phase) * 0.07;
-        world = { x: ped.start.x + idle, z: ped.start.z + Math.cos(motionT * 0.60 + ped.phase) * 0.055 };
+      // Wherever this person is, they are somewhere on one continuous walk.
+      // Sampling the path a fraction of a second either side of now gives a
+      // heading that turns BEFORE the corner instead of snapping to a new
+      // direction when they get there — the difference between walking and
+      // hovering. Everything stays a pure function of `u`, so the loop still
+      // lands on exactly the same frame at 0 and 20 s.
+      const now = this._crosserAt(ped, u, motionT);
+      const back = this._crosserAt(ped, Math.max(0, u - TURN), motionT);
+      const fwd = this._crosserAt(ped, Math.min(1, u + TURN), motionT);
+      let hx = fwd.x - back.x, hz = fwd.z - back.z;
+      const hs = Math.hypot(hx, hz);
+      const look = this._facing(ped, u);
+      let dir;
+      if (hs > 1e-5) {
+        hx /= hs; hz /= hs;
+        // Blend out of the resting pose as they start moving.
+        const w = clamp(hs / 0.09, 0, 1);
+        const bx = look.x * (1 - w) + hx * w;
+        const bz = look.z * (1 - w) + hz * w;
+        const bl = Math.hypot(bx, bz) || 1;
+        dir = { x: bx / bl, z: bz / bl };
       } else {
-        const s = timeline.crossWithDelay(ped.delay * ped.pace);
-        if (s < 1) {
-          world = bezier2(ped.start, ped.ctrl, ped.end, s);
-          const sway = Math.sin(motionT * 1.35 + ped.phase) * 0.04;
-          world.x += ped.side.x * sway;
-          world.z += ped.side.z * sway;
-        } else {
-          const d = timeline.drain() * (ped.kind === 'stroll' ? 3.5 : 10);
-          world = { x: ped.end.x + ped.dir.x * d, z: ped.end.z + ped.dir.z * d };
-        }
-        distance = (s < 1 ? s * ped.pathLength : ped.pathLength + timeline.drain() * (ped.kind === 'stroll' ? 3.5 : 10));
-        moving = true;
+        dir = look;
       }
+      const side = { x: -dir.z, z: dir.x };
+      const world = { x: now.x, z: now.z };
+      const moving = now.moving;
+      const distance = now.distance;
+      const alpha = now.alpha * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
       const stridePhase = ped.phase + (moving
         ? distance / (ped.strideLen * ped.scale * ped.gait) * TAU * tempo
-        : Math.sin(motionT * 0.62 + ped.phase) * 0.10);
+        : osc(2, ped.phase) * 0.10);
       raw.push({
-        ped, world, alpha: crowdA, dir: ped.dir, side: ped.side, scale: ped.scale,
-        stridePhase, moving, waiter: false, radius: 0.44 * ped.scale,
+        ped, world, alpha, dir, side, scale: ped.scale,
+        stridePhase, moving, waiter: false, radius: 0.30 * ped.scale,
         group: 'crowd', fixed: false,
       });
     }
 
     for (const w of this.waiters) {
-      const idle = Math.sin(motionT * 0.66 + w.phase) * 0.08;
+      const idle = osc(2, w.phase) * 0.08;
       const world = {
         x: w.base.x + idle + wind * 0.08,
-        z: w.base.z + Math.cos(motionT * 0.52 + w.phase) * 0.065,
+        z: w.base.z + Math.sin((TAU * 2 * motionT) / LOOP + w.phase + 1.57) * 0.065,
       };
       raw.push({
-        ped: w, world, alpha: waiterA * 0.9, dir: w.dir, side: w.side, scale: w.scale,
-        stridePhase: w.phase + Math.sin(motionT * 0.52 + w.phase) * 0.08,
-        moving: false, waiter: true, radius: 0.44 * w.scale,
+        ped: w, world, alpha: 0.92 * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade'),
+        dir: w.dir, side: w.side, scale: w.scale,
+        stridePhase: w.phase + osc(2, w.phase) * 0.08,
+        moving: false, waiter: true, radius: 0.30 * w.scale,
         group: 'crowd', fixed: false,
       });
     }
 
-    separate(raw, {
-      iterations: 3, padding: 0.08,
-      bounds: { x0: ROAD.x0 + 1, x1: ROAD.x1 - 1, z0: ROAD.z0 + 1, z1: ROAD.z1 - 1 },
-    });
-    if (obstacles.length) separateGroups(raw, obstacles, { iterations: 2, padding: 0.36 });
+    for (const r of raw) { r.base = { x: r.world.x, z: r.world.z }; }
+    // 1) Walk around the street furniture first: a person steering past a lamp
+    //    post is the clearest signal that the crowd is alive.
+    for (const r of raw) r.dir = r.dir || { x: 0, z: 1 };
+    // Lane offset is along the flow's own side vector, never the current
+    // heading: a heading that turns at the kerb must not swing the body
+    // sideways by half a metre.
     for (const r of raw) {
-      const c = clampToWorld(r.world, 0.8);
+      if (r.waiter || !r.ped.lane) continue;
+      r.world.x += r.ped.side.x * r.ped.lane;
+      r.world.z += r.ped.side.z * r.ped.lane;
+    }
+    const fixedProps = [];
+    for (const o of STREET_PROPS) {
+      fixedProps.push({ world: { x: o.x, z: o.z }, radius: o.r, alpha: 1, fixed: true, group: 'prop' });
+    }
+    for (const o of obstacles) {
+      // Vehicles are long: approximate one as a row of small discs along its
+      // own axis. A single big disc reaches across the pavement beside a parked
+      // car, which is where the worst crowd pops came from.
+      const half = o.half == null ? 1.6 : o.half;
+      const across = o.across == null ? 0.95 : Math.max(0.7, o.across);
+      const steps = Math.max(1, Math.ceil(half / across));
+      for (let k = 0; k <= steps; k++) {
+        const f = steps === 0 ? 0 : (k / steps) * 2 - 1;
+        fixedProps.push({
+          world: o.axis === 'z'
+            ? { x: o.world.x, z: o.world.z + f * half }
+            : { x: o.world.x + f * half, z: o.world.z },
+          radius: across, alpha: 1, fixed: true, group: 'vehicle',
+        });
+      }
+    }
+    if (fixedProps.length) {
+      // Only pedestrians move here, and only against the furniture: mixing the
+      // two groups into one solve lets a passer-by block someone's escape from
+      // a bench and flips the push from one side to the other between frames.
+      relax([...raw, ...fixedProps], {
+        iterations: 3, padding: 0.22, lateral: 0.5, strength: 0.9,
+        damp: 0.7, maxOffset: 0.4, onlyDifferentGroups: true,
+      });
+    }
+    // 2) Then the crowd against itself, and a single clamp to the volume. The
+    //    clamp is applied once, after the solver, so a push at the kerb is not
+    //    undone and re-applied every iteration (that is what used to make the
+    //    edges of the crowd buzz).
+    relax(raw, {
+      // One pass from the base positions: the push is then a continuous
+      // function of where people are standing, which is what keeps the motion
+      // smooth frame to frame. Iterating on each other's offsets makes the
+      // solution flip when a knot of people is tight.
+      iterations: 1, padding: 0.02, lateral: 0.6, strength: 0.9, damp: 1,
+      maxOffset: 0.18,
+      bounds: { x0: TILE.x0 + 0.9, x1: TILE.x1 - 0.9, z0: TILE.z0 + 0.9, z1: TILE.z1 - 0.9 },
+    });
+    for (const r of raw) {
+      const c = clampToWorld(r.world, 0.9);
+      // Someone steering around a neighbour must not be pushed off the kerb:
+      // if they started on a pavement, they stay on it. Crossing people are
+      // already on the road and are left alone.
+      if (isOnSidewalk(r.base.x, r.base.z) && !isOnSidewalk(c.x, c.z)) {
+        const dx = c.x - r.base.x, dz = c.z - r.base.z;
+        let k = 1;
+        for (let step = 0.85; step > 0.05; step -= 0.1) {
+          if (isOnSidewalk(r.base.x + dx * step, r.base.z + dz * step)) { k = step; break; }
+        }
+        c.x = r.base.x + dx * k;
+        c.z = r.base.z + dz * k;
+      }
       r.world.x = c.x; r.world.z = c.z;
     }
 
-    this.items = raw.map((r) => this._makeItem(r, camera, params)).filter(Boolean);
+    // Kept for the motion check in tools/ and for the stats HUD: the resolved
+    // positions of this frame, before the draw list is built.
+    this.lastPositions = raw.map((r) => ({
+      id: r.ped.id, x: r.world.x, z: r.world.z, bx: r.base.x, bz: r.base.z,
+      moving: r.moving, alpha: r.alpha, kind: r.ped.kind, flow: r.ped.flow,
+      waiter: r.waiter,
+    }));
+
+    const budget = detail.crowd == null ? 1 : detail.crowd;
+    this.items = [];
+    for (const r of raw) {
+      if (budget < 0.999 && hash11(r.ped.seed * 3.71) > budget) continue;
+      const it = this._makeItem(r, camera, params, detail);
+      if (it) this.items.push(it);
+    }
     this.items.sort((a, b) => b.depth - a.depth);
     return this.items;
   }
 
-  _makeItem(r, camera, params) {
+  // The path, as a pure function of the loop phase. `u` is timeline.u.
+  _crosserAt(ped, u, motionT) {
+    const sway = (ph) => Math.sin((TAU * 2 * motionT) / LOOP + ph) * 0.055;
+    if (u < 0.18) {
+      // Walk in along the sidewalk from the cell seam. They start exactly on
+      // the boundary, so the neighbour cell's people can continue the flow
+      // when the set is tiled.
+      const k = smootherstep(0.0, 0.17, u);
+      const idle = Math.sin((TAU * 2 * motionT) / LOOP + ped.phase) * 0.07;
+      return {
+        x: lerp(ped.approach.x, ped.start.x + idle * k, k),
+        z: lerp(ped.approach.z, ped.start.z, k) + sway(ped.phase + 1.57) * k,
+        moving: k > 0.02 && k < 0.985,
+        distance: k * Math.abs(ped.approach.x - ped.start.x),
+        // They walk in from the boundary plane, so they fade there and not in
+        // the middle of the pavement.
+        alpha: smoothstep(0.0, 0.03, u),
+      };
+    }
+    // A corner flow walks its own waypoints at a constant pace instead of the
+    // crossing's eased parameter. The eased curve is tuned for a straight 12 m
+    // crossing; on an 18 m path through a corner it peaked at 3.5 m/s and the
+    // body read as jogging, so this branch covers a fixed distance per second
+    // and simply stops at the end of the path when the loop phase runs out.
+    if (ped.table) {
+      const travelled = Math.max(0, (u - 0.18) * LOOP) * CORNER_SPEED;
+      const w = alongPath(ped.table, travelled);
+      const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
+      const done = travelled >= ped.table.total;
+      return {
+        x: w.x + ped.side.x * sw,
+        z: w.z + ped.side.z * sw,
+        moving: !done,
+        distance: travelled,
+        alpha: 1 - smoothstep(0.74, 0.80, u),
+      };
+    }
+    const s = this.timeline.crossAt(ped.delay * ped.pace, u);
+    if (s < 0.999) {
+      const w = bezier2(ped.start, ped.ctrl, ped.end, s);
+      const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
+      return {
+        x: w.x + ped.side.x * sw,
+        z: clamp(w.z + ped.side.z * sw, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
+        moving: true,
+        distance: s * ped.pathLength,
+        // Walk out into the far pavement, then dissolve before the wrap.
+        alpha: 1 - smoothstep(0.74, 0.80, u),
+      };
+    }
+    // Off the crossing and up the far pavement towards the shop windows, where
+    // they dissolve. Walking on is what makes the crossing look like a place
+    // people go to rather than a stage they step off.
+    // `drainAt` is already running when the crossing finishes, so it is
+    // measured from that moment: the walk-on starts at zero instead of
+    // teleporting the body forward by however far the drain has travelled.
+    const db = 0.66 + ped.delay * ped.pace * 0.055;
+    const d0 = this.timeline.drainAt(Math.min(0.999, db));
+    const d = Math.max(0, this.timeline.drainAt(u) - d0)
+      * (ped.kind === 'stroll' ? 2.6 : 3.4);
+    const walkZ = ped.end.z + ped.dir.z * d;
+    return {
+      x: ped.end.x + ped.dir.x * d,
+      z: clamp(walkZ, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
+      moving: d > 0.001 && u < 0.82,
+      distance: ped.pathLength + d,
+      alpha: 1 - smoothstep(0.755, 0.815, u),
+    };
+  }
+
+  // Which way a standing person is facing: along the walk on the approach, then
+  // turned towards the crossing as they arrive at the kerb.
+  _facing(ped, u) {
+    if (u < 0.17 && ped.approachDir) {
+      const t = smootherstep(0.09, 0.17, u);
+      const x = ped.approachDir.x * (1 - t) + ped.dir.x * t;
+      const z = ped.approachDir.z * (1 - t) + ped.dir.z * t;
+      const l = Math.hypot(x, z) || 1;
+      return { x: x / l, z: z / l };
+    }
+    return ped.dir;
+  }
+
+  _makeItem(r, camera, params, detail = { props: 1, windows: 1 }) {
     const sc = r.scale;
     const W = r.world;
     const dir = r.dir, side = r.side;
     const phase = r.stridePhase;
     const moving = r.moving;
     const wind = params.wind == null ? 0.6 : params.wind;
+    const base = groundYAt(W.x, W.z);
     const gait = moving ? Math.sin(phase) : 0.10 * Math.sin(phase * 0.5);
-    const liftL = moving ? Math.max(0, Math.cos(phase)) * 0.065 * sc : 0;
-    const liftR = moving ? Math.max(0, Math.cos(phase + Math.PI)) * 0.065 * sc : 0;
-    const bob = moving ? Math.abs(Math.sin(phase)) * 0.026 * sc : 0.008 * sc * Math.sin(phase * 0.5);
+    const bob = moving ? Math.abs(Math.sin(phase)) * 0.022 * sc : 0.006 * sc * Math.sin(phase * 0.5);
     const lean = (r.ped.lean + wind * 0.01) * sc;
     const A = r.alpha;
     const shape = r.ped.coatShape;
+    const darkCoat = coatIsDark(r.ped.coat);
 
     const local = (lat, h, fwd) => v3(
       W.x + side.x * lat + dir.x * fwd,
-      h,
+      base + h,
       W.z + side.z * lat + dir.z * fwd,
     );
     const q = (w) => camera.project(w);
 
-    const hipY = (shape === 'long' ? 0.52 : shape === 'short' ? 0.74 : 0.64) * sc + bob;
-    const shoulderY = 1.16 * sc + bob;
-    const headY = 1.40 * sc + bob;
-    const footY = 0.025;
-    const shoulderHalf = (shape === 'hood' ? 0.24 : shape === 'A' ? 0.18 : 0.20) * sc;
-    const hipHalf = (shape === 'A' ? 0.27 : shape === 'short' ? 0.15 : 0.17) * sc;
+    // Proportions of a 1.72 m adult, times the person's scale. The head sits
+    // clear above the shoulders; if it rests on them the figure reads as a
+    // lollipop no matter how well it is drawn.
+    const hipY = (shape === 'long' ? 0.86 : shape === 'short' ? 1.02 : 0.94) * sc + bob;
+    const shoulderY = 1.42 * sc + bob;
+    const headY = 1.58 * sc + bob;
+    const footY = 0.015;
+    const shoulderHalf = (shape === 'hood' ? 0.24 : shape === 'A' ? 0.18 : 0.21) * sc;
+    const hipHalf = (shape === 'A' ? 0.26 : shape === 'short' ? 0.15 : 0.17) * sc;
+    const strideWide = moving ? gait * 0.13 * sc : 0.03 * sc;
 
-    const shoulderL = local(-shoulderHalf + lean, shoulderY, 0);
-    const shoulderR = local(shoulderHalf + lean, shoulderY, 0);
-    const hipL = local(-hipHalf + lean * 0.4, hipY, 0);
-    const hipR = local(hipHalf + lean * 0.4, hipY, 0);
-    const footL = local(-0.075 * sc + lean * 0.3, footY + liftL, gait * 0.18 * sc);
-    const footR = local(0.075 * sc + lean * 0.3, footY + liftR, -gait * 0.18 * sc);
-    const head = local(lean * 0.75, headY, 0);
+    const shL3 = local(-shoulderHalf + lean, shoulderY, 0);
+    const shR3 = local(shoulderHalf + lean, shoulderY, 0);
+    const hipL3 = local(-hipHalf + lean * 0.4, hipY, 0);
+    const hipR3 = local(hipHalf + lean * 0.4, hipY, 0);
+    const footL3 = local(-0.09 * sc + lean * 0.3, footY, strideWide);
+    const footR3 = local(0.09 * sc + lean * 0.3, footY, -strideWide);
+    const head3 = local(lean * 0.75, headY, 0);
 
-    const qShoulderL = q(shoulderL), qShoulderR = q(shoulderR);
-    const qHipL = q(hipL), qHipR = q(hipR);
-    const qFootL = q(footL), qFootR = q(footR);
-    const qHead = q(head);
-    if (!qShoulderL || !qShoulderR || !qHipL || !qHipR || !qFootL || !qFootR || !qHead) return null;
+    const qShL = q(shL3), qShR = q(shR3);
+    const qHipL = q(hipL3), qHipR = q(hipR3);
+    const qFootL = q(footL3), qFootR = q(footR3);
+    const qHead = q(head3);
+    if (!qShL || !qShR || !qHipL || !qHipR || !qFootL || !qFootR || !qHead) return null;
 
-    const unit = clamp((qFootL.y - qHead.y) / 52, 0.30, 2.2);
-    const lineW = clamp(unit * 1.30, 0.6, 2.3);
-    const headR = clamp(unit * 1.32, 1.0, 5.0) * sc;
+    // Screen size drives every detail size. This is the scale trap the earlier
+    // build fell into: heads and lines were sub-pixel and people became an X.
+    const bodyPx = Math.max(4, (qFootL.y + qFootR.y) / 2 - qHead.y);
+    const headR = Math.max(1.0, bodyPx * 0.074);
+    const lineW = clamp(bodyPx * 0.042, 0.55, 2.1);
     const foot = {
       x: (qFootL.x + qFootR.x) / 2,
       y: (qFootL.y + qFootR.y) / 2,
       depth: (qFootL.depth + qFootR.depth) / 2,
     };
 
-    const legHalf = 0.05 * sc;
-    const legL3 = [
-      local(-0.075 * sc - legHalf + lean * 0.3, hipY, 0),
-      local(-0.075 * sc + legHalf + lean * 0.3, hipY, 0),
-      local(-0.075 * sc + legHalf + lean * 0.3, footY + liftL, gait * 0.18 * sc),
-      local(-0.075 * sc - legHalf + lean * 0.3, footY + liftL, gait * 0.18 * sc),
-    ];
-    const legR3 = [
-      local(0.075 * sc - legHalf + lean * 0.3, hipY, 0),
-      local(0.075 * sc + legHalf + lean * 0.3, hipY, 0),
-      local(0.075 * sc + legHalf + lean * 0.3, footY + liftR, -gait * 0.18 * sc),
-      local(0.075 * sc - legHalf + lean * 0.3, footY + liftR, -gait * 0.18 * sc),
-    ];
-    const legLQ = projectAll(camera, legL3);
-    const legRQ = projectAll(camera, legR3);
-    const coatQ = [qShoulderL, qShoulderR, qHipR, qHipL];
-    if (!legLQ || !legRQ) return null;
-
-    const handL = local(-0.28 * sc + lean, 0.92 * sc + bob, -gait * 0.09 * sc);
-    const handR = local(0.28 * sc + lean, 0.94 * sc + bob, gait * 0.09 * sc);
-    const qHandL = q(handL), qHandR = q(handR);
-
-    // Umbrella geometry: a few faceted styles, not one repeated dome.
-    const umb = r.ped.hasUmbrella ? r.ped.umb : null;
-    const rimN = umb && umb.style === 'flat' ? 5 : (umb && umb.style === 'pointed' ? 6 : 7);
-    const apexH = umb && umb.style === 'pointed' ? 2.32 * sc : (umb && umb.style === 'flat' ? 2.04 * sc : 2.14 * sc);
-    const rimH = 1.92 * sc + bob;
-    const radius = (umb ? umb.radius : 0.54) * sc;
-    const tilt = (r.ped.umbrellaTilt + wind * 0.012) * sc;
-    const apex3 = local(tilt * 0.55, apexH + bob, 0);
-    const rimCenter3 = local(tilt * 0.18, rimH, 0);
-    const rim3 = [];
-    for (let i = 0; i < rimN; i++) {
-      const a = (i / rimN) * TAU;
-      const rr = radius * (i % 2 ? 0.88 : 1.0);
-      const h = rimH - (umb && umb.style === 'flat' ? 0 : 0.04 * sc * Math.abs(Math.sin(a)));
-      rim3.push(local(tilt * 0.18 + Math.cos(a) * rr, h, Math.sin(a) * rr));
-    }
-    const qApex = umb ? q(apex3) : null;
-    const qRimCenter = umb ? q(rimCenter3) : null;
-    const qRim = umb ? projectAll(camera, rim3) : null;
-    if (umb && (!qApex || !qRimCenter || !qRim)) return null;
-
-    // A small companion for occasional pairs.
-    let companion = null;
-    if (r.ped.entourage > 0) {
-      const cLat = 0.46 * sc, cFwd = -0.12 * sc;
-      const cHead = q(local(cLat, headY * 0.72, cFwd));
-      const cFoot = q(local(cLat, footY, cFwd));
-      if (cHead && cFoot) companion = { head: cHead, foot: cFoot };
-    }
-
     const seed = r.ped.seed;
     const draws = [];
     const push = (fn) => draws.push(fn);
-    const lineOpts = (o = {}) => ({
-      color: PALETTE.ink, width: lineW, alpha: A, jitter: 0.18,
-      seed, double: false, ...o,
-    });
+    const rich = detail.windows > 0.5;
+    // Procedural LoD for figures: below ~24 px of body height a person is a
+    // silhouette, a head and a hint of accessories. Anything finer is
+    // sub-pixel work that cannot be seen.
+    const fine = bodyPx > 24;
 
-    // Long directional ground shadow (architectural-sketch reference).
-    const shadowDir = v3(-0.72, 0, -0.30);
-    const shadowLen = (0.9 + r.ped.shadowLen * 0.8) * sc;
-    const shadowTip = camera.project(v3(
-      W.x + shadowDir.x * shadowLen, 0.02, W.z + shadowDir.z * shadowLen,
-    ));
-    push((p) => {
-      p.ellipse(foot.x, foot.y + clamp(unit * 0.5, 0.4, 1.8), clamp(unit * 3.6, 1.8, 8), clamp(unit * 1.3, 0.8, 3), {
-        fill: 'rgba(0,0,0,0.42)', stroke: false, alpha: A * 0.5,
+    // Shadow: a short soft ellipse, not a hole in the ground.
+    if (fine) push((p) => {
+      p.ellipse(foot.x, foot.y + Math.max(0.6, bodyPx * 0.035), Math.max(1.6, bodyPx * 0.22), Math.max(0.7, bodyPx * 0.075), {
+        fill: 'rgba(0,0,0,0.58)', stroke: false, alpha: A * 0.4,
       });
-      if (shadowTip) {
-        p.line([[foot.x, foot.y], [shadowTip.x, shadowTip.y]], {
-          color: 'rgba(0,0,0,0.40)', width: clamp(unit * 2.1, 1.2, 5.5), alpha: A * 0.34,
-          jitter: 0.18, seed: seed + 1, double: false,
-        });
-      }
     });
 
-    // Legs.
-    for (const leg of [legLQ, legRQ]) {
-      push((p) => p.poly(leg, {
-        fill: PALETTE.black, stroke: PALETTE.ink,
-        width: lineW * 0.78, alpha: A, jitter: 0.14, seed: seed + 3,
+    // Coat silhouette: shoulders → hem, then two legs below it. A single
+    // triangle down to the ankles reads as a wizard's robe; the hem line and
+    // the separate legs are what make it read as a person.
+    const hemY = (shape === 'long' ? hipY - 0.26 * sc : hipY - 0.08 * sc) + bob * 0.2;
+    const hemL3 = local(-hipHalf * 0.94 + lean * 0.4, hemY, 0);
+    const hemR3 = local(hipHalf * 0.94 + lean * 0.4, hemY, 0);
+    const qHemL = q(hemL3);
+    const qHemR = q(hemR3);
+    if (!qHemL || !qHemR) return null;
+    // Legs first, so the coat sits over the top of them.
+    if (fine) {
+      push((p) => p.line([qHemL, qFootL], {
+        color: r.ped.coat, width: Math.max(1.2, bodyPx * 0.055), alpha: A,
+        jitter: 0.1, seed: seed + 31, double: false,
+      }));
+      push((p) => p.line([qHemR, qFootR], {
+        color: r.ped.coat, width: Math.max(1.2, bodyPx * 0.055), alpha: A,
+        jitter: 0.1, seed: seed + 33, double: false,
+      }));
+    }
+    const silhouette = [qShL, qShR, qHemR, qFootR, qFootL, qHemL];
+    push((p) => p.poly(silhouette, {
+      fill: r.ped.coat,
+      stroke: darkCoat ? 'rgba(239,233,216,0.34)' : 'rgba(239,233,216,0.72)',
+      width: lineW * (darkCoat ? 0.5 : 0.72), alpha: A, jitter: 0.14, seed: seed + 7,
+    }));
+    // The hem: one line across the coat, so the legs read as legs.
+    if (rich) {
+      push((p) => p.line([qHemL, qHemR], {
+        color: 'rgba(239,233,216,0.20)', width: lineW * 0.55, alpha: A * 0.55,
+        jitter: 0.12, seed: seed + 11, double: false,
+      }));
+    }
+    // Arms: one line per side, drawn over the coat. Idle people get arms
+    // hanging down; walkers get a swing.
+    if (!moving && rich) {
+      const handL = q(local(-0.26 * sc + lean, (hipY + shoulderY) * 0.46, 0.02 * sc));
+      const handR = q(local(0.26 * sc + lean, (hipY + shoulderY) * 0.46, 0.02 * sc));
+      if (handL) push((p) => p.line([qShL, handL], {
+        color: 'rgba(239,233,216,0.5)', width: lineW * 0.65, alpha: A * 0.8,
+        jitter: 0.12, seed: seed + 13, double: false,
+      }));
+      if (handR) push((p) => p.line([qShR, handR], {
+        color: 'rgba(239,233,216,0.5)', width: lineW * 0.65, alpha: A * 0.8,
+        jitter: 0.12, seed: seed + 17, double: false,
+      }));
+    } else if (moving && rich) {
+      const handL = q(local(-0.30 * sc + lean, (hipY + shoulderY) * 0.52, -gait * 0.10 * sc));
+      const handR = q(local(0.30 * sc + lean, (hipY + shoulderY) * 0.52, gait * 0.10 * sc));
+      if (handL) push((p) => p.line([qShL, handL], {
+        color: 'rgba(239,233,216,0.6)', width: lineW * 0.7, alpha: A * 0.85,
+        jitter: 0.14, seed: seed + 13, double: false,
+      }));
+      if (handR) push((p) => p.line([qShR, handR], {
+        color: 'rgba(239,233,216,0.6)', width: lineW * 0.7, alpha: A * 0.85,
+        jitter: 0.14, seed: seed + 17, double: false,
       }));
     }
 
-    // Coat: shape varies by archetype.
-    push((p) => p.poly(coatQ, {
-      fill: r.ped.coat, stroke: PALETTE.ink,
-      width: lineW, alpha: A, jitter: 0.18, seed: seed + 7,
-    }));
-    if (shape === 'long' || shape === 'A') {
-      push((p) => p.line([qHipL, qHipR], lineOpts({
-        color: 'rgba(239,233,216,0.28)', width: lineW * 0.5, alpha: A * 0.5, seed: seed + 11,
-      })));
-    }
-
-    // Arms.
-    if (qHandL && qHandR) {
-      push((p) => p.line([qShoulderL, qHandL], lineOpts({ width: lineW * 0.76, seed: seed + 13 })));
-      push((p) => p.line([qShoulderR, qHandR], lineOpts({ width: lineW * 0.76, seed: seed + 17 })));
-    }
-
-    // Head shapes.
+    // Head: pale disc with a dark rim or dark disc with a pale rim, alternating
+    // by person. That single choice makes a row of people read.
+    const paleHead = hash11(seed * 2.31) > 0.45;
     const headShape = r.ped.headShape;
     push((p) => {
-      if (headShape === 'hood') {
-        p.ellipse(qHead.x, qHead.y, headR * 1.35, headR * 1.25, {
-          fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.7, alpha: A,
-        });
-      } else if (headShape === 'oval') {
-        p.ellipse(qHead.x, qHead.y, headR * 0.9, headR * 1.25, {
-          fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.7, alpha: A,
-        });
-      } else {
-        p.ellipse(qHead.x, qHead.y, headR, headR * 1.04, {
-          fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.7, alpha: A,
-        });
-      }
+      const rx = headShape === 'hood' ? headR * 1.25 : headShape === 'oval' ? headR * 0.92 : headR;
+      const ry = headShape === 'hood' ? headR * 1.12 : headShape === 'oval' ? headR * 1.2 : headR * 0.98;
+      p.ellipse(qHead.x, qHead.y, rx, ry, {
+        fill: paleHead ? 'rgba(239,233,216,0.92)' : '#070909',
+        stroke: paleHead ? 'rgba(7,9,9,0.9)' : PALETTE.ink,
+        width: Math.max(0.5, lineW * 0.6), alpha: A,
+      });
       if (headShape === 'hat' || headShape === 'cap') {
-        const brim = headShape === 'hat' ? headR * 1.8 : headR * 1.25;
-        p.line([[qHead.x - brim, qHead.y - headR * 0.65], [qHead.x + brim, qHead.y - headR * 0.65]], lineOpts({
-          width: lineW * 0.7, seed: seed + 19,
-        }));
-      } else if (!umb) {
-        p.line([[qHead.x - headR, qHead.y - headR * 0.72], [qHead.x + headR, qHead.y - headR * 0.72]], lineOpts({
-          width: lineW * 0.6, seed: seed + 19,
-        }));
+        const brim = headShape === 'hat' ? headR * 2.0 : headR * 1.3;
+        p.line([[qHead.x - brim, qHead.y - headR * 0.5], [qHead.x + brim, qHead.y - headR * 0.5]], {
+          color: PALETTE.ink, width: lineW * 0.7, alpha: A * 0.95,
+          jitter: 0.12, seed: seed + 19, double: false,
+        });
       }
     });
 
-    // Accessories.
+    // Accessories: sparse, only where they read.
     const acc = r.ped.accessory;
-    if (acc === 'scarf') {
-      push((p) => p.line([
-        [qHead.x - headR * 1.3, qHead.y + headR * 1.25],
-        [qHead.x + headR * 1.3, qHead.y + headR * 1.25],
-      ], lineOpts({ color: PALETTE.red, width: lineW * 0.95, alpha: A * 0.9, seed: seed + 23 })));
-    } else if (acc === 'hat' || acc === 'cap') {
-      push((p) => p.ellipse(qHead.x, qHead.y - headR * 1.05, headR * (acc === 'hat' ? 1.8 : 1.3), headR * 0.42, {
-        fill: PALETTE.ink, stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.95,
-      }));
-    } else if (['bag', 'briefcase', 'lunchbox'].includes(acc) && qHandR) {
+    if (rich && ['bag', 'briefcase', 'lunchbox'].includes(acc)) {
       const w = acc === 'briefcase' ? 0.20 : 0.16;
       const h = acc === 'briefcase' ? 0.16 : 0.22;
-      const bag3 = [
-        local(0.28 * sc, 0.80 * sc, 0.02), local((0.28 + w) * sc, 0.80 * sc, 0.02),
-        local((0.28 + w) * sc, (0.80 - h) * sc, 0.02), local(0.28 * sc, (0.80 - h) * sc, 0.02),
-      ];
-      const bagQ = projectAll(camera, bag3);
+      const bagQ = projectAll(camera, [
+        local(0.30 * sc, 0.78 * sc, 0.02), local((0.30 + w) * sc, 0.78 * sc, 0.02),
+        local((0.30 + w) * sc, (0.78 - h) * sc, 0.02), local(0.30 * sc, (0.78 - h) * sc, 0.02),
+      ]);
       if (bagQ) push((p) => p.poly(bagQ, {
-        fill: acc === 'briefcase' ? 'rgba(239,233,216,0.08)' : 'rgba(239,233,216,0.12)',
-        stroke: PALETTE.ink, width: lineW * 0.6, alpha: A, jitter: 0.14, seed: seed + 29,
+        fill: 'rgba(239,233,216,0.24)', stroke: PALETTE.ink,
+        width: lineW * 0.55, alpha: A * 0.95, jitter: 0.12, seed: seed + 29,
       }));
-    } else if (acc === 'backpack') {
-      const bp3 = [
-        local(-0.22 * sc, 1.10 * sc, -0.12 * sc), local(-0.30 * sc, 1.10 * sc, -0.12 * sc),
-        local(-0.30 * sc, 0.72 * sc, -0.12 * sc), local(-0.22 * sc, 0.72 * sc, -0.12 * sc),
-      ];
-      const bpQ = projectAll(camera, bp3);
+    } else if (rich && acc === 'backpack') {
+      const bpQ = projectAll(camera, [
+        local(-0.20 * sc, 1.10 * sc, -0.11 * sc), local(-0.30 * sc, 1.10 * sc, -0.11 * sc),
+        local(-0.30 * sc, 0.74 * sc, -0.11 * sc), local(-0.20 * sc, 0.74 * sc, -0.11 * sc),
+      ]);
       if (bpQ) push((p) => p.poly(bpQ, {
-        fill: 'rgba(43,184,174,0.30)', stroke: PALETTE.ink,
-        width: lineW * 0.6, alpha: A * 0.9, jitter: 0.12, seed: seed + 31,
+        fill: 'rgba(43,184,174,0.5)', stroke: PALETTE.ink,
+        width: lineW * 0.55, alpha: A * 0.95, jitter: 0.12, seed: seed + 31,
       }));
-    } else if (acc === 'phone' && qHandR) {
-      push((p) => p.ellipse(qHandR.x, qHandR.y - unit, clamp(unit * 0.6, 0.7, 2), clamp(unit * 1.0, 1, 3), {
-        fill: PALETTE.ink, stroke: PALETTE.ink, width: 0.5, alpha: A * 0.9,
+    } else if (rich && acc === 'cane') {
+      const tip = q(local(0.34 * sc, 0.02, 0.18 * sc));
+      const hand = q(local(0.30 * sc + lean, (hipY + shoulderY) * 0.52, 0));
+      if (tip && hand) push((p) => p.line([hand, tip], {
+        color: 'rgba(239,233,216,0.75)', width: lineW * 0.5, alpha: A * 0.85,
+        jitter: 0.1, seed: seed + 37, double: false,
       }));
-    } else if (acc === 'camera') {
-      push((p) => p.rect(qHead.x - headR * 1.1, qHead.y + headR * 1.1, headR * 2.2, headR * 1.0, {
-        fill: 'rgba(239,233,216,0.12)', stroke: PALETTE.ink, width: lineW * 0.55, alpha: A * 0.9,
-      }));
-    } else if (acc === 'map' && qHandL) {
-      push((p) => p.poly([
-        [qHandL.x - unit * 2, qHandL.y - unit], [qHandL.x + unit * 2, qHandL.y - unit * 1.4],
-        [qHandL.x + unit * 2.2, qHandL.y + unit], [qHandL.x - unit * 1.8, qHandL.y + unit * 1.2],
-      ], { fill: 'rgba(239,233,216,0.10)', stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.85, jitter: 0.1, seed: seed + 33 }));
-    } else if (acc === 'newspaper') {
-      push((p) => p.poly([
-        [qHead.x - headR * 2.2, qHead.y - headR * 1.5],
-        [qHead.x + headR * 2.2, qHead.y - headR * 1.5],
-        [qHead.x + headR * 1.8, qHead.y - headR * 0.2],
-        [qHead.x - headR * 1.8, qHead.y - headR * 0.2],
-      ], { fill: 'rgba(239,233,216,0.10)', stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.8, jitter: 0.1, seed: seed + 35 }));
-    } else if (acc === 'cane' && qHandR) {
-      const caneTip = q(local(0.36 * sc, 0.02, 0.20 * sc));
-      if (caneTip) push((p) => p.line([qHandR, caneTip], lineOpts({ width: lineW * 0.6, alpha: A * 0.8, seed: seed + 37 })));
-    } else if (acc === 'balloon' && qHandR) {
-      const bq = q(local(0.42 * sc, 1.65 * sc, 0.10 * sc));
-      if (bq) {
-        push((p) => p.line([qHandR, bq], lineOpts({ width: lineW * 0.4, alpha: A * 0.7, seed: seed + 39 })));
-        push((p) => p.ellipse(bq.x, bq.y, headR * 1.4, headR * 1.7, {
-          fill: rngAccentColor(seed), stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.9,
+    } else if (rich && acc === 'child') {
+      const c0 = q(local(0.34 * sc, 0, -0.04 * sc));
+      const c1 = q(local(0.34 * sc, 0.92 * sc, -0.04 * sc));
+      if (c0 && c1) {
+        push((p) => p.line([c0, c1], {
+          color: 'rgba(239,233,216,0.72)', width: lineW * 0.85, alpha: A * 0.9,
+          jitter: 0.14, seed: seed + 41, double: false,
+        }));
+        push((p) => p.ellipse(c1.x, c1.y - headR * 0.9, headR * 0.72, headR * 0.72, {
+          fill: paleHead ? '#070909' : 'rgba(239,233,216,0.9)',
+          stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.9,
         }));
       }
-    } else if (acc === 'dog') {
-      const d0 = q(local(0.46 * sc, 0, 0.10 * sc));
-      const d1 = q(local(0.68 * sc, 0, 0.16 * sc));
-      if (d0 && d1) {
-        push((p) => p.ellipse((d0.x + d1.x) / 2, d0.y - unit * 1.1, unit * 2.3, unit * 1.0, {
-          fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.9,
+    } else if (rich && acc === 'balloon') {
+      const bp = q(local(0.4 * sc, 1.72 * sc, 0.08 * sc));
+      const hand = q(local(0.30 * sc + lean, (hipY + shoulderY) * 0.52, 0));
+      if (bp && hand) {
+        push((p) => p.line([hand, bp], {
+          color: 'rgba(239,233,216,0.45)', width: lineW * 0.35, alpha: A * 0.7,
+          jitter: 0.1, seed: seed + 39, double: false,
         }));
-        push((p) => p.ellipse(d1.x, d1.y - unit * 2.0, unit * 0.9, unit * 0.9, {
-          fill: PALETTE.ink, stroke: PALETTE.ink, width: lineW * 0.45, alpha: A * 0.9,
-        }));
-        push((p) => p.line([d0, d1], lineOpts({ width: lineW * 0.45, alpha: A * 0.65, seed: seed + 41 })));
-      }
-    } else if (acc === 'stroller') {
-      const s0 = q(local(0.36 * sc, 0, 0.30 * sc));
-      const s1 = q(local(0.70 * sc, 0, 0.30 * sc));
-      if (s0 && s1) {
-        push((p) => p.poly([
-          [s0.x, s0.y - unit * 3], [s1.x, s1.y - unit * 3],
-          [s1.x, s1.y], [s0.x, s0.y],
-        ], { fill: 'rgba(43,184,174,0.22)', stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.9, jitter: 0.1, seed: seed + 43 }));
-        push((p) => p.ellipse(s0.x, s0.y, unit, unit, { stroke: PALETTE.ink, width: lineW * 0.45, alpha: A * 0.8 }));
-        push((p) => p.ellipse(s1.x, s1.y, unit, unit, { stroke: PALETTE.ink, width: lineW * 0.45, alpha: A * 0.8 }));
-      }
-    } else if (acc === 'bicycle') {
-      const w0 = q(local(0.50 * sc, 0.35 * sc, 0.05 * sc));
-      const w1 = q(local(0.92 * sc, 0.35 * sc, 0.05 * sc));
-      if (w0 && w1) {
-        push((p) => p.ellipse(w0.x, w0.y, unit * 1.5, unit * 1.5, { stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.8 }));
-        push((p) => p.ellipse(w1.x, w1.y, unit * 1.5, unit * 1.5, { stroke: PALETTE.ink, width: lineW * 0.5, alpha: A * 0.8 }));
-        push((p) => p.line([w0, w1], lineOpts({ width: lineW * 0.45, alpha: A * 0.7, seed: seed + 45 })));
-      }
-    }
-
-    // Companion / pair.
-    if (companion) {
-      push((p) => p.line([companion.foot, companion.head], lineOpts({ width: lineW * 0.8, alpha: A * 0.9, seed: seed + 47 })));
-      push((p) => p.ellipse(companion.head.x, companion.head.y, headR * 0.75, headR * 0.8, {
-        fill: PALETTE.black, stroke: PALETTE.ink, width: lineW * 0.55, alpha: A * 0.9,
-      }));
-      if (umb) {
-        push((p) => p.ellipse(companion.head.x, companion.head.y - headR * 1.2, headR * 1.8, headR * 0.8, {
-          fill: umb.fill, stroke: umb.stroke, width: lineW * 0.5, alpha: A * 0.8,
+        push((p) => p.ellipse(bp.x, bp.y, headR * 1.15, headR * 1.4, {
+          fill: accentColor(seed), stroke: '#0a0c0a', width: lineW * 0.45, alpha: A * 0.95,
         }));
       }
     }
 
-    // Umbrella.
+    // Umbrella: a dome built from a rim ring, a mid ring and an apex, so it
+    // reads as a dome from above instead of a floating disc.
+    const umb = r.ped.hasUmbrella ? r.ped.umb : null;
     if (umb) {
-      const tris = [];
-      for (let i = 0; i < rimN; i++) tris.push([qApex, qRim[i], qRim[(i + 1) % rimN]]);
-      push((p) => p.polys(tris, { fill: umb.fill, alpha: A }));
-      push((p) => p.line(qRim.concat([qRim[0]]), {
-        color: umb.stroke, width: lineW * 0.85, alpha: A,
-        jitter: 0.22, seed: seed + 49, double: false,
-      }));
-      const ribCount = umb.style === 'flat' ? 2 : 3;
-      for (let i = 0; i < ribCount; i++) {
-        const idx = Math.floor((i + 1) * rimN / (ribCount + 1));
-        push((p) => p.line([qApex, qRim[idx]], {
-          color: umb.kind === 'white' ? 'rgba(239,233,216,0.40)' : 'rgba(239,233,216,0.55)',
-          width: lineW * 0.4, alpha: A * 0.75, jitter: 0.14,
-          seed: seed + 53 + i, double: false,
-        }));
+      const rimN = fine ? (umb.style === 'pointed' ? 8 : 9) : 6;
+      const lift = r.ped.umbrellaLift || 1.0;
+      const domeH = (umb.style === 'pointed' ? 0.40 : umb.style === 'flat' ? 0.22 : 0.30) * sc * lift;
+      const rimH = 1.42 * sc * lift + bob;
+      const radius = umb.radius * sc * 0.88;
+      const tilt = (r.ped.umbrellaTilt + wind * 0.02) * sc * 1.15;
+      const apex3 = local(tilt * 0.5, rimH + domeH, 0);
+      const rimCenter3 = local(tilt * 0.22, rimH, 0);
+      const rim3 = [], mid3 = [];
+      for (let i = 0; i < rimN; i++) {
+        const a = (i / rimN) * TAU;
+        const rr = radius * (i % 2 ? 0.93 : 1.0);
+        const sag = 0.045 * sc * Math.pow(Math.abs(Math.sin(a * rimN * 0.5)), 0.7);
+        // Tilt the canopy plane, not just its apex: the rim then reads as a
+        // leaning dome instead of a flat saucer.
+        const h = rimH - sag + Math.cos(a) * tilt * 0.40;
+        rim3.push(local(tilt * 0.2 + Math.cos(a) * rr, h, Math.sin(a) * rr));
+        mid3.push(local(tilt * 0.42 + Math.cos(a) * rr * 0.46, h + domeH * 0.74, Math.sin(a) * rr * 0.46));
       }
-      if (qHandR) push((p) => p.line([qRimCenter, qHandR], lineOpts({ width: lineW * 0.8, seed: seed + 59 })));
-      for (let i = 0; i < 2; i++) {
-        const idx = (i * 3 + 1) % rimN;
-        const drip3 = local(
-          tilt * 0.18 + Math.cos((idx / rimN) * TAU) * radius * 0.94,
-          rimH - 0.18 * sc - hash11(seed + i) * 0.09 * sc,
-          Math.sin((idx / rimN) * TAU) * radius * 0.94,
-        );
-        const qd = q(drip3);
-        if (qd) push((p) => p.line([qRim[idx], qd], {
-          color: 'rgba(239,233,216,0.42)', width: lineW * 0.4, alpha: A * 0.5,
-          jitter: 0.1, seed: seed + 61 + i, double: false,
+      const qApex = q(apex3);
+      const qRimCenter = q(rimCenter3);
+      const qRim = projectAll(camera, rim3);
+      const qMid = projectAll(camera, mid3);
+      if (qApex && qRimCenter && qRim && qMid) {
+        const lower = [], upper = [];
+        for (let i = 0; i < rimN; i++) {
+          const j = (i + 1) % rimN;
+          lower.push([qRim[i], qRim[j], qMid[j], qMid[i]]);
+          upper.push([qMid[i], qMid[j], qApex]);
+        }
+        push((p) => {
+          p.polys(lower, { fill: umb.fill, alpha: A, jitter: 0.06 });
+          if (fine) p.polys(upper, { fill: umb.fill, alpha: A, jitter: 0.06 });
+          // Shaded far half of the canopy: gives the dome a lit side and a dark
+          // side even when it is seen almost edge-on.
+          const far = [];
+          for (let i = 0; i < rimN; i++) far.push(qRim[i]);
+          p.line([qRim[0], qMid[Math.floor(rimN / 2)], qApex], {
+            color: 'rgba(4,6,5,0.35)', width: Math.max(0.8, lineW * 1.1), alpha: A * 0.9,
+            jitter: 0.08, seed: seed + 47, double: false,
+          });
+          // Rim and ribs: the canopy's structure.
+          p.line(qRim.concat([qRim[0]]), {
+            color: umb.stroke, width: Math.max(0.6, lineW * 0.8), alpha: A,
+            jitter: 0.16, seed: seed + 49, double: false,
+          });
+          for (let i = 0; i < rimN; i += 3) {
+            p.line([qRim[i], qApex], {
+              color: umb.stroke, width: Math.max(0.4, lineW * 0.3),
+              alpha: A * 0.45, jitter: 0.1, seed: seed + 53 + i, double: false,
+            });
+          }
+        });
+        // Stub stem just under the canopy. Anything longer turns the figure
+        // into a lollipop and cuts the head in half.
+        const hand = q(local(tilt * 0.22, rimH - 0.05 * sc, 0));
+        if (hand) push((p) => p.line([qRimCenter, hand], {
+          color: PALETTE.ink, width: Math.max(0.5, lineW * 0.5), alpha: A * 0.7,
+          jitter: 0.08, seed: seed + 59, double: false,
         }));
       }
     }
@@ -558,7 +823,7 @@ export class Crowd {
     return {
       ped: r.ped, world: r.world, alpha: A, waiter: r.waiter,
       radius: r.radius, group: 'crowd',
-      foot, feet: [qFootL, qFootR], unit, depth: foot.depth,
+      foot, feet: [qFootL, qFootR], unit: bodyPx / 52, depth: foot.depth,
       stridePhase: phase, draws,
     };
   }
@@ -571,9 +836,9 @@ export class Crowd {
   }
 }
 
-function rngAccentColor(seed) {
+function accentColor(seed) {
   const r = hash11(seed * 1.7);
-  if (r < 0.34) return 'rgba(212,59,48,0.75)';
-  if (r < 0.68) return 'rgba(43,184,174,0.75)';
-  return 'rgba(239,233,216,0.28)';
+  if (r < 0.34) return 'rgba(212,59,48,0.9)';
+  if (r < 0.68) return 'rgba(43,184,174,0.9)';
+  return 'rgba(239,233,216,0.85)';
 }

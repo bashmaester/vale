@@ -2,6 +2,7 @@ import {
   clamp, lerp, hash11, hash21, valueNoise2, fbm2,
   v3, add3, sub3, scale3, dot3, norm3, cross3, quadLerp,
 } from './math.js';
+import { grade as gradeColor, gradeRgb, glowScale } from './palette.js';
 
 export const PALETTE = {
   bg: '#070807',
@@ -10,26 +11,56 @@ export const PALETTE = {
   red: '#d43b30',
   teal: '#2bb8ae',
   black: '#050605',
-  // Tonal ladder for solid printed masses. Before this existed every volume
-  // was filled with `black`, which was almost identical to `bg`, so buildings
-  // rendered as bare outlines over nothing. These are deliberately separated
-  // steps so faces read as volume at final resolution.
-  massFront: '#242b22',
-  massSide: '#151a14',
-  massTop: '#2c3429',
-  massDeep: '#101410',
-  lit: '#f2ecda',
 };
 
-// Per-face tone for a box: front/side/top are the three shades we see from a
-// three-quarter camera, so a single box already reads as a lit volume.
-export function faceTone(name) {
-  if (name === 'top') return PALETTE.massTop;
-  if (name === 'front' || name === 'back') return PALETTE.massFront;
-  return PALETTE.massSide;
+const asArr = (p) => (Array.isArray(p) ? p : [p.x, p.y]);
+
+// --- glow sprites ----------------------------------------------------------
+// Emitters (lamps, signs, headlights, puddle reflections) all want the same
+// soft additive falloff. Building a radial gradient per emitter per frame is
+// one of the most expensive things Canvas2D does — allocating the gradient,
+// then rasterising a large, blended fill. Instead the falloff is rasterised
+// once per colour into a small sprite and blitted, which is a straight copy.
+const GLOW_SPRITES = new Map();
+const GLOW_SIZE = 96;
+
+function glowSprite(rgb) {
+  let sprite = GLOW_SPRITES.get(rgb);
+  if (sprite) return sprite;
+  const c = document.createElement('canvas');
+  c.width = GLOW_SIZE; c.height = GLOW_SIZE;
+  const ctx = c.getContext('2d');
+  const h = GLOW_SIZE / 2;
+  const g = ctx.createRadialGradient(h, h, 0, h, h, h);
+  g.addColorStop(0, `rgba(${rgb},1)`);
+  g.addColorStop(0.45, `rgba(${rgb},0.42)`);
+  g.addColorStop(1, `rgba(${rgb},0)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, GLOW_SIZE, GLOW_SIZE);
+  GLOW_SPRITES.set(rgb, c);
+  return c;
 }
 
-const asArr = (p) => (Array.isArray(p) ? p : [p.x, p.y]);
+/**
+ * Additive screen-space glow. `rgb` is "r,g,b"; `a` is 0..1.
+ */
+export function glowAt(ctx, x, y, r, rgbIn, a, opts = {}) {
+  if (!(a > 0.002) || !(r > 0.5)) return;
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(r)) return;
+  const rgb = gradeRgb(rgbIn);
+  const sprite = glowSprite(rgb);
+  const a2 = Math.min(1, a * glowScale());
+  const prevOp = ctx.globalCompositeOperation;
+  const prevAlpha = ctx.globalAlpha;
+  const prevSmooth = ctx.imageSmoothingEnabled;
+  ctx.globalCompositeOperation = opts.composite || 'lighter';
+  ctx.globalAlpha = a2;
+  ctx.imageSmoothingEnabled = true;
+  ctx.drawImage(sprite, x - r, y - r, r * 2, r * 2);
+  ctx.globalCompositeOperation = prevOp;
+  ctx.globalAlpha = prevAlpha;
+  ctx.imageSmoothingEnabled = prevSmooth;
+}
 
 export class Painter {
   constructor(ctx, W, H) {
@@ -37,13 +68,16 @@ export class Painter {
     this.W = W;
     this.H = H;
     this.boil = 0;
+    // Multiplied into every alpha the painter sets: used to fade a whole
+    // neighbour cell in and out without touching each call site.
+    this.alphaMul = 1;
   }
   setBoil(frame) { this.boil = frame; }
 
   _pre(opts = {}) {
     const c = this.ctx;
     c.save();
-    c.globalAlpha = opts.alpha == null ? 1 : opts.alpha;
+    c.globalAlpha = (opts.alpha == null ? 1 : opts.alpha) * this.alphaMul;
     c.globalCompositeOperation = opts.composite || 'source-over';
     c.lineJoin = 'round';
     c.lineCap = 'round';
@@ -57,7 +91,7 @@ export class Painter {
     const pts = points.map(asArr).filter((p) => Number.isFinite(p[0]) && Number.isFinite(p[1]));
     if (pts.length < 2) return;
     const c = this._pre(opts);
-    const color = opts.color || opts.stroke || PALETTE.ink;
+    const color = gradeColor(opts.color || opts.stroke || PALETTE.ink);
     const width = opts.width == null ? 1.2 : opts.width;
     const jitter = opts.jitter == null ? 0.45 : opts.jitter;
     const seed = opts.seed == null ? 1 : opts.seed;
@@ -66,7 +100,7 @@ export class Painter {
     const rough = opts.rough !== false;
 
     const drawPass = (pass, alphaMul, offset) => {
-      c.globalAlpha = (opts.alpha == null ? 1 : opts.alpha) * alphaMul;
+      c.globalAlpha = (opts.alpha == null ? 1 : opts.alpha) * alphaMul * this.alphaMul;
       c.strokeStyle = color;
       c.lineWidth = Math.max(0.35, width * (1 - pass * 0.22));
       c.beginPath();
@@ -101,7 +135,7 @@ export class Painter {
   // Many plain segments in one path (fast details such as windows).
   batch(segments, opts = {}) {
     const c = this._pre(opts);
-    c.strokeStyle = opts.color || opts.stroke || PALETTE.ink;
+    c.strokeStyle = gradeColor(opts.color || opts.stroke || PALETTE.ink);
     c.lineWidth = opts.width == null ? 1 : opts.width;
     c.beginPath();
     for (const s of segments) {
@@ -129,9 +163,24 @@ export class Painter {
     c.moveTo(jpts[0][0], jpts[0][1]);
     for (let i = 1; i < jpts.length; i++) c.lineTo(jpts[i][0], jpts[i][1]);
     c.closePath();
-    if (opts.fill) { c.fillStyle = opts.fill; c.fill(); }
-    if (opts.stroke !== null && (opts.stroke || opts.fill == null)) {
-      c.strokeStyle = opts.stroke || PALETTE.ink;
+    if (opts.gradient && opts.gradient.length) {
+      let y0 = Infinity, y1 = -Infinity, x0 = Infinity, x1 = -Infinity;
+      for (const pt of jpts) {
+        if (pt[1] < y0) y0 = pt[1];
+        if (pt[1] > y1) y1 = pt[1];
+        if (pt[0] < x0) x0 = pt[0];
+        if (pt[0] > x1) x1 = pt[0];
+      }
+      const horizontal = opts.gradientDir === 'h';
+      const g = horizontal
+        ? c.createLinearGradient(x0, 0, x1, 0)
+        : c.createLinearGradient(0, y0, 0, y1);
+      for (const [t, col] of opts.gradient) g.addColorStop(t, gradeColor(col));
+      c.fillStyle = g;
+      c.fill();
+    } else if (opts.fill) { c.fillStyle = gradeColor(opts.fill); c.fill(); }
+    if (opts.stroke !== null && (opts.stroke || (opts.fill == null && !opts.gradient))) {
+      c.strokeStyle = gradeColor(opts.stroke || PALETTE.ink);
       c.lineWidth = opts.width == null ? 1.1 : opts.width;
       c.stroke();
     }
@@ -148,8 +197,8 @@ export class Painter {
       for (let i = 1; i < pts.length; i++) c.lineTo(pts[i][0], pts[i][1]);
       c.closePath();
     }
-    if (opts.fill) { c.fillStyle = opts.fill; c.fill(); }
-    if (opts.stroke) { c.strokeStyle = opts.stroke; c.lineWidth = opts.width == null ? 0.7 : opts.width; c.stroke(); }
+    if (opts.fill) { c.fillStyle = gradeColor(opts.fill); c.fill(); }
+    if (opts.stroke) { c.strokeStyle = gradeColor(opts.stroke); c.lineWidth = opts.width == null ? 0.7 : opts.width; c.stroke(); }
     this._post();
   }
 
@@ -157,8 +206,8 @@ export class Painter {
     const c = this._pre(opts);
     c.beginPath();
     c.ellipse(x, y, Math.max(0.2, rx), Math.max(0.2, ry), opts.rot || 0, 0, Math.PI * 2);
-    if (opts.fill) { c.fillStyle = opts.fill; c.fill(); }
-    c.strokeStyle = opts.stroke || opts.color || PALETTE.ink;
+    if (opts.fill) { c.fillStyle = gradeColor(opts.fill); c.fill(); }
+    c.strokeStyle = gradeColor(opts.stroke || opts.color || PALETTE.ink);
     c.lineWidth = opts.width == null ? 1 : opts.width;
     if (opts.stroke !== false) c.stroke();
     this._post();
@@ -230,20 +279,16 @@ export class Painter {
       if (proj.some((p) => !p)) continue;
       const quad = proj.map((p) => [p.x, p.y]);
       const depth = proj.reduce((a, p) => a + p.depth, 0) / 4;
-      out.push({ ...f, pts3, quad, depth, visible });
+      const scale = proj.reduce((a, p) => a + p.scale, 0) / 4;
+      out.push({ ...f, pts3, quad, depth, scale, visible });
     }
     if (opts.draw !== false) {
       const fill = opts.fill || PALETTE.black;
       const stroke = opts.stroke == null ? PALETTE.ink : opts.stroke;
       const visible = out.filter((f) => f.visible).sort((a, b) => b.depth - a.depth);
       for (const f of visible) {
-        // A flat fill made every box read as a wireframe. Shading each face
-        // separately gives the volume a light direction and a print tone.
-        const faceFill = opts.shade === true
-          ? (typeof opts.fillFor === 'function' ? opts.fillFor(f.name) : faceTone(f.name))
-          : fill;
         this.poly(f.quad, {
-          fill: faceFill,
+          fill,
           stroke: opts.faces === false ? null : stroke,
           width: opts.width == null ? 1.1 : opts.width,
           alpha: opts.alpha == null ? 1 : opts.alpha,
@@ -308,7 +353,7 @@ export class Painter {
       [[0.22, 0.22], [0.78, 0.22], [0.5, 0.5], [0.5, 0.85]],
     ];
     const count = 3 + Math.floor(hash11(seed * 3.3) * 3);
-    const color = opts.color || opts.stroke || PALETTE.ink;
+    const color = gradeColor(opts.color || opts.stroke || PALETTE.ink);
     for (let i = 0; i < count; i++) {
       const t = templates[Math.floor(hash11(seed * 7.1 + i * 13.7) * templates.length)];
       const pts = t.map((p, j) => [

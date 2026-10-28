@@ -26,34 +26,64 @@ footer{padding:20px clamp(18px,5vw,64px);border-top:1px solid #26332c;color:#617
 <body>
 <header>
   <h1>VALE / DOCS &amp; HANDOFF</h1>
-  <div class="meta">branch arena/45e6b5a9-vale · commit b5f212d5 · built 2026-10-28T02:57:15.749Z · index.html 102,309 bytes</div>
+  <div class="meta">branch arena/45e6b5a9-vale · commit 1b57a075 · built 2026-10-28T05:22:44.082Z · index.html 181,200 bytes</div>
 </header>
 <main>
   <a class="film" href="../index.html">▶ open the self-contained film</a>
   <div class="grid">
-    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>&gt; ⚠️ **This file describes `arena/45e6b5a9-vale` only, which is 21 commits
-&gt; BEHIND `arena/bab4bc10-vale` and built against a superseded reading of the
-&gt; brief.** The project is now an indie sim **engine foundation** with a tileable
-&gt; volume, not a one-corner film. See `docs/BRANCH_COMPARISON.md` and the branch
-&gt; correction at the top of `docs/HANDOFF.md` be</p></a>
-    <a class="card" href="HANDOFF.md"><h2>HANDOFF</h2><p>**This branch (`arena/45e6b5a9-vale`) is NOT the tip of the project.**</p></a>
-    <a class="card" href="ARCHITECTURE.md"><h2>ARCHITECTURE</h2><p>The system is a **representation pipeline**, not a simulation and not a flat
-illustration. This turn concentrates on one built-out street corner: big cubic
-volumes first, then fixed street furniture and cars, then varied people, then
-rain and puddles.</p></a>
+    <a class="card" href="CURRENT_STATE.md"><h2>CURRENT STATE</h2><p>**Last updated:** 2026-10-27 (Turn 16 — the set is a grid of tiles, branch `arena/bab4bc10-vale`)
+**Framing:** this is now an **engine foundation**, not a film. The sample scene is
+a *template*: one modular 3D volume ("snow globe" / diorama / vignette tile),
+fully procedural, with procedural LoD. The 20 s signal cycle is the loop that
+drives the sample, not </p></a>
+    <a class="card" href="HANDOFF.md"><h2>HANDOFF</h2><p>**Purpose:** resume this project in a fresh session without re-deriving
+anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.</p></a>
+    <a class="card" href="ARCHITECTURE.md"><h2>ARCHITECTURE</h2><p>VALE is an engine foundation for a cosy procedural city sim. The unit of the
+engine is a **tile**: a modular 3D volume — a cut-away box of city that can be
+lifted out, inspected and snapped beside another tile. The sample scene is one
+such tile, presented inside a glass case — four panes and a lid, no posts or
+rails — so the modularity is visible without any</p></a>
     <a class="card" href="CHANGELOG.md"><h2>CHANGELOG</h2><p>Dates use the user’s local timezone (America/New_York).</p></a>
     <a class="card" href="CI.md"><h2>CI / PAGES</h2><p>The working agreement is:</p></a>
-    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit b5f212d5 on arena/45e6b5a9-vale, built 2026-10-28T02:57:15.749Z.</p></a>
+    <a class="card" href="BUILD.md"><h2>BUILD</h2><p>Commit 1b57a075 on arena/45e6b5a9-vale, built 2026-10-28T05:22:44.082Z.</p></a>
     <a class="card" href="DEPLOY_STATUS.md"><h2>DEPLOY STATUS</h2><p>Fresh deployment metadata for this Pages build.</p></a>
   </div>
   <h2 class="sec">README (live copy)</h2>
-  <pre># VALE — rainy crossing
+  <pre># VALE — one module of a rainy city
 
-A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
+A silent, autoplaying 20-second film in **one self-contained `index.html`**. One
+**module** of a rainy city is built as a real 3D volume, projected into a 2D
+“printing plate”, then finished by a node-based GLSL print pipeline. No outside
+visual assets, no fonts, no network requests, no audio, and no visible website
+UI during playback.
 
-&gt; **Status (2026-10-28):** the build is now a readable night street corner, **not an approved visual result**. It previously rendered as a wireframe diagram floating in static — a real screenshot pass found the cause (box faces were filled with the background colour) and rebuilt the look. Before changing visuals, read `docs/CURRENT_STATE.md`, `docs/HANDOFF.md` and `docs/SCREENSHOTS.md`, and take stills with `npm run shots` before claiming anything landed.
+The module is an **intersection**: an 11.8 m east–west street with a row of
+buildings on **both** sides — four blocks on the north frontage, two low shop
+blocks on the south frontage — and a **half north–south street** down each x
+edge. Each cell owns 3.0 m of carriageway and 2.4 m of pavement, so two cells
+side by side meet in a full 6.0 m street; the pavement is a **ring** with
+rounded corner returns, so a pedestrian can walk the block and turn into the
+side street.
 
-&gt; Note: the original branch arrived with only `README.md`; the implementation is a rebuild around the hybrid 3D→2D direction. Turn 6 added a headless screenshot harness so visual changes can actually be checked — see `docs/SCREENSHOTS.md`.
+Cells tile by **edge kind** (`src/cells.js`):
+
+| kind | side streets | what it is for |
+| --- | --- | --- |
+| `street` | both x edges | continues the street across the seam |
+| `block` | none | north/south of a street cell: the rows merge |
+| `yard` | both, open lot inside | a street edge meeting an empty lot |
+
+Set a whole pattern at once with `?layout=auto|grid|row|block|yard` (or the
+**layout** dropdown in the panel): `grid` tiles the module into a street grid,
+`block` closes the rows across every seam.
+
+&gt; **Status (2026-10-27):** the module, the edge-aware tileable cells, the
+&gt; palettes and the steering crowd are in; `npm run verify` (build · boot ·
+&gt; renderer smoke · finite · determinism) is green and GitHub Pages deploys from
+&gt; this branch. Read `docs/HANDOFF.md` first — it is the state of the work and the
+&gt; list of what is still open (the biggest item is a true corner tile: a cell with
+&gt; streets on two adjacent edges). Visual validation is by the stills in
+&gt; `.shots/` (`node tools/shot.mjs --t 3,9,17`, `--layout grid`).
 
 ---
 
@@ -65,11 +95,6 @@ npm run build           # regenerates the self-contained index.html
 npm run docs            # regenerates deploy metadata + docs/index.html
 npm run deploy:local    # build + docs
 npm run dev             # builds, then serves on http://localhost:8000
-npm run serve           # serves the current build on :8123
-
-# look at what you built (one-time browser setup, then stills)
-npm run setup:browser
-npm run shots           # → shots/latest/t{0,6,12,16}.png
 ```
 
 Or just open `index.html` directly — it works from `file://` because everything is inlined.
@@ -80,18 +105,57 @@ Useful URLs:
 | --- | --- |
 | `index.html` | clean film, autoplay, 20s loop, no UI |
 | `index.html?lab=1` | opens the hidden node / scene / camera / timeline lab |
-| `index.html?cam=fly` | starts in user fly camera |
-| `index.html?hud=0` | disables the tiny camera-control HUD |
+| `index.html?cam=fps` | first-person walk (also `third`, `drone`, `cinematic`) |
+| `index.html?shot=crane` | cinematic shot: `rig`, `tripod`, `crane`, `orbit`, `detail` |
+| `index.html?ui=1` | opens the scene-control sidebar (also `?panel=1`) |
+| `index.html?palette=patent` | boots into a palette (`mobius`, `patent`, `ink`, `bw`, `custom`) |
+| `index.html?scale=0.7` | renders the plate/shader at 70 % for slower machines |
+| `index.html?hud=0` | disables the tiny camera help line |
 | `index.html?preset=riso` | starts with the Risograph look |
 | `index.html?t=11` | starts at 11 seconds |
 | `index.html?w=1920&amp;h=1080` | renders at a different internal resolution |
 | `index.html?lab=1&amp;paused=1&amp;t=7` | paused lab frame for inspection |
 
-Keyboard shortcuts: `L` lab, `Space` play/pause, `S` save PNG frame, `R` reset all
-parameters, `C` release/take camera, `F` fly/orbit, `V` or `0` reset camera. While
-flying: `WASD/QE` move, `Shift` boosts, drag looks, right-drag pans, wheel zooms.
+Keyboard shortcuts: `Tab` opens the scene controls (the UI starts hidden and
+the camera starts in drone mode), `\` toggles the stats overlay, `H` hides/shows
+all UI, `C` cycles the camera, `L` opens the lab. Inside the lab: `Space`
+play/pause, `R` reset, `Ctrl/Cmd+S` save a PNG frame (a bare `S` used to save one
+on every step backwards — it no longer does anything outside the lab). Camera: `C` cycles cinematic → first person →
+third person → drone, `1`–`4` jump straight to a mode, `V` returns to the
+cinematic rig, `[` / `]` step through the steady shots. Left-drag looks, wheel
+zooms (dollies in drone), `WASD` moves, `Shift` runs/boosts, `Q`/`E` descend and
+climb in drone. **There is no right-drag pan** — that was explicitly dropped in
+favour of game-style navigation.
 
 ---
+
+## A perfect 20 s loop
+
+`src/loop.js` is the rulebook: **nothing in the scene integrates state over
+`dt`**. Every drop, person and vehicle is `f(seed, t)` with
+`f(seed, t + 20) === f(seed, t)`, so `npm run determinism` can assert that the
+plate at t and t + 20 is byte-identical — from a cold scene *and* after a full
+playback.
+
+- Rain: each drop has a seeded start, a fall period quantised to `20 / integer`
+  seconds and a phase; its height is `loopFrac(t, period)`. Ripples are derived
+  from the moment a drop lands, so they cannot drift out of phase.
+- Crowd: walkers come in from the edge of the tile, wait at the kerb, cross on
+  the green, and walk off the far side. `loopBuffer` (metres) is the boundary
+  band where they fade; the loop point happens while they are already invisible.
+- Traffic: a car pulls up to the stop line, waits out the pedestrian window,
+  drives through and wraps off-screen. No mid-scene fades.
+- Idle sway, line boil and the shader's grain all run on integer-cycle
+  oscillators, so the loop point is seamless rather than a cut.
+
+## Performance
+
+The set never moves relative to itself, so it is painted once into a cached
+layer (`Scene._ensureStatic`) and blitted with a sub-pixel offset until the
+camera has drifted more than 2.5 px. That alone took the frame from ~55 ms to
+~22 ms at 1440×810 in the Node canvas benchmark. The plate also follows the
+viewport (max 1.25× DPR) instead of always rendering 1440×810, and `?scale=`
+or the sidebar's *render scale* row buys more headroom on weak GPUs.
 
 ## The hybrid pipeline
 
@@ -110,7 +174,7 @@ signal-cycle timeline ─┘                                   │
 
 ### 1. 3D scene graph
 
-`src/world.js`, `src/environment.js`, `src/crowd.js`, `src/traffic.js`, `src/camera.js` and `src/camera-control.js` describe one built-out corner in world space (`x` right, `y` up, `z` toward the viewer):
+`src/tile.js`, `src/environment.js`, `src/crowd.js` and `src/traffic.js` describe one built-out corner in world space (`x` right, `y` up, `z` toward the viewer):
 
 - two crossing road strips and four raised sidewalk **boxes**; only the northeast corner is fully built out, the other three are simple receiving slabs;
 - four straight zebra crossings, stop lines, lane dividers, direction arrows, manhole covers and tactile paving;
@@ -119,10 +183,17 @@ signal-cycle timeline ─┘                                   │
 - three parked cars at legal curbs and two moving cars in separated lanes — five vehicles total, not a traffic jam;
 - about 92 crossers plus 30 waiters drawn as varied tiny architectural-sketch people: archetypes, coat shapes, head shapes, long shadows, umbrellas, bags, dogs, bicycles, strollers, companions and more — all projected from 3D world points;
 - a five-car train passing overhead;
-- persistent raindrop particles and puddle ripples, drawn into the plate rather than faked with a shader overlay;
+- raindrops and puddle ripples that are pure functions of loop time (see below), drawn into the plate rather than faked with a shader overlay;
 - grid-hashed separation so people scatter meaningfully, vehicles keep their lanes, and walkers avoid vehicle hulls.
 
-`src/camera.js` is a small keyframed rig. It holds a three-quarter view of the built-out corner, pushes in slightly during the surge, drifts with the train, then pulls back for the empty street. `src/camera-control.js` lets the user take over: orbit, pan, zoom or fly. All geometry is projected through `Camera.project()` in `src/math.js`, so the camera really is 3D and the volumes change perspective — but the output is still a flat plate.
+The camera is modular. `src/camera-modes.js` holds one class per navigation style —
+`CinematicMode` (the authored rig plus steady tripod / crane / orbit / detail
+shots), `FpsMode`, `ThirdPersonMode` and `DroneMode` — behind a `CameraMode` base
+(`enter/exit/update/onWheel/reset/place`). `src/camera-director.js` owns the
+shared input plumbing (pointer look, wheel, keys, HUD) and swaps modes at
+runtime; a new controller is one file plus one entry in `MODES`. All geometry is
+projected through `Camera.project()` in `src/math.js`, so the camera really is 3D
+and the volumes change perspective — but the output is still a flat plate.
 
 ### 2. 2D printing plates
 
@@ -200,8 +271,12 @@ src/collision.js                 separation + Poisson-disk blue noise
 src/shaders.js                   GLSL node definitions + presets
 src/graph.js                     node graph compiler / uniforms / serialization
 src/renderer.js                  WebGL2 fullscreen pass + 2D fallback
-src/camera.js                    keyframed camera rig
-src/camera-control.js            user orbit / fly camera
+src/camera.js                    keyframed cinematic rig (used by CinematicMode)
+src/camera-modes.js              modular controllers: cinematic/fps/third/drone
+src/camera-director.js           mode switching, input plumbing, camera HUD
+src/sidebar.js                   hidden authoring sidebar (Tab)
+src/stats.js                     self-contained fps/stage overlay
+src/neighbors.js                 the eight buffer cells of the 3x3 volume
 src/timeline.js                  one signal cycle
 src/environment.js               cubic corner set: roads, sidewalks, buildings, signals
 src/crowd.js                     varied tiny 3D people, walk cycle, long shadows
@@ -218,7 +293,7 @@ src/main.js                      wiring, query params, animation loop
 
 ## CI / Pages / handoff
 
-Every push to **any** branch runs
+Every push to any branch (the workflow listens on `['**']`) runs
 `.github/workflows/deploy-pages.yml`: install → build → validate
 self-containment → regenerate docs → upload `_site/` → deploy with
 `actions/deploy-pages`. `npm run docs` writes fresh commit/branch/timestamp

@@ -1,9 +1,9 @@
 name: Deploy film + handoff docs to GitHub Pages
 
 on:
-  # Deploy from ANY branch. Sessions run on throwaway arena/* branches, so a
-  # hard-coded branch list silently stops deploying after the first handover.
   push:
+    # Any branch: every branch is a previewable build of the sample scene.
+    # The most recent push wins the single Pages site.
     branches:
       - '**'
   workflow_dispatch:
@@ -36,8 +36,21 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Syntax / import check
+        run: npm run check
+
       - name: Build self-contained film
         run: npm run build
+
+      # The inline bundle must boot: this catches TDZ errors, bad constructor
+      # order and a corrupted $& substitution that would ship a blank page.
+      - name: Boot smoke test (built bundle)
+        run: npm run boot
+
+      # Browsers throw on non-finite canvas arguments where headless canvas
+      # silently coerces them, so NaN geometry must be caught in CI.
+      - name: Numeric sanity check
+        run: npm run finite
 
       - name: Validate no external assets
         run: |

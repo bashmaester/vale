@@ -7,15 +7,18 @@ export class Timeline {
     this.duration = duration;
     this.t = 0;
     this.u = 0;
-    // Secondary animation clock. The signal cycle still lasts exactly 20s,
-    // but rain boil, idle sway, line flicker and grain run at a calmer tempo.
-    this.motionScale = 0.62;
+    // Secondary animation clock, used for idle sway, line boil and grain.
+    // It must be a pure function of t that repeats every `duration`: any
+    // per-frame integration or non-integer frequency would break the loop and
+    // make t = 0 and t = 20 different frames. Slow motion is achieved by using
+    // few cycles per loop inside the oscillators, not by scaling the clock.
+    this.motionScale = 1;
     this.motionT = 0;
   }
   update(t) {
     this.t = mod(t, this.duration);
     this.u = this.t / this.duration;
-    this.motionT = mod(t * this.motionScale, this.duration);
+    this.motionT = this.t;
     return this.u;
   }
 
@@ -27,12 +30,16 @@ export class Timeline {
   }
   stopSignal() { return 1 - this.walkSignal(); }
   cross() { return smootherstep(0.18, 0.68, this.u); }
-  crossWithDelay(delay) {
+  // Pure in `u` so the crowd can also ask "where would the crossing be a
+  // fraction of a second from now?" when it works out which way to face.
+  crossAt(delay, u) {
     const a = 0.18 + delay * 0.075;
     const b = 0.66 + delay * 0.055;
-    return smootherstep(a, b, this.u);
+    return smootherstep(a, b, u);
   }
-  drain() { return smoothstep(0.68, 0.82, this.u); }
+  crossWithDelay(delay) { return this.crossAt(delay, this.u); }
+  drainAt(u) { return smoothstep(0.68, 0.82, u); }
+  drain() { return this.drainAt(this.u); }
   empty() {
     return smoothstep(0.805, 0.855, this.u) * (1 - smoothstep(0.925, 0.975, this.u));
   }
@@ -47,7 +54,13 @@ export class Timeline {
     return smoothstep(0.90, 0.965, this.u);
   }
   parkedAlpha() { return 1 - smoothstep(0.885, 0.945, this.u); }
-  train() { return smootherstep(0.30, 0.76, this.u); }
+  // The elevated line is its own system: it has its own window in the loop and
+  // its own speed multiplier, so it can be slowed or stopped without touching
+  // the traffic.
+  train(speed = 1) {
+    const k = Math.max(0.05, Number(speed) || 1);
+    return smootherstep(0.30, 0.30 + 0.46 / k, this.u);
+  }
   reflectionReform() { return smoothstep(0.78, 0.94, this.u); }
   rainPulse() {
     return 0.9 + 0.08 * Math.sin(this.u * Math.PI * 2) + 0.08 * this.walkSignal();

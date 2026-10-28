@@ -3,6 +3,14 @@
 Written after a session on `arena/45e6b5a9-vale` discovered it had been building
 on the wrong base.
 
+> **Status: resolved.** `arena/45e6b5a9-vale` now contains the full
+> `arena/bab4bc10-vale` tree (`6a57a47`) — no tracked file was modified, `src/`
+> diffs empty against it. The superseded art pass was discarded. Only items 1–4
+> under “what is worth salvaging” were kept, and of those only the **screenshot
+> harness** was actually portable (the rest were fixes for code that no longer
+> exists on this branch). The analysis below is kept as the record of a costly
+> process mistake.
+
 ## The finding
 
 `main` (`de04b9a`) was not the newest work. `arena/bab4bc10-vale` (`6a57a47`,

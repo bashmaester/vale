@@ -76,6 +76,131 @@ export function separate(items, opts = {}) {
   }
 }
 
+// A relaxation pass that treats every body's position as a base point plus an
+// offset, and solves the offsets together. Because it starts from zero each
+// frame and always runs the same number of iterations, the result is a pure
+// function of the base points: the crowd does not remember the last frame, so
+// there is nothing to pop when two people meet.
+//
+// The `lateral` bias is what makes it read as steering instead of shoving: a
+// body that is being pushed backwards along its own heading is instead slid
+// sideways, and only lightly slowed.
+export function relax(items, opts = {}) {
+  const {
+    iterations = 5,
+    padding = 0.06,
+    strength = 0.85,
+    lateral = 0,
+    damp = 0.5,
+    maxOffset = 0.8,
+    bounds = null,
+    getGroup = (it) => (it.group == null ? 0 : it.group),
+    onlyDifferentGroups = false,
+  } = opts;
+  // Bodies are kept in the solve at any opacity and weighted by it, so a
+  // person fading in or out does not switch their influence on and off and
+  // shove their neighbours sideways as they go.
+  const list = items.filter((it) => it.world);
+  if (!list.length) return;
+  const N = list.length;
+  const ox = new Float64Array(N);
+  const oz = new Float64Array(N);
+  const dx = new Float64Array(N);
+  const dz = new Float64Array(N);
+  const px = new Float64Array(N);
+  const pz = new Float64Array(N);
+  let maxR = 0.5;
+  for (const it of list) maxR = Math.max(maxR, it.radius == null ? 0.5 : it.radius);
+  const cell = Math.max(0.6, (maxR * 2 + padding) * 1.3);
+
+  for (let iter = 0; iter < iterations; iter++) {
+    for (let i = 0; i < N; i++) {
+      px[i] = list[i].world.x + ox[i];
+      pz[i] = list[i].world.z + oz[i];
+      dx[i] = 0; dz[i] = 0;
+    }
+    const grid = new Map();
+    for (let i = 0; i < N; i++) {
+      const key = `${Math.floor(px[i] / cell)},${Math.floor(pz[i] / cell)}`;
+      const b = grid.get(key);
+      if (b) b.push(i); else grid.set(key, [i]);
+    }
+    for (let i = 0; i < N; i++) {
+      const a = list[i];
+      const ca = Math.floor(px[i] / cell), cb = Math.floor(pz[i] / cell);
+      for (let gx = -1; gx <= 1; gx++) {
+        for (let gz = -1; gz <= 1; gz++) {
+          const bucket = grid.get(`${ca + gx},${cb + gz}`);
+          if (!bucket) continue;
+          for (const j of bucket) {
+            if (j <= i) continue;
+            const b = list[j];
+            if (onlyDifferentGroups && getGroup(a) === getGroup(b)) continue;
+            let ax = px[j] - px[i];
+            let az = pz[j] - pz[i];
+            let d = Math.hypot(ax, az);
+            const minD = (a.radius == null ? 0.5 : a.radius)
+              + (b.radius == null ? 0.5 : b.radius) + padding;
+            if (d >= minD) continue;
+            if (d < 1e-4) { ax = 0.001; az = 0.001; d = 0.0014; }
+            const nx = ax / d, nz = az / d;
+            const overlap = minD - d;
+            const wa = a.fixed ? 0 : clamp(a.alpha == null ? 1 : a.alpha, 0, 1);
+            const wb = b.fixed ? 0 : clamp(b.alpha == null ? 1 : b.alpha, 0, 1);
+            const sum = wa + wb;
+            if (sum < 1e-3) continue;
+            if (!a.fixed) {
+              let cx = -nx * overlap * (wa / sum), cz = -nz * overlap * (wa / sum);
+              if (lateral > 0 && a.dir) {
+                const along = cx * a.dir.x + cz * a.dir.z;
+                const rx = cx - along * a.dir.x, rz = cz - along * a.dir.z;
+                cx = rx * (1 + lateral) + a.dir.x * along * (1 - lateral);
+                cz = rz * (1 + lateral) + a.dir.z * along * (1 - lateral);
+              }
+              dx[i] += cx; dz[i] += cz;
+            }
+            if (!b.fixed) {
+              let cx = nx * overlap * (wb / sum), cz = nz * overlap * (wb / sum);
+              if (lateral > 0 && b.dir) {
+                const along = cx * b.dir.x + cz * b.dir.z;
+                const rx = cx - along * b.dir.x, rz = cz - along * b.dir.z;
+                cx = rx * (1 + lateral) + b.dir.x * along * (1 - lateral);
+                cz = rz * (1 + lateral) + b.dir.z * along * (1 - lateral);
+              }
+              dx[j] += cx; dz[j] += cz;
+            }
+          }
+        }
+      }
+    }
+    // Gauss–Seidel: the pushes are applied in place, one body after another,
+    // so a body that has already been moved is seen by the next pair. That
+    // settles instead of oscillating, which is what keeps a person from being
+    // flicked left in one frame and right in the next.
+    for (let i = 0; i < N; i++) {
+      if (list[i].fixed) continue;
+      ox[i] += dx[i] * damp;
+      oz[i] += dz[i] * damp;
+      // Soft saturation, not a hard clamp: a body whose push grows past the
+      // limit is eased towards it, so the correction never jumps when the
+      // direction of the push rotates.
+      const m = Math.hypot(ox[i], oz[i]);
+      if (m > 1e-6) {
+        const k = (maxOffset * Math.tanh(m / maxOffset)) / m;
+        ox[i] *= k; oz[i] *= k;
+      }
+    }
+  }
+  for (let i = 0; i < N; i++) {
+    list[i].world.x += ox[i];
+    list[i].world.z += oz[i];
+    if (bounds) {
+      list[i].world.x = clamp(list[i].world.x, bounds.x0, bounds.x1);
+      list[i].world.z = clamp(list[i].world.z, bounds.z0, bounds.z1);
+    }
+  }
+}
+
 export function separateGroups(a, b, opts = {}) {
   const items = [];
   for (const it of a) {
