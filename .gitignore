@@ -5,3 +5,4 @@ node_modules/
 _site/
 image-search/
 .smoke.mjs
+/shots/

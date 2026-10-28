@@ -66,9 +66,13 @@ A single source of truth for the corner:
 
 ## 2. Camera and time
 
-`camera.js` is a restrained three-quarter view of the corner. It shows the tops
-and two faces of the sidewalk blocks and buildings, with a slight push-in during
-the surge and pull-back for the empty street. `camera-control.js` wraps it with
+`camera.js` is a near-street-level three-quarter view of **one** corner, not an
+aerial plan of the whole junction. Eye sits low on the opposite sidewalk around
+`[-15.5, 9.6, 17.5]` looking at `[10.5, 4.1, -11.0]`, so the crossing and the
+waiting crowd sit in the foreground and the NE buildings rise behind them. The
+keys still breathe (slight push-in during the surge, pull-back for the empty
+street). Framing was validated against real screenshots — see
+`docs/SCREENSHOTS.md`. `camera-control.js` wraps it with
 `auto`, `returning`, `orbit` and `fly` modes.
 
 `timeline.js` owns the 20-second signal cycle and a slower secondary clock
@@ -79,13 +83,21 @@ The film duration does not change.
 
 The drawing order is the construction order:
 
+0. **`drawBackdrop()`** — a ring of 34 distant blocks (solid tonal masses with
+   sparse lit windows) so the frame has depth. Without this the set read as a
+   small diagram floating in ~70% empty black.
 1. **`drawBlockout()`** — ground plane, two road planes, intersection plane, and
-   four shallow sidewalk boxes. The northeast corner gets denser paving lines
-   and tactile paving at its curb ramps.
+   four shallow sidewalk boxes. Each plane has a distinct tone so the
+   carriageway, junction and sidewalk separate. The northeast corner gets denser
+   paving lines and tactile paving at its curb ramps.
 2. **`drawRoadMarkings()`** — center dashes, lane dividers, four zebra
    crossings, stop lines, direction arrows and manhole covers.
 3. **`drawBuildings()`** — four `p.box()` volumes with window grids, awnings,
    roof parapets, rooftop boxes, accent stripes and `sign3D()` shop signs.
+   Buildings are painted **far to near** (painter's algorithm across the block)
+   and each box face gets its own tone, because drawing them in array order let
+   a near facade be overpainted by a far one and the block read as transparent
+   wireframes.
 4. **`drawTrafficLights()`** — four poles at the four intersection corners
    only. Each pole carries a vehicle head and a smaller pedestrian head, both
    drawn as oriented 3D quads with projected lamps.
@@ -157,6 +169,12 @@ There is no `wet` canvas. `Painter` provides rough polylines with line boil,
 jittered polygons, projected 3D boxes, grid-on-quad, oriented `sign3D()` quads,
 glyphs, ellipses and splashes.
 
+**Tonal ladder.** `PALETTE` carries explicit print tones (`massFront`,
+`massSide`, `massTop`, `massDeep`, `lit`) plus `faceTone(name)`. `p.box()`
+accepts `shade: true` (and an optional `fillFor(name)`) to fill each face at its
+own tone. This replaced a single flat `black` fill that was nearly identical to
+the background, which is why every volume used to render as a bare outline.
+
 ## 8. Node shader graph (`shaders.js`, `graph.js`)
 
 `ShaderGraph` topologically sorts nodes, emits uniform declarations + GLSL
@@ -167,11 +185,17 @@ functions + a `main()` chain, and feeds live values to `Renderer`.
 | 01 | `source` | plate sample, channel misregistration, gate weave |
 | 02 | `carve` | edge-aware lino gouges, boiling tool marks, scratches |
 | 03 | `detail` | tangent-following contour cuts, micro scratches, edge sparks |
-| 04 | `hatch` | noisy angle drift, variable spacing, wandering/broken lines, cross hatch |
+| 04 | `hatch` | broken directional hatch, tuned to texture masses rather than marble |
 | 05 | `rain` | disabled pass-through; rain/puddles are simulated on the plate |
 | 06 | `palette` | bleed, dither, four-color posterization, accent bloom |
 | 07 | `paper` | grain, fiber, speckle, vignette, projector flicker |
 | 08 | `output` | exposure / contrast |
+
+**Coverage gating.** `carve`, `detail`, `hatch` and `paper` all multiply their
+effect by a coverage term derived from plate luma
+(`smoothstep(0.04, 0.115, luma)`). Before this, the print effects painted noise
+across empty paper, and the frame read as static rather than as ink on black.
+Gate any new effect the same way.
 
 `ShaderGraph` respects `enabled: false` in node definitions and presets. The
 `rain` node remains in the graph for modularity but returns `c` unchanged. This

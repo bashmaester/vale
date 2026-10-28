@@ -10,7 +10,24 @@ export const PALETTE = {
   red: '#d43b30',
   teal: '#2bb8ae',
   black: '#050605',
+  // Tonal ladder for solid printed masses. Before this existed every volume
+  // was filled with `black`, which was almost identical to `bg`, so buildings
+  // rendered as bare outlines over nothing. These are deliberately separated
+  // steps so faces read as volume at final resolution.
+  massFront: '#242b22',
+  massSide: '#151a14',
+  massTop: '#2c3429',
+  massDeep: '#101410',
+  lit: '#f2ecda',
 };
+
+// Per-face tone for a box: front/side/top are the three shades we see from a
+// three-quarter camera, so a single box already reads as a lit volume.
+export function faceTone(name) {
+  if (name === 'top') return PALETTE.massTop;
+  if (name === 'front' || name === 'back') return PALETTE.massFront;
+  return PALETTE.massSide;
+}
 
 const asArr = (p) => (Array.isArray(p) ? p : [p.x, p.y]);
 
@@ -220,8 +237,13 @@ export class Painter {
       const stroke = opts.stroke == null ? PALETTE.ink : opts.stroke;
       const visible = out.filter((f) => f.visible).sort((a, b) => b.depth - a.depth);
       for (const f of visible) {
+        // A flat fill made every box read as a wireframe. Shading each face
+        // separately gives the volume a light direction and a print tone.
+        const faceFill = opts.shade === true
+          ? (typeof opts.fillFor === 'function' ? opts.fillFor(f.name) : faceTone(f.name))
+          : fill;
         this.poly(f.quad, {
-          fill,
+          fill: faceFill,
           stroke: opts.faces === false ? null : stroke,
           width: opts.width == null ? 1.1 : opts.width,
           alpha: opts.alpha == null ? 1 : opts.alpha,

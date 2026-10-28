@@ -3,11 +3,12 @@
 | Field | Value |
 | --- | --- |
 | Status | deployed by GitHub Actions |
-| Branch | `arena/082e9ffd-vale` |
-| Commit | `c4269060` |
-| Built | 2026-10-27T14:31:40.075Z |
+| Branch | `arena/45e6b5a9-vale` |
+| Commit | `de04b9a0` |
+| Built | 2026-10-28T02:38:52.357Z |
 | Film | [../index.html](../index.html) |
 | Docs index | [index.html](index.html) |
+| Current state | [CURRENT_STATE.md](CURRENT_STATE.md) |
 | Handoff | [HANDOFF.md](HANDOFF.md) |
 | Architecture | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Changelog | [CHANGELOG.md](CHANGELOG.md) |

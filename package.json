@@ -9,7 +9,10 @@
     "docs": "node scripts/update-docs.mjs",
     "deploy:local": "npm run build && npm run docs",
     "dev": "npm run build && python3 -m http.server 8000 --bind 0.0.0.0",
-    "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js"
+    "check": "esbuild src/main.js --bundle --format=iife --outfile=/tmp/vale-check.js",
+    "serve": "python3 -m http.server 8123 --bind 0.0.0.0",
+    "setup:browser": "bash scripts/setup-headless.sh",
+    "shots": "node scripts/shoot.mjs shots/latest 0,6,12,16 1440 810"
   },
   "devDependencies": {
     "esbuild": "^0.25.12"

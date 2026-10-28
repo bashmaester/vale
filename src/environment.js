@@ -63,25 +63,84 @@ export function drawHorizon(p, camera, timeline, params) {
   }
 }
 
+// A ring of distant blocks so the frame has depth instead of a void. The
+// previous build left ~70% of the image as empty black, which is why the set
+// read as a tiny diagram floating in nothing. These are intentionally cheap:
+// dark masses, a few lit windows, no outlines competing with the corner.
+const BACKDROP = (() => {
+  const out = [];
+  const r = makeRng(77113);
+  for (let i = 0; i < 34; i++) {
+    const a = (i / 34) * Math.PI * 2 + r.range(-0.05, 0.05);
+    const dist = r.range(44, 78);
+    const x = Math.cos(a) * dist;
+    const z = Math.sin(a) * dist;
+    const w = r.range(6, 15);
+    const d = r.range(6, 15);
+    const h = r.range(9, 30) * (dist / 60);
+    out.push({ x, z, w, d, h, seed: r.range(1, 999), lit: r.range(0, 1) });
+  }
+  return out;
+})();
+
+export function drawBackdrop(p, camera, timeline, params) {
+  for (const b of BACKDROP) {
+    const faces = p.box(camera, [b.x, b.h / 2, b.z], [b.w, b.h, b.d], {
+      shade: true,
+      fillFor: (name) => (name === 'top' ? '#232a22' : name === 'front' || name === 'back' ? '#1b211a' : '#131812'),
+      stroke: 'rgba(239,233,216,0.26)',
+      width: 0.7,
+      alpha: 1,
+      seed: b.seed,
+      jitter: 0.18,
+      edgeAlpha: 0.4,
+    });
+    // Sparse lit windows are what make a dark city mass read as a city.
+    const front = faces.filter((f) => f.visible && f.name !== 'top' && f.name !== 'bottom');
+    if (!front.length) continue;
+    const f = front[0];
+    const cols = Math.max(2, Math.round(b.w / 2.6));
+    const rows = Math.max(3, Math.round(b.h / 3.0));
+    const litPolys = [];
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const hsh = hash21(x * 7.7 + b.seed, y * 3.1 + b.seed * 0.7);
+        if (hsh < 0.62 + b.lit * 0.2) continue;
+        const u0 = (x + 0.3) / cols, u1 = (x + 0.7) / cols;
+        const v0 = (y + 0.3) / rows, v1 = (y + 0.62) / rows;
+        litPolys.push([
+          quadLerp(f.quad, u0, v0), quadLerp(f.quad, u1, v0),
+          quadLerp(f.quad, u1, v1), quadLerp(f.quad, u0, v1),
+        ]);
+      }
+    }
+    if (litPolys.length) {
+      p.polys(litPolys, {
+        fill: 'rgba(239,233,216,0.20)', stroke: null, alpha: 0.9,
+      });
+    }
+  }
+}
+
 // STAGE 1 — big cubic volumes.
 export function drawBlockout(p, camera, timeline, params) {
   // Ground / asphalt planes.
   p.projectPoly(camera, [
     v3(ROAD.x0, 0, ROAD.z0), v3(ROAD.x1, 0, ROAD.z0),
     v3(ROAD.x1, 0, ROAD.z1), v3(ROAD.x0, 0, ROAD.z1),
-  ], { fill: '#070a08', stroke: null, jitter: 0, alpha: 1 });
+  ], { fill: '#11150f', stroke: null, jitter: 0, alpha: 1 });
   p.projectPoly(camera, [
     v3(ROAD_H.x0, 0.005, ROAD_H.z0), v3(ROAD_H.x1, 0.005, ROAD_H.z0),
     v3(ROAD_H.x1, 0.005, ROAD_H.z1), v3(ROAD_H.x0, 0.005, ROAD_H.z1),
-  ], { fill: '#0a0d0b', stroke: null, jitter: 0, alpha: 1 });
+  ], { fill: '#171c15', stroke: null, jitter: 0, alpha: 1 });
   p.projectPoly(camera, [
     v3(ROAD_V.x0, 0.006, ROAD_V.z0), v3(ROAD_V.x1, 0.006, ROAD_V.z0),
     v3(ROAD_V.x1, 0.006, ROAD_V.z1), v3(ROAD_V.x0, 0.006, ROAD_V.z1),
-  ], { fill: '#090c0a', stroke: null, jitter: 0, alpha: 1 });
+  ], { fill: '#151a14', stroke: null, jitter: 0, alpha: 1 });
   p.projectPoly(camera, [
     v3(INTERSECTION.x0, 0.007, INTERSECTION.z0), v3(INTERSECTION.x1, 0.007, INTERSECTION.z0),
     v3(INTERSECTION.x1, 0.007, INTERSECTION.z1), v3(INTERSECTION.x0, 0.007, INTERSECTION.z1),
-  ], { fill: '#0c100d', stroke: null, jitter: 0, alpha: 1 });
+  ], { fill: '#1a2019', stroke: null, jitter: 0, alpha: 1 });
 
   // Raised sidewalk blocks as shallow boxes, not flat decals.
   for (let i = 0; i < SIDEWALKS.length; i++) {
@@ -90,8 +149,8 @@ export function drawBlockout(p, camera, timeline, params) {
     const w = s.x1 - s.x0, d = s.z1 - s.z0;
     const isCorner = s.id === CORNER.id;
     const faces = p.box(camera, [cx, 0.18, cz], [w, 0.36, d], {
-      fill: isCorner ? 'rgba(22,27,23,0.98)' : 'rgba(16,21,18,0.95)',
-      stroke: isCorner ? 'rgba(239,233,216,0.62)' : 'rgba(239,233,216,0.38)',
+      fill: isCorner ? 'rgba(30,36,30,0.99)' : 'rgba(23,28,23,0.97)',
+      stroke: isCorner ? 'rgba(239,233,216,0.78)' : 'rgba(239,233,216,0.45)',
       width: isCorner ? 1.15 : 0.8,
       alpha: 0.96,
       seed: 700 + i,
@@ -284,26 +343,34 @@ function drawBuildingSign(p, camera, b) {
 }
 
 export function drawBuildings(p, camera, timeline, params) {
-  for (let i = 0; i < BUILDING_LOTS.length; i++) {
-    const b = BUILDING_LOTS[i];
+  // Painter's algorithm across separate buildings. Previously they were drawn
+  // in array order, so a near facade was overpainted by a far one and the
+  // whole block read as transparent wireframes.
+  const order = BUILDING_LOTS
+    .map((b, idx) => ({ b, idx, d: Math.hypot(b.x - camera.eye.x, b.z - camera.eye.z) }))
+    .sort((a, b) => b.d - a.d);
+  for (const { b, idx: i } of order) {
     const faces = p.box(camera, [b.x, b.h / 2, b.z], [b.w, b.h, b.d], {
-      fill: '#070908',
-      stroke: 'rgba(239,233,216,0.48)',
-      width: 1.0,
-      alpha: 0.96,
+      shade: true,
+      fillFor: (name) => (name === 'top'
+        ? '#2b332a'
+        : name === 'front' || name === 'back' ? '#212820' : '#121611'),
+      stroke: 'rgba(239,233,216,0.34)',
+      width: 0.95,
+      alpha: 1,
       seed: 950 + i,
-      jitter: 0.22,
-      edgeAlpha: 0.72,
+      jitter: 0.20,
+      edgeAlpha: 0.55,
     });
     const visible = faces.filter((f) => f.visible).sort((a, b2) => b2.depth - a.depth);
     for (let f = 0; f < Math.min(2, visible.length); f++) {
       p.gridOnQuad(visible[f].quad, b.cols, b.rows, {
-        fill: 'rgba(239,233,216,0.055)',
-        stroke: 'rgba(239,233,216,0.30)',
-        width: 0.5,
-        alpha: 0.72,
-        margin: 0.20,
-        skip: (x, y) => hash21(x + i * 3.1, y * 5.7 + f) > 0.84,
+        fill: 'rgba(239,233,216,0.52)',
+        stroke: 'rgba(12,15,11,0.85)',
+        width: 0.7,
+        alpha: 0.95,
+        margin: 0.22,
+        skip: (x, y) => hash21(x + i * 3.1, y * 5.7 + f) > 0.86,
       });
     }
     drawAwning(p, camera, b);
@@ -510,6 +577,7 @@ export function drawTrack(p, camera, timeline, params) {
 }
 
 export function drawEnvironment(p, camera, timeline, params) {
+  drawBackdrop(p, camera, timeline, params);
   drawHorizon(p, camera, timeline, params);
   drawBlockout(p, camera, timeline, params);
   drawRoadMarkings(p, camera, timeline, params);

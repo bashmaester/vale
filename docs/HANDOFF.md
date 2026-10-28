@@ -1,39 +1,55 @@
 # VALE — session handoff
 
-**Purpose:** resume this project in another session. The user’s latest
-assessment is that the result is “very underwhelming” and that “almost none” of
-their notes have landed. Treat this document as the source of truth for the
-next art-direction pass.
+**Purpose:** resume this project in another session without losing context.
 
-**Last reviewed:** 2026-10-27, merged to `main` via PR #1.
+**Last reviewed:** 2026-10-28 (Turn 6). Branch `arena/45e6b5a9-vale`.
 
 **Read in this order:**
 
 1. `docs/CURRENT_STATE.md` — frank snapshot of what is actually built.
-2. `docs/HANDOFF.md` — this file: notes, gaps, next steps.
-3. `docs/ARCHITECTURE.md` — technical pipeline.
-4. `docs/CHANGELOG.md` — turn-by-turn history.
-5. `docs/CI.md` — deployment notes.
+2. `docs/HANDOFF.md` — this file: status, notes, gaps, next steps.
+3. `docs/SCREENSHOTS.md` — how to look at the film, and what the stills show.
+4. `docs/ARCHITECTURE.md` — technical pipeline.
+5. `docs/CHANGELOG.md` — turn-by-turn history.
+6. `docs/CI.md` — deployment notes.
+
+---
+
+## 0. TL;DR for the next session
+
+The single biggest process failure — **no one could look at the film** — is
+fixed. There is now a working headless screenshot path
+(`npm run setup:browser`, `npm run shots`), and the first look at a real render
+explained most of the user's dissatisfaction in one shot.
+
+The first render showed a **wireframe CAD diagram floating in static**. Four
+causes were found and fixed this turn (invisible volumes, buildings painted in
+the wrong order, ~70% empty frame, print noise over empty paper) plus a camera
+that was an aerial plan instead of a street-level view of one corner.
+
+The film now reads as a night street corner. It is **better, not approved**.
+The next session must keep taking stills, then judge **motion**, which still has
+not been reviewed at all.
 
 ---
 
 ## 1. Reality check
 
-The repository has a working technical scaffold:
+**Solid:**
 
-- one self-contained `index.html`,
-- silent autoplaying 20s loop,
-- hybrid 3D→2D projection pipeline,
-- node-based WebGL2 shader graph,
-- hidden lab and user camera,
-- GitHub Pages CI,
-- one built-out street corner with buildings, signals, cars, people, rain and
-  puddles.
+- one self-contained `index.html`, silent, 20s autoplaying loop, no assets,
+- hybrid 3D→2D projection into an ink plate + field texture,
+- node-based WebGL2 shader graph with a hidden lab,
+- user camera takeover,
+- GitHub Pages CI that now deploys from **any** branch,
+- a working screenshot harness.
 
-But the **visual result is not approved**. The user explicitly said it is
-“very underwhelming” and that “almost none” of their notes have landed. Do not
-assume that because a feature exists in code, it reads on screen. The next
-session must validate against the references with real browser screenshots.
+**Not approved:**
+
+- the look has moved from "underwhelming diagram" to "readable night corner",
+  but it is still a first art pass,
+- the 20s cycle has only been judged as stills, never in motion,
+- rain, puddles, umbrellas and individual figures still do not read strongly.
 
 ---
 
@@ -54,14 +70,15 @@ session must validate against the references with real browser screenshots.
 
 ### Architecture / process corrections
 
-- Keep **hybrid 3D-2D**. The user explicitly rejected switching to pure 2D
-  Canvas/SVG as the main architecture.
+- Keep **hybrid 3D-2D**. Pure 2D Canvas/SVG as the main architecture was
+  explicitly rejected.
 - Focus on style, aesthetics, execution, shaders / TSL-like modular looks and
   parametric creation.
 - Build a representation of structure and feeling, not a simulation.
 - Keep a mini modular node-based shader graph.
 - Keep user camera / fly-around capability.
-- Keep CI deploying to GitHub Pages at the end of every turn.
+- Keep CI deploying to GitHub Pages at the end of every turn — **from any
+  branch**.
 - Keep docs and handoff current for interrupted sessions.
 
 ### Crowd / world corrections
@@ -71,10 +88,10 @@ session must validate against the references with real browser screenshots.
 - Humans must walk rather than slide.
 - World rules must prevent cars on crosswalks and interpenetration.
 - Hatching should be expressive and non-uniform.
-- Use “tiny people” architectural-sketch references:
-  small simple bodies, head dots/shapes, solid coats/pants, varied umbrella
-  silhouettes, ground shadows, occasional pairs/bags/dogs/strollers. Less detail
-  is fine if motion quality and feeling are right.
+- Use “tiny people” architectural-sketch references: small simple bodies, head
+  dots/shapes, solid coats/pants, varied umbrella silhouettes, ground shadows,
+  occasional pairs/bags/dogs/strollers. Less detail is fine if motion quality
+  and feeling are right.
 - All animation was too fast; slow it down while keeping camera movement.
 - People should cross in more directions than diagonals only.
 - People need more variety.
@@ -99,86 +116,76 @@ session must validate against the references with real browser screenshots.
 - Rain and puddles look good and should remain.
 - Bring back a raindrop and puddle simulation, not a shader noise overlay.
 
-### Latest feedback
+### Feedback history
 
-- “this is very underwhelming.”
-- “almost none of my notes ahve landed.”
-- Document current state, write handoff, commit/push, merge to main, include a
-  summary of the notes.
+- Turn 5: “this is very underwhelming.” / “almost none of my notes ahve
+  landed.” → led to the current-state + handoff pass.
+- Turn 6 (this turn): first screenshots taken; root causes found and fixed.
+  **No new user art feedback yet** — the next session should get stills in front
+  of the user early.
 
 ---
 
-## 3. What is technically in the repo now
+## 3. What is in the repo now
 
 - `src/world.js` — corner layout: two road strips, four sidewalk blocks,
   crosswalks, lanes, legal parking, four signal positions, four building lots,
-  weighted waiting zones and seven pedestrian flows.
-- `src/environment.js` — staged cubic set: road/sidewalk blockout, road
-  markings, buildings, traffic lights, street furniture, wires and track.
+  weighted waiting zones, seven pedestrian flows.
+- `src/environment.js` — **backdrop ring of 34 distant blocks**, staged cubic
+  set, tonally separated road/junction/sidewalk planes, road markings, solid
+  buildings painted far-to-near with paper windows, signals, street furniture,
+  wires and track.
+- `src/draw.js` — `PALETTE` print tonal ladder + `faceTone()`; `p.box()` can
+  shade each face (`shade: true`, `fillFor(name)`); rough lines, `sign3D()`.
 - `src/traffic.js` — five vehicles (three parked, two moving) plus a five-car
-  overhead train; parked cars are sanitized to legal curbs.
+  overhead train; parked cars sanitized to legal curbs.
 - `src/crowd.js` — ~122 tiny people with archetypes, coat/head/umbrella
-  variety, long shadows, accessories, companions and distance-driven gait.
+  variety, long shadows, accessories, distance-driven gait.
 - `src/weather.js` — 220 persistent 3D raindrop particles, 8 puddle polygons,
-  ripple rings, splash spikes and ambient drips.
-- `src/scene.js` — only `plate` and `field` canvases. No wet-glass canvas.
-- `src/shaders.js` / `src/graph.js` — 8-node GLSL graph; the `rain` node is a
-  disabled pass-through.
-- `src/camera.js` / `src/camera-control.js` — three-quarter corner camera plus
-  user orbit/fly takeover.
+  ripple rings, splash spikes, ambient drips.
+- `src/scene.js` — `plate` and `field` canvases only; no wet-glass canvas.
+- `src/shaders.js` / `src/graph.js` — 8-node GLSL graph; `rain` is a disabled
+  pass-through; `carve`/`detail`/`hatch`/`paper` are coverage-gated to ink.
+- `src/camera.js` — street-level three-quarter view of the NE corner.
 - `src/lab.js` — hidden patch bay.
-- `.github/workflows/deploy-pages.yml` — Pages CI.
-- `index.html` — generated self-contained deliverable.
-
-See `docs/CURRENT_STATE.md` for a frank table of “technical implementation vs
-visual confidence”.
+- `scripts/setup-headless.sh` — builds stub NSS/NSPR for bundled chromium.
+- `scripts/shoot.mjs` — pauses the film and writes PNG stills.
+- `.github/workflows/deploy-pages.yml` — Pages CI on **every branch**.
+- `docs/shots/` — before/after stills.
 
 ---
 
 ## 4. What has not landed visually
 
-The following are implemented in code but are **not approved visually**:
+Verified by looking at stills, not by reading code:
 
-- The set still feels sparse and blocky rather than like a rich street corner.
-- Buildings, cars and signals may be too small, too simple or badly placed.
-- People may still read as noise or stick marks at final resolution.
-- Walking motion may not read as hand-animated.
-- Rain and puddles may be too subtle after removing the fake overlay.
-- The shader finish may flatten the carved-line / grain feeling.
-- Camera framing was chosen by projecting coordinates, not by looking at a
-  render.
-- Overall composition, scale, density, contrast and rhythm have not been
-  validated against the supplied references.
-
-Root cause: no browser screenshot validation was possible in this sandbox. All
-visual tuning was done by reasoning about code.
+- **Hatch marble.** Unlit coarse hatch still leaves faint marbled swirls on
+  large facades. It should be a carved hatch, not marble.
+- **Umbrellas** read as thin ellipses. The notes ask for varied silhouettes
+  (dome, flat, pointed, tilted) that read at final size.
+- **Individual figures** are legible as a crowd mass but thin as people.
+- **Rain and puddles** are simulated but nearly invisible in a still.
+- **Footsteps breaking gouged reflections** is not yet visible.
+- **Signs** exist as `sign3D()` quads but are small and easy to miss.
+- **Motion** — walking weight, the drain, the empty beat, returning traffic —
+  has never been reviewed. Only stills exist.
 
 ---
 
 ## 5. Next session: first actions
 
-1. Open the film in a real browser. Capture stills at WAIT, CROSS, EMPTY and
-   TRAFFIC. If no browser is available, solve that first.
-2. Put the supplied architectural-sketch references beside those stills.
-3. Compare:
-   - people scale / density / shadows,
-   - building scale and silhouette,
-   - street and sidewalk readability,
-   - umbrella shapes,
-   - rain and puddle readability,
-   - palette balance,
-   - carved line and grain quality.
-4. Re-art-direct from the references. It is acceptable to discard large parts
-   of `environment.js`, `camera.js`, `crowd.js` or `weather.js` if they block the
-   image.
-5. Keep the stable infrastructure: self-contained `index.html`, hybrid 3D→2D,
-   hidden lab, user camera, node shader graph and Pages CI.
-6. Rebuild the set in visible stages and validate each stage with a screenshot:
-   big volumes → road markings → buildings/signals/cars → people → rain/puddles
-   → shader finish.
-7. Tune a still frame first. Only then tune motion and the 20s cycle.
-8. Consider bypassing the shader graph temporarily in the lab to judge the raw
-   ink plate, then re-enable the print finish.
+1. `npm install && npm run setup:browser && npm run build && npm run serve &`
+2. `npm run shots` then **look at all four stills**. Do not skip this.
+3. Get the stills in front of the user and ask which single flaw matters most.
+4. Fix one flaw at a time, re-shooting after each. Suggested order:
+   - umbrella silhouettes (cheap, high visual payoff for the crowd),
+   - hatch marble on facades,
+   - rain/puddle readability,
+   - then motion: capture a short sequence of frames across the 20s cycle.
+5. Only after stills hold up, judge the cycle in motion (walking weight, drain,
+   empty beat, returning traffic).
+6. Keep the infrastructure: self-contained output, hybrid 3D→2D, hidden lab,
+   user camera, node graph, Pages CI.
 
 ---
 
@@ -192,12 +199,17 @@ visual tuning was done by reasoning about code.
 - Hidden lab / camera HUD only; no normal website UI.
 - User camera takeover.
 - All artwork code-generated.
-- CI deploys to GitHub Pages on pushes.
+- CI deploys to GitHub Pages on pushes, **from any branch**.
 - Human docs stay current.
-- No procedural wet-glass overlay; rain/puddles should be a real simulation.
+- No procedural wet-glass overlay; rain/puddles are a real simulation.
 - Traffic lights only at intersection corners.
 - Parked cars must pass `sanitizePark()` / `isParkable()`.
 - Signs are `sign3D()` oriented quads, not billboards.
+- **Big volumes are drawn as shaded masses** (`shade: true`), never as flat
+  background-coloured fills — that bug is what made the set a wireframe.
+- **New shader effects must be coverage-gated** to plate luma, or they will fog
+  empty paper.
+- **Look at stills before claiming a visual change landed.**
 
 ---
 
@@ -207,8 +219,12 @@ visual tuning was done by reasoning about code.
 npm install
 npm run build           # regenerate self-contained index.html
 npm run docs            # regenerate deploy metadata + docs/index.html
+npm run deploy:local    # build + docs
+npm run serve           # static server on :8123 (0.0.0.0)
 npm run dev             # build + serve on :8000
 npm run check           # esbuild bundle check
+npm run setup:browser   # one-time headless chromium setup
+npm run shots           # stills at 0,6,12,16 → shots/latest/
 ```
 
 Useful URLs:
@@ -226,14 +242,15 @@ Live site: https://bashmaester.github.io/vale/
 
 ## 8. Branch / merge / deploy
 
-- Working branch: `arena/082e9ffd-vale`.
-- This handoff commit is pushed to that branch.
-- Merged to `main` via PR #1 from
-  `arena/082e9ffd-vale` → `main` using `gh pr merge`, without switching the
-  local working branch.
-- Pages CI triggers on both the working branch and `main`.
-- Generated deploy metadata lives in `BUILD.md`, `DEPLOY_STATUS.md`,
-  `manifest.json` and `docs/index.html`; CI regenerates these on deploy.
+- Working branch: `arena/45e6b5a9-vale` (cut from `main` at `de04b9a`).
+- Docs and code are committed and pushed to that branch every turn.
+- Pages CI triggers on **every branch** (`'**'`), plus `workflow_dispatch`.
+  The old hard-coded branch list still named a previous session's branch, which
+  is why deploys would silently stop after a handover.
+- Generated deploy metadata lives in `docs/BUILD.md`, `docs/DEPLOY_STATUS.md`,
+  `docs/manifest.json` and `docs/index.html`; CI regenerates these on deploy.
+- `docs/shots/` stills are committed on purpose — they are the visual record the
+  next session needs. Working output in `shots/` is gitignored.
 
 ---
 
@@ -243,24 +260,28 @@ Live site: https://bashmaester.github.io/vale/
 index.html                  generated deliverable
 build.mjs                   inlines CSS+JS into index.html
 scripts/update-docs.mjs     deploy docs generator
-.github/workflows/...       Pages CI
+scripts/setup-headless.sh   stub NSS/NSPR + install bundled chromium
+scripts/shoot.mjs           headless stills of the film
+.github/workflows/...       Pages CI (any branch)
 docs/CURRENT_STATE.md       frank snapshot of what is actually built
 docs/HANDOFF.md             this file
+docs/SCREENSHOTS.md         how to look at the film + what stills revealed
+docs/shots/                 before/after reference stills
 docs/ARCHITECTURE.md        system design
 docs/CHANGELOG.md           turn-by-turn changes
 docs/CI.md                  deployment notes
 src/world.js                corner layout and world rules
 src/collision.js            separation + poissonDisk
-src/camera.js               three-quarter corner camera rig
+src/camera.js               street-level corner camera rig
 src/camera-control.js       user orbit/fly camera
-src/environment.js          staged cubic set
+src/environment.js          backdrop + staged cubic set
 src/traffic.js              five vehicles + train
 src/crowd.js                varied tiny 3D people
 src/weather.js              raindrop particles + puddle ripples
 src/scene.js                plate/field orchestration
 src/shaders.js              GLSL node defs + presets
 src/graph.js                shader graph compiler
-src/draw.js                 painter primitives incl. sign3D()
+src/draw.js                 painter primitives + print tonal ladder
 src/lab.js                  optional patch bay
 src/main.js                 wiring + query params + loop
 ```
@@ -269,7 +290,9 @@ src/main.js                 wiring + query params + loop
 
 ## 10. Bottom line
 
-The current build is a technical prototype, not the film the user asked for.
-The next session should start from the references and the notes above, not from
-the assumption that the current look is correct. Real browser screenshots are
-the missing validation step.
+The film went from an unreadable wireframe diagram to a readable night street
+corner in one turn, and the reason is simple: it was finally looked at.
+
+Do that first, every turn. `npm run shots`, then open the images. The single
+largest remaining risk is a session that edits code, reads the diff, and
+declares victory without a still.

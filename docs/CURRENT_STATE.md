@@ -1,7 +1,11 @@
 # VALE — current state (frank snapshot)
 
-**Last updated:** 2026-10-27, after the user said the result is “very
-underwhelming” and “almost none of my notes have landed.”
+**Last updated:** 2026-10-28 (Turn 6), after the first real screenshot pass.
+
+The previous version of this file (2026-10-27) recorded “no browser screenshot
+was possible in this sandbox” as the #1 blocker. That is solved: see
+`docs/SCREENSHOTS.md`. The first stills explained most of the “underwhelming”
+verdict, and the look was rebuilt from them.
 
 Read this before making another visual change. The repository has a working
 technical scaffold, but it should **not** be treated as a finished or approved
@@ -18,18 +22,24 @@ look.
 - Hidden lab (`?lab=1`) with node graph, scene params, camera tab, timeline
   scrubber, presets and export controls.
 - User camera takeover (`?cam=orbit`, `?cam=fly`, `?hud=0`, WASD/QE, etc.).
-- GitHub Pages CI on `arena/082e9ffd-vale` and `main`.
+- GitHub Pages CI on **every branch**, plus `workflow_dispatch`.
+- A headless screenshot harness (`scripts/setup-headless.sh`,
+  `scripts/shoot.mjs`) with committed before/after stills in `docs/shots/`.
 - Human docs: `HANDOFF.md`, `ARCHITECTURE.md`, `CHANGELOG.md`, `CI.md`,
   `CURRENT_STATE.md` (this file).
 
 ### Current scene contents
 
+- A **backdrop ring of 34 distant blocks** with sparse lit windows, drawn first
+  so the frame has depth instead of a void.
 - One built-out northeast street corner.
-- Two crossing road strips and four raised sidewalk boxes.
+- Two crossing road strips and four raised sidewalk boxes, each plane at its
+  own tone so carriageway, junction and curb read apart.
 - Four straight crosswalks, stop lines, lane dividers, arrows, manhole covers,
   tactile paving.
-- Four cubic building volumes with windows, awnings, roof parapets, rooftop
-  boxes, accent stripes and oriented 3D signs.
+- Four cubic building volumes, **painted far-to-near as shaded solid masses**
+  with bright paper window openings, awnings, roof parapets, rooftop boxes,
+  accent stripes and oriented 3D signs.
 - Four traffic-light poles at the four intersection corners, each with a
   vehicle head and pedestrian head.
 - Five vehicles: three parked at legal curbs, two moving in separated lanes,
@@ -37,18 +47,19 @@ look.
 - ~122 tiny people (92 crossers + 30 waiters) with archetypes, coat shapes,
   head shapes, umbrellas, long shadows, accessories and occasional companions.
 - Raindrop/puddle simulation: 220 persistent 3D raindrop particles, 8 puddle
-  polygons, ripple rings, splash spikes and ambient drips.
+  polygons, ripple rings, splash spikes and ambient drips. Present and running,
+  but only faintly readable in a still — an open problem.
 - No `wet` canvas and no procedural wet-glass shader overlay. The shader `rain`
   node is a disabled pass-through.
-- Camera: restrained three-quarter view of the corner, eye roughly
-  `[-28, 28, 48]`, target `[0, 1, -3]`.
+- Camera: **street-level** three-quarter view of the NE corner, eye roughly
+  `[-15.5, 9.6, 17.5]`, target `[10.5, 4.1, -11.0]`. This replaced an aerial
+  plan that put the set in a third of the frame.
 
 ### Current code state
 
-- Branch before this handoff commit: `arena/082e9ffd-vale`.
-- Last functional commit before this handoff: `6080f18`.
+- Working branch: `arena/45e6b5a9-vale` (cut from `main` at `de04b9a`).
 - `index.html` is generated from `src/` by `npm run build` and is committed.
-- Build/check/docs commands pass locally.
+- Build / check / docs / shots commands pass locally.
 - Live site: https://bashmaester.github.io/vale/
 
 ---
@@ -135,10 +146,10 @@ outside visual assets, no normal website UI, no audio.
 
 ---
 
-## 4. What technically landed vs. what probably did not land visually
+## 4. What technically landed vs. what the stills show
 
-This distinction matters. Code exists for most items, but that does **not** mean
-the user can see or feel them.
+This table used to be guesswork. As of Turn 6 the “visual confidence” column is
+based on actual screenshots (`docs/shots/`), not on reading code.
 
 | Note | Technical implementation | Visual confidence |
 | --- | --- | --- |
@@ -148,38 +159,37 @@ the user can see or feel them.
 | Node-based shader graph | Yes, 8 nodes + lab | High |
 | User camera takeover | Yes | High |
 | Pages CI + docs | Yes | High |
-| Tiny people | Yes, archetypes/accessories | Low — may still read as noise or stick marks |
-| People don’t overlap | Yes, separation solver | Medium |
-| Walk rather than slide | Yes, distance-driven stride | Low — needs visual proof |
+| Tiny people | Yes, archetypes/accessories | Medium — reads as a crowd mass; individual figures thin |
+| People don’t overlap | Yes, separation solver | Medium — verified in stills |
+| Walk rather than slide | Yes, distance-driven stride | **Unverified** — stills cannot show this |
 | More directions than diagonals | Yes, straight + diagonal + stroll | Medium |
 | Slower motion | Yes, `motionT = 0.62 × t` | Medium |
-| Proper sidewalk street | Yes, raised boxes + curbs | Low — may still look flat/sparse |
-| Cubic volume set | Yes, staged boxes | Low — likely too blocky/unconvincing |
-| Traffic lights only at corners | Yes, four poles | Low — may be too small or poorly oriented |
-| Few buildings / cars where they belong | Yes, four buildings + five cars | Low — proportions/placement may be wrong |
-| Signs 3D, not billboards | Yes, `sign3D()` | Medium |
+| Proper sidewalk street | Yes, raised boxes + curbs | High — tone separation fixed this |
+| Cubic volume set | Yes, staged shaded boxes | Medium — solid now, blocky but intentional |
+| Traffic lights only at corners | Yes, four poles | Medium — present and oriented, small on screen |
+| Few buildings / cars where they belong | Yes, 4 buildings + 5 cars + 34-block backdrop | Medium |
+| Signs 3D, not billboards | Yes, `sign3D()` | Low — correct geometry, easy to miss at size |
 | Remove wet-glass overlay | Yes | High |
-| Raindrop / puddle sim | Yes, particles + ripples | Low — may be too subtle or not readable |
-| Rough carved lines / print grain | Yes, shader nodes | Low — likely too generic |
-| Expressive non-uniform hatch | Yes, shader code | Low — needs art direction |
-| Overall aesthetic / feeling | **No** | **Very low — user says underwhelming** |
+| Raindrop / puddle sim | Yes, particles + ripples | Low — runs, barely reads in a still |
+| Rough carved lines / print grain | Yes, shader nodes | Medium — texture reads; marble swirls remain |
+| Expressive non-uniform hatch | Yes, shader code | Medium — now broken/directional, not marble |
+| Overall aesthetic / feeling | Partial | **Not approved** — first art pass only |
 
 ---
 
 ## 5. Likely root causes
 
-1. **No browser screenshot validation in this sandbox.** All visual tuning was
-   done by reasoning about code and projecting coordinates. This is the biggest
-   process failure.
+1. **No browser screenshot validation was possible** — now fixed, and it
+   immediately exposed the real bug (background-coloured box fills). This was
+   the biggest process failure and it cost several turns.
 2. **Technical scaffolding was mistaken for art direction.** Modules exist, but
    composition, scale, density, contrast, rhythm and texture were not validated
    against the references.
 3. **Too many simultaneous corrections.** The current code tries to satisfy
    crowd, world rules, camera, CI, set, rain and shader graph all at once. The
    result is coherent as a system but weak as an image.
-4. **The set may be too sparse.** “A few buildings / a few cars” was implemented
-   literally, but the scene may need richer big volumes, clearer street
-   hierarchy and stronger foreground/midground/background separation.
+4. **The set was too sparse and floated in a void.** Fixed with a 34-block
+   backdrop ring and a much tighter camera; the set now fills the frame.
 5. **People may be too small or too uniform at final resolution.** More variety
    was added in code, but the visual signal may be lost.
 6. **Rain/puddles may be too subtle.** The fake overlay was removed, but the
@@ -193,13 +203,11 @@ the user can see or feel them.
 
 ## 6. Recommended next-session plan
 
-Do **not** start by adding more features. Start by making one compelling frame.
-
-1. Open the current film in a real browser. Capture stills at WAIT, CROSS,
-   EMPTY and TRAFFIC. If no browser is available in the next environment, make
-   that the first blocker to solve.
-2. Put the two supplied architectural-sketch references next to the current
-   frames. Compare:
+1. `npm run setup:browser` once, then `npm run shots`. Capture stills at WAIT,
+   CROSS, EMPTY and TRAFFIC and **look at them**.
+2. Compare the current frames against the notes (the supplied
+   architectural-sketch references are not in the repo; ask the user if they are
+   needed again):
    - people size / density / shadows,
    - building scale and silhouette,
    - street/sidewalk readability,

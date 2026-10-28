@@ -2,6 +2,79 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-28 — Turn 6: first real screenshot pass, and the look rebuilt from it
+
+**Why this turn exists:** the previous session handed off with “no browser
+screenshot validation was possible in this sandbox” as the #1 blocker. That
+blocker is now solved, and the first look at a real render immediately explained
+the user’s “very underwhelming” verdict.
+
+### Solved the screenshot blocker
+
+The sandbox has no system Chromium and can only reach the npm registry, so the
+usual Playwright/Puppeteer download paths are closed. `@sparticuz/chromium`
+ships a chromium binary inside its npm tarball, but it links against NSS/NSPR.
+`scripts/setup-headless.sh` generates stub NSS/NSPR shared libraries exporting
+exactly the 44 symbols the binary requests, then verifies with `ldd`.
+`scripts/shoot.mjs` drives it through `puppeteer-core`, pauses the film at
+chosen times and writes PNGs. Both are committed; see `docs/SCREENSHOTS.md`.
+
+### The diagnosis the screenshots produced
+
+The first frames showed a **wireframe CAD diagram floating in a sea of static**.
+Four root causes, none of which are visible from reading the code:
+
+1. `p.box()` filled every face with `PALETTE.black` (`#050605`) against a
+   `#070807` background, so buildings and sidewalks were **outlines over
+   nothing**. Most of the “underwhelming” verdict is this one bug.
+2. `drawBuildings()` painted in array order, so far facades overpainted near
+   ones and the whole block read as transparent wireframes.
+3. ~70% of the frame was empty black; the set occupied about 30% and floated.
+4. The print shaders painted fbm noise across **empty paper**, so mottled static
+   covered the entire image and swamped the artwork.
+
+### Changed
+
+- `src/draw.js`: added a real print tonal ladder to `PALETTE` (`massFront`,
+  `massSide`, `massTop`, `massDeep`, `lit`) and `faceTone()`. `p.box()` gained
+  `shade: true` / `fillFor(name)` so each face is filled at its own tone.
+- `src/environment.js`: added `drawBackdrop()` — a ring of 34 distant blocks
+  with sparse lit windows — drawn first so the frame has depth instead of a void.
+- `src/environment.js`: `drawBuildings()` now sorts lots far-to-near
+  (painter’s algorithm) before painting, and facades are solid masses with
+  bright paper window openings. Structural outlines softened; the corner
+  building keeps stronger edges.
+- `src/environment.js`: road planes, junction and sidewalk blocks each get a
+  distinct tone so the carriageway and curbs read; tonal ladder pushed darker
+  overall so the windows and red/teal accents punch.
+- `src/camera.js`: camera moved from an aerial plan of the whole junction to a
+  **near-street-level three-quarter view of one corner** — eye ≈
+  `[-15.5, 9.6, 17.5]`, target ≈ `[10.5, 4.1, -11.0]`, fov 50.
+- `src/shaders.js`: `carve`, `detail`, `hatch` and `paper` multiply their effect
+  by a plate-luma coverage gate, so print texture lands on ink and leaves empty
+  paper empty. Retuned defaults (`carve` tool size 13→6, `hatch` spacing 7.5→6.5,
+  strength 0.34→0.22, warp 0.55→0.18, jitter 0.45→0.14, `bleed` 0.18→0.07,
+  `dither` 0.055→0.022, `speckle` 0.5→0.16) and updated every preset to match,
+  because presets silently override node defaults.
+- `.github/workflows/deploy-pages.yml`: triggers on **any** branch (`'**'`)
+  instead of a hard-coded list of two. The old list still named the previous
+  session’s branch, so CI silently stopped deploying after handover.
+- `package.json`: `setup:browser`, `shots`, `serve` scripts.
+- `docs/SCREENSHOTS.md` (new), `docs/shots/` (before/after stills).
+- `docs/ARCHITECTURE.md`: tonal ladder, backdrop, painter’s ordering, coverage
+  gating and the new camera documented.
+- `docs/CURRENT_STATE.md`, `docs/HANDOFF.md`, `docs/CI.md`: refreshed.
+
+### Result
+
+The film now reads as a night street corner with solid building masses, a
+readable sidewalk/crossing hierarchy, layered depth and a legible crowd, instead
+of a wireframe in a void. Still not approved: see “Still open” in
+`docs/SCREENSHOTS.md` — hatch marble on large facades, umbrella silhouettes,
+rain/puddle readability, and motion that has only been judged as stills.
+
+---
+
 ## 2026-10-27 — Turn 5: current-state documentation and handoff
 
 **User feedback:** “very underwhelming” and “almost none of my notes ahve

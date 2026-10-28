@@ -2,9 +2,9 @@
 
 A silent, autoplaying 20-second film in **one self-contained `index.html`**. A rainy Tokyo **street corner** is built as a real 3D volume set, projected into a 2D “printing plate,” then finished by a node-based GLSL print pipeline. No outside visual assets, no fonts, no network requests, no audio, and no visible website UI during playback.
 
-> **Status (2026-10-27):** the current build is a working technical scaffold, **not an approved visual result**. The latest user feedback is “very underwhelming” and “almost none of my notes have landed.” Before making further visual changes, read `docs/CURRENT_STATE.md` and `docs/HANDOFF.md`, then validate real browser screenshots against the supplied references.
+> **Status (2026-10-28):** the build is now a readable night street corner, **not an approved visual result**. It previously rendered as a wireframe diagram floating in static — a real screenshot pass found the cause (box faces were filled with the background colour) and rebuilt the look. Before changing visuals, read `docs/CURRENT_STATE.md`, `docs/HANDOFF.md` and `docs/SCREENSHOTS.md`, and take stills with `npm run shots` before claiming anything landed.
 
-> Note: this branch arrived with only the initial `README.md`. The implementation here is a fresh rebuild of the foundation around the hybrid 3D→2D direction, not a restoration of files from the earlier session.
+> Note: the original branch arrived with only `README.md`; the implementation is a rebuild around the hybrid 3D→2D direction. Turn 6 added a headless screenshot harness so visual changes can actually be checked — see `docs/SCREENSHOTS.md`.
 
 ---
 
@@ -16,6 +16,11 @@ npm run build           # regenerates the self-contained index.html
 npm run docs            # regenerates deploy metadata + docs/index.html
 npm run deploy:local    # build + docs
 npm run dev             # builds, then serves on http://localhost:8000
+npm run serve           # serves the current build on :8123
+
+# look at what you built (one-time browser setup, then stills)
+npm run setup:browser
+npm run shots           # → shots/latest/t{0,6,12,16}.png
 ```
 
 Or just open `index.html` directly — it works from `file://` because everything is inlined.
@@ -164,7 +169,7 @@ src/main.js                      wiring, query params, animation loop
 
 ## CI / Pages / handoff
 
-Every push to `arena/082e9ffd-vale` (and `main`) runs
+Every push to **any** branch runs
 `.github/workflows/deploy-pages.yml`: install → build → validate
 self-containment → regenerate docs → upload `_site/` → deploy with
 `actions/deploy-pages`. `npm run docs` writes fresh commit/branch/timestamp

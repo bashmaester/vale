@@ -1,10 +1,11 @@
 name: Deploy film + handoff docs to GitHub Pages
 
 on:
+  # Deploy from ANY branch. Sessions run on throwaway arena/* branches, so a
+  # hard-coded branch list silently stops deploying after the first handover.
   push:
     branches:
-      - arena/082e9ffd-vale
-      - main
+      - '**'
   workflow_dispatch:
 
 permissions:
