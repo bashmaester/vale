@@ -293,7 +293,9 @@ export class Sidebar {
       value: this.director.shot,
       options: this.director.shots.map((s) => [s.id, s.label]),
       onChange: (v) => { this.director.setMode('cinematic'); this.director.setShot(v); },
-      get: () => this.director.shot,
+      // While the drone is flying it *is* holding the `architect` framing, so
+      // report that rather than the cinematic rotation's last selection.
+      get: () => (this.director.mode === 'drone' ? 'architect' : this.director.shot),
     }));
     cam.appendChild(this.toggleRow({
       label: 'show control hint',
@@ -634,6 +636,20 @@ export class Sidebar {
       onInput: (v) => { this.state.speed = v; },
       get: () => this.state.speed,
     }));
+    // The loop position and its phase name, readable without opening the lab.
+    // Judging a moment in the cycle was the one thing the panel could not do.
+    this.timeRow = el('div', 'sb-row sb-row-inline');
+    this.timeRow.appendChild(el('span', 'sb-label', 'loop'));
+    this.timeValue = el('span', 'sb-sub', '0.00 s · WAIT');
+    this.timeRow.appendChild(this.timeValue);
+    pb.appendChild(this.timeRow);
+    pb.appendChild(this.slider({
+      label: 'time',
+      min: 0, max: 20, step: 0.01,
+      value: 0,
+      onInput: (v) => { this.state.time = v; this.state.paused = true; this.refresh(); },
+      get: () => ((this.state.time % 20) + 20) % 20,
+    }));
     root.appendChild(pb);
 
     this.built = true;
@@ -643,6 +659,13 @@ export class Sidebar {
   // Re-read values from the live objects (preset switch, lab, keyboard).
   // Every row registers a `sync` that pulls the authoritative value back into
   // its widget, so the panel never drifts from the scene.
+  // Called every frame from main.js: cheap, keeps the loop readout live.
+  tick(timeline) {
+    if (!this.built || !this.timeValue) return;
+    const t = ((this.state.time % 20) + 20) % 20;
+    this.timeValue.textContent = `${t.toFixed(2)} s · ${timeline.label()}`;
+  }
+
   refresh() {
     if (!this.built) return;
     for (const r of this.rows) {

@@ -128,6 +128,11 @@ export class Scene {
     this.worldSize = size;
     this.world = buildWorld({ size, ids, seed: Math.max(1, this.params.worldSeed | 0) });
     setWorld(this.world);
+    // The crowd's walking lanes are derived from the tiles, so a new grid means
+    // new pavements to walk. Without this the crowd kept the lanes of the world
+    // it was born into. Guarded because the first call happens before the
+    // crowd exists.
+    if (this.crowd) this.crowd.rebuild();
     this._staticKey = '';
     return this.world;
   }

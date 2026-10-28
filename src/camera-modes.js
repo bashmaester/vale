@@ -71,6 +71,15 @@ export const SHOTS = [
     auto: true,
   },
   {
+    // The film's default eye, named so it appears in the shot list. The drone
+    // opens here and the sidebar shows it selected, so "the default view" is
+    // something you can return to instead of an implicit, undocumented framing.
+    // High, three-quarter, whole volume in frame, no drift worth noticing.
+    id: 'architect', label: 'Architect · default',
+    eye: v3(20.0, 20.0, 36.0), target: v3(2.0, 1.6, 6.0), fov: 38.5,
+    drift: 0.05,
+  },
+  {
     id: 'tripod', label: 'Tripod · street level',
     eye: v3(-8.4, 7.2, 28.5), target: v3(2.0, 3.0, 4.0), fov: 34,
     drift: 0.14,
@@ -98,10 +107,16 @@ export class CinematicMode extends CameraMode {
     this.id = 'cinematic';
     this.label = 'CINEMATIC';
     this.hint = 'steady shots · [ ] change shot · C for free camera';
+    // `rig` stays the cinematic default on purpose: it is the keyframed camera,
+    // a pure function of loop time. The steady shots integrate their own clock,
+    // so making one of them the default broke the bit-exact 20 s loop.
     this.shot = 'rig';
     this.time = 0;
   }
   get shotDef() { return SHOTS.find((s) => s.id === this.shot) || SHOTS[0]; }
+  // The film's default eye is the `architect` framing (the drone opens on it).
+  // It is a steady shot you can pick, not the cinematic default.
+  get defaultShot() { return 'architect'; }
   setShot(id) {
     if (!SHOTS.some((s) => s.id === id)) return false;
     this.shot = id;
@@ -278,14 +293,17 @@ export class DroneMode extends CameraMode {
   onWheel(dy) {
     this.speed = clamp(this.speed * Math.exp(-dy * 0.0009), 2, 60);
   }
-  // The drone is the default eye of the film, so it opens on the shot the
-  // cinematic rig established: high, three-quarter, whole volume in frame.
+  // The drone is the default eye of the film, so it opens on the `architect`
+  // shot: high, three-quarter, whole volume in frame. Read from the shot list
+  // rather than duplicating the numbers, so the named view and the default eye
+  // can never drift apart.
   enter() {
     const d = this.dir;
+    const def = SHOTS.find((s) => s.id === 'architect') || SHOTS[1];
     d.fov = 40;
     if (this.touched) return;
-    d.eye = v3(20.0, 20.0, 36.0);
-    d.target = v3(2.0, 1.6, 6.0);
+    d.eye = { ...def.eye };
+    d.target = { ...def.target };
     const yp = yawPitchFromDir(norm3(sub3(d.target, d.eye)));
     d.yaw = yp.yaw;
     d.pitch = yp.pitch;

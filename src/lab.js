@@ -188,10 +188,15 @@ export class Lab {
 
   _buildPhasebar() {
     for (const p of PHASES) {
-      const d = el('div', 'lab-phase', p.id);
+      const w = (p.b - p.a) * 100;
+      // The bar used to be unlabelled colour blocks, so you could not tell WAIT
+      // from SIGNAL from TRAFFIC while scrubbing. Name each phase, but skip the
+      // label on segments too narrow to hold it.
+      const d = el('div', 'lab-phase', w >= 9 ? p.id : '');
       d.style.left = `${p.a * 100}%`;
-      d.style.width = `${(p.b - p.a) * 100}%`;
+      d.style.width = `${w}%`;
       d.style.background = p.color;
+      d.title = `${p.id} · ${(p.a * DURATION).toFixed(1)}–${(p.b * DURATION).toFixed(1)} s`;
       this.phasebar.appendChild(d);
     }
     this.cursor = el('div', 'lab-cursor');

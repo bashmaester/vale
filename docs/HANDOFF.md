@@ -5,6 +5,35 @@ anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
 ---
 
+## Turn 18 — what changed (2026-10-28)
+
+Four user notes, all landed and checked against stills:
+
+1. **`architect`** is now a named steady shot (`Architect · default`) and the
+   drone opens on it. It is *not* the cinematic default — that stays `rig`,
+   because a drifting shot as the default breaks the bit-exact loop (see below).
+2. **Corner fillets curve into the street.** Kerb arcs are tangent to both
+   kerbs; the old ones bulged into the pavement.
+3. **Loop timing is readable**: the sidebar Playback section shows
+   `loop 13.50 s · CROSS` with a time slider, and the lab phase bar is labelled.
+4. **People walk every street.** Pavement lanes are derived from the built tiles
+   (`streetLanes()` / `laneFlows()` in `world.js`), so the crowd follows the
+   world instead of a fixed set of stage flows.
+
+**Two traps that cost time, worth knowing:**
+
+- The pavement strip on a street edge is `HALF_ROAD` (3.6 m) of *that tile's own
+  carriageway* followed by `WALK` (2.4 m) of pavement — `cells.js`
+  `drawGround` is the authority. Putting a lane band against the seam places it
+  in a carriageway, where `isOnSidewalk` rejects every sample and the streets
+  stay empty with no error.
+- **A drifting camera must never be the default.** Steady shots integrate their
+  own clock; `rig` (and anything else the default can be) must stay a pure
+  function of loop time or `npm run determinism` fails at every loop point.
+  `npm run verify` catches this — run it before pushing a camera change.
+
+---
+
 ## Turn 17 — continuity note (2026-10-28)
 
 **Branch:** `arena/45e6b5a9-vale` now **contains the state of

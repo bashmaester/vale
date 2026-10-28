@@ -2,6 +2,72 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-28 — Turn 18: architect view, corner fillets, walkable streets
+
+**User feedback (four notes):** the default view is missing from the style
+choices and should be called `architect`; sidewalk corners curve the wrong way
+(they should curve *into* the streets); “sometimes are not combining properly”;
+people should walk all over the available streets.
+
+### Added
+
+- **`architect` steady shot.** The film's default eye (high, three-quarter,
+  whole volume) was only ever an undocumented hard-coded pose inside the drone
+  mode, so it never appeared in the shot list. It is now a named entry,
+  `Architect · default`, and the drone reads its numbers from that entry rather
+  than duplicating them — the two can no longer drift apart. The sidebar reports
+  `architect` while the drone holds that framing.
+- **Pavement lanes derived from the built world.** `world.js` grew
+  `streetLanes()` and `laneFlows()`: they walk the tiles, and for every street
+  edge emit one lane per pavement, split at junctions (a pavement does not carry
+  on through another street's carriageway) and emitted once per shared seam.
+  `crowd.js` mixes those lanes with the hand-authored stage flows.
+- Largest-remainder allocation for walkers. With ~55 flows and ~80 people,
+  `floor(N * weight)` silently gave **47 of the 48 lanes zero walkers**.
+- Sidebar **Playback** now shows `loop 13.50 s · CROSS` and has a time slider, so
+  a moment in the cycle can be found without opening the lab.
+- Lab phase bar segments are labelled and titled (`CROSS · 4.4–13.6 s`). They
+  were anonymous colour blocks, which is why scrubbing the timeline told you
+  nothing.
+
+### Fixed
+
+- **Corner fillets curved the wrong way.** The arc was swept around the pavement
+  corner, so the bulge went into the pavement and read as the pavement swelling
+  over the road. A true fillet is tangent to both kerbs: its centre sits
+  `R` inside the pavement and the arc bulges back toward the street. The sliver
+  between corner and arc is roadway.
+- **Lane bands were on the wrong side of the seam.** The first version put each
+  pavement band against the tile edge. The strip a tile owns on a street edge is
+  6 m — `HALF_ROAD` of its own carriageway, *then* `WALK` of pavement — so every
+  lane landed inside a carriageway, `isOnSidewalk` rejected all of them, and the
+  streets stayed empty. `cells.js` `drawGround` is the authority here.
+- Crowd bands are axis-aware (`{ axis, a0, a1 }`). A north-south lane has to be
+  clamped in x, and the old band only knew about z.
+- **`?shot=` was silently ignored.** Naming a shot while the default drone was
+  driving recorded the selection but never applied it, so the URL said one thing
+  and the picture showed another. A named shot now implies cinematic mode unless
+  `?cam=` was given explicitly.
+- `rebuildWorld()` now rebuilds the crowd, so changing the tile grid gives the
+  crowd the new pavements instead of the ones it was born with.
+
+### Caught by the checks
+
+Making `architect` the **cinematic** default broke `npm run verify` outright:
+the steady shots integrate their own clock, so a drifting shot as the default
+made `t = 0` and `t = 20` differ. `rig` stays the cinematic default (it is a
+pure function of loop time) and `architect` is a shot you can select. Without
+the determinism check this would have shipped as a silently broken loop.
+
+### Verified
+
+`npm run verify` passes, including `looping every 20s, bit-exact`. Crowd census
+on the 3×3 default: **55 of 63 lanes occupied**, 78 walkers spanning
+`x −44.1 … 42.7`, `z −31.7 … 32.4` (previously the crowd sat inside
+`x ±10.4`, `z 6.7 … 17.9`).
+
+---
+
 ## 2026-10-28 — Turn 17: recover the real branch, keep only what travels
 
 **What happened:** a session began on `arena/45e6b5a9-vale` from `main`

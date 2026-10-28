@@ -223,6 +223,121 @@ export function clampToWorld(p, margin = 1) {
   };
 }
 
+// Walking lanes, derived from the built world.
+//
+// The hand-authored FLOWS above only know about the stage street, so the crowd
+// used to be pinned to one street even when the set grew a whole grid. Every
+// street in the set has pavements on both sides, so every pavement is a place
+// people can walk. This walks the built tiles and returns one straight lane per
+// pavement segment:
+//
+//   { axis: 'x', a0, a1, b0, b1 }  a = the walking axis, b = across it
+//
+// Lanes are split at junctions: a pavement does not continue through another
+// street's carriageway, and a walker that did would be marching across the
+// junction. Only the tile at the low end of a seam emits a lane, so a shared
+// street yields one lane rather than two overlapping ones.
+export function streetLanes(world = WORLD) {
+  if (!world || !world.tiles || !world.tiles.length) return [];
+  const tiles = world.tiles;
+  const seen = new Set();
+  const lanes = [];
+
+  // Every vertical street centre line, so horizontal lanes can be cut at them
+  // (and vice versa). A seam line is the tile edge that carries the street.
+  const vx = [];
+  const hz = [];
+  for (const t of tiles) {
+    if (t.bits.w) vx.push(t.x0);
+    if (t.bits.n) hz.push(t.z0);
+  }
+  const uniq = (a) => [...new Set(a.map((v) => Math.round(v * 100) / 100))];
+
+  // Cut [a0,a1] wherever a crossing street's carriageway interrupts it.
+  const cut = (a0, a1, cuts) => {
+    let spans = [[a0, a1]];
+    for (const c of cuts) {
+      const lo = c - H, hi = c + H;
+      const next = [];
+      for (const [s0, s1] of spans) {
+        if (hi <= s0 || lo >= s1) { next.push([s0, s1]); continue; }
+        if (lo > s0) next.push([s0, lo]);
+        if (hi < s1) next.push([hi, s1]);
+      }
+      spans = next;
+    }
+    return spans.filter(([s0, s1]) => s1 - s0 > 3.5);
+  };
+
+  const push = (axis, band0, band1, a0, a1, cuts, id) => {
+    for (const [s0, s1] of cut(a0, a1, cuts)) {
+      const key = `${axis}|${s0.toFixed(1)}|${s1.toFixed(1)}|${band0.toFixed(1)}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      lanes.push({
+        id: `${id}_${lanes.length}`, axis,
+        a0: s0, a1: s1,
+        b0: band0, b1: band1,
+        // Across-band mid line: walkers keep to it so they read as using a
+        // pavement rather than drifting over the whole slab.
+        mid: (band0 + band1) / 2,
+        half: (band1 - band0) / 2,
+      });
+    }
+  };
+
+  const V = uniq(vx);
+  const HZ = uniq(hz);
+  for (const t of tiles) {
+    // The strip a tile owns on a street edge is 6 m deep: HALF_ROAD of its own
+    // carriageway, then WALK of pavement. So the pavement is *past* the road,
+    // not against the seam. This is the same rule cells.js paints from (see
+    // drawGround) — getting it backwards put every lane inside a carriageway,
+    // where `isOnSidewalk` rejected all of them and the streets stayed empty.
+    if (t.bits.n) push('x', t.z0 + H, t.z0 + H + WALK, t.x0, t.x1, V, `h${t.i}_${t.j}n`);
+    if (t.bits.s) push('x', t.z1 - H - WALK, t.z1 - H, t.x0, t.x1, V, `h${t.i}_${t.j}s`);
+    if (t.bits.w) push('z', t.x0 + H, t.x0 + H + WALK, t.z0, t.z1, HZ, `v${t.i}_${t.j}w`);
+    if (t.bits.e) push('z', t.x1 - H - WALK, t.x1 - H, t.z0, t.z1, HZ, `v${t.i}_${t.j}e`);
+  }
+  return lanes;
+}
+
+// Strolling flows for every derived lane, so the crowd uses the whole network
+// instead of only the stage street. Each lane becomes two flows (one per
+// direction) so people pass each other rather than all walking the same way.
+export function laneFlows(world = WORLD) {
+  const out = [];
+  for (const L of streetLanes(world)) {
+    const south = L.mid;
+    const len = L.a1 - L.a0;
+    for (const dirSign of [1, -1]) {
+      const band = 0.62;   // how far either side of the mid line they scatter
+      const lo = south - band, hi = south + band;
+      const a0 = L.a0 + 0.7, a1 = L.a1 - 0.7;
+      const startAt = dirSign > 0 ? a0 : a1;
+      out.push({
+        id: `${L.id}_${dirSign > 0 ? 'f' : 'b'}`,
+        kind: 'stroll',
+        laneAxis: L.axis,
+        // bounds is in world axes regardless of the lane's walking axis.
+        bounds: L.axis === 'x'
+          ? { x0: a0, x1: a1, z0: lo, z1: hi }
+          : { x0: lo, x1: hi, z0: a0, z1: a1 },
+        delta: L.axis === 'x'
+          ? { x: dirSign * (len - 1.4), z: 0 }
+          : { x: 0, z: dirSign * (len - 1.4) },
+        band: L.axis === 'x'
+          ? { axis: 'z', a0: lo, a1: hi }
+          : { axis: 'x', a0: lo, a1: hi },
+        bend: 0,
+        startAt,
+        weight: 0,
+      });
+    }
+  }
+  return out;
+}
+
 export function weightedWaitZone(rng) {
   let r = rng.next();
   for (const z of WAIT_ZONES) {

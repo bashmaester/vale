@@ -359,8 +359,22 @@ graph with 16.7/33.3 ms guides, per-stage bars and the live feature flags.
   wind, camera shake, LoD), camera tab, timeline scrubber, export.
 - `?cam=cinematic|fps|third|drone`, `?shot=<id>`, `?hud=0` — camera modes and
   steady-shot selection (`orbit`/`fly`/`auto`/`user` stay as aliases).
+  `?shot=` implies cinematic unless `?cam=` is given explicitly.
+- The `architect` shot is the film's default eye (the drone opens on it). The
+  cinematic *default* stays `rig`: steady shots integrate their own clock, so a
+  drifting default breaks the bit-exact loop that `tools/determinism.mjs`
+  enforces.
 - `?ui=1` / `?panel=1` — opens the authoring sidebar (`src/sidebar.js`); `Tab`
   or the ☰ handle toggles it, and it is hidden in a plain `index.html`.
 - `window.VALE` — `{ graph, scene, renderer, lab, sidebar, state, W, H, DURATION }`.
+- Walking lanes are derived, not authored: `streetLanes()` in `world.js` walks
+  the built tiles and emits one lane per pavement segment, split where another
+  street's carriageway crosses it and emitted once per shared seam.
+  `laneFlows()` turns each lane into a flow per direction, and `crowd.js` mixes
+  them with the hand-authored stage flows. Walkers are allocated by largest
+  remainder, because `floor(N * weight)` gives short lanes zero people.
+- A pavement band on a street edge is `HALF_ROAD` of that tile's own
+  carriageway followed by `WALK`: lanes are *past* the road, never against the
+  seam. `cells.js` `drawGround` is the authority for that geometry.
 - `tools/shot.mjs` renders stills headlessly through a DOM/canvas shim
   (`tools/canvas-env.mjs`) with an optional camera override.

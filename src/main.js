@@ -65,8 +65,15 @@ if (q.get('finish') === 'raw' || q.get('raw') === '1') renderer.bypass = true;
 const camMode = q.get('cam') || 'drone';
 scene.cameraController.hudEnabled = q.get('hud') !== '0';
 scene.cameraController.setMode(camMode === 'user' ? 'third' : camMode);
+// `?shot=` is a cinematic concept: it only does anything in cinematic mode.
+// Setting it while the default drone was driving left the shot recorded but
+// ignored, so the URL said one thing and the picture showed another. Naming a
+// shot now implies cinematic unless a camera mode was asked for explicitly.
 const shotParam = q.get('shot');
-if (shotParam) scene.cameraController.setShot(shotParam);
+if (shotParam) {
+  if (!q.get('cam')) scene.cameraController.setMode('cinematic');
+  scene.cameraController.setShot(shotParam);
+}
 
 const lab = new Lab({ graph, scene, renderer, state });
 const stats = new StatsPanel({ scene, renderer, state }).mount();
@@ -215,6 +222,7 @@ function frame(now) {
     const shaderTime = scene.timeline.t;
     renderer.render(plate, field, shaderTime);
     lab.render(t, scene.timeline);
+    sidebar.tick(scene.timeline);
   } catch (err) {
     // One bad frame must not stop the loop (or the page would stay black and
     // look like a build failure). Report once, keep the clock running.

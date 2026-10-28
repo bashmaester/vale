@@ -44,8 +44,15 @@ function kerbFace(p, camera, ax, az, bx, bz, lit, seed) {
   });
 }
 
-// The rounded corner where two kerbs meet: the pavement corner is cut back to
-// an arc of KERB_R, and the sliver goes back to road.
+// The rounded corner where two kerbs meet.
+//
+// Geometry matters here and the first version had it backwards. The two kerb
+// lines are `x = kx` and `z = kz`; the pavement is the quadrant beyond both.
+// A true fillet is tangent to both kerbs, so its centre sits R *inside the
+// pavement* at (kx + sx*R, kz + sz*R) and the arc bulges back toward the street
+// corner. Sweeping the arc around the corner itself — as the old code did —
+// put the bulge into the pavement, which read as the pavement swelling out over
+// the road. The sliver between the corner and the arc is roadway, not pavement.
 function cornerCut(p, camera, cx, cz, sx, sz, seed) {
   const H = HALF_ROAD;
   const R = KERB_R;
@@ -53,19 +60,20 @@ function cornerCut(p, camera, cx, cz, sx, sz, seed) {
   // is on the positive side of that edge.
   const kx = cx + sx * H;      // the kerb line in x
   const kz = cz + sz * H;      // the kerb line in z
-  const pts = [v3(kx, ROAD_Y, kz), v3(kx + sx * R, ROAD_Y, kz)];
-  for (let i = 1; i < 5; i++) {
-    const a = (i / 5) * Math.PI * 0.5;
-    pts.push(v3(kx + sx * R * Math.cos(a), ROAD_Y, kz + sz * R * Math.sin(a)));
-  }
-  pts.push(v3(kx, ROAD_Y, kz + sz * R));
+  const fx = kx + sx * R;      // fillet centre, inside the pavement
+  const fz = kz + sz * R;
+  // Tangent point on each kerb, and the arc between them bulging toward the
+  // corner. a = 0 -> (kx, kz + sz*R); a = pi/2 -> (kx + sx*R, kz).
+  const arcAt = (a, y) => v3(
+    fx - sx * R * Math.cos(a), y, fz - sz * R * Math.sin(a),
+  );
+  const pts = [v3(kx, ROAD_Y, kz), v3(kx, ROAD_Y, kz + sz * R)];
+  for (let i = 1; i < 6; i++) pts.push(arcAt((i / 6) * Math.PI * 0.5, ROAD_Y));
+  pts.push(v3(kx + sx * R, ROAD_Y, kz));
   p.projectPoly(camera, pts, { fill: ROAD_FILL, stroke: null, jitter: 0.08, seed });
   // The kerb itself, as a bright stroke along the arc.
   const arc = [];
-  for (let i = 0; i <= 6; i++) {
-    const a = (i / 6) * Math.PI * 0.5;
-    arc.push(v3(kx + sx * R * Math.cos(a), WALK_Y + 0.004, kz + sz * R * Math.sin(a)));
-  }
+  for (let i = 0; i <= 6; i++) arc.push(arcAt((i / 6) * Math.PI * 0.5, WALK_Y + 0.004));
   p.projectLine(camera, arc, {
     color: BONE(0.34), width: 0.9, alpha: 0.9, jitter: 0.1, seed: seed + 3, double: false,
   });

@@ -23,6 +23,7 @@ import { LOOP, boundaryAlpha } from './loop.js';
 const CROWD_BOX = { x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: TILE.z1 + 3.0 };
 import {
   FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone, STREET_PROPS,
+  laneFlows, getWorld,
 } from './world.js';
 
 // Walking pace for the flows that turn a corner, in m/s. A little under the
@@ -139,13 +140,13 @@ function alongPath(table, dist) {
   return { x: lerp(a.x, b.x, f), z: lerp(a.z, b.z, f) };
 }
 
-function chooseFlow(rng) {
+function chooseFlow(rng, flows = FLOWS) {
   let r = rng.next();
-  for (const f of FLOWS) {
+  for (const f of flows) {
     if (r < f.weight) return f;
     r -= f.weight;
   }
-  return FLOWS[FLOWS.length - 1];
+  return flows[flows.length - 1];
 }
 
 function projectAll(camera, pts3) {
@@ -198,7 +199,24 @@ export class Crowd {
 
   rebuild() {
     const rng = makeRng(918273);
-    const N = Math.round(34 * this.density);
+    // The stage flows carry the crossings and the corner, and they are what the
+    // hero shot reads. Every other pavement in the set is walked too, derived
+    // from the built tiles, so the crowd is not pinned to one street when the
+    // world grows. Lanes take a minority share and the stage keeps the rest.
+    const lanes = laneFlows(getWorld());
+    // Split the budget rather than the weights: the stage keeps exactly the
+    // crowd it had before, and the lanes add roughly one walker per pavement
+    // (each pavement has a lane per direction, so a lane gets about half a
+    // person and the two directions share it). Weighting the lanes as a
+    // fraction of N instead rounded every one of them to zero walkers.
+    const stageN = 34 * this.density;
+    const laneN = Math.min(lanes.length, 44) * this.density;
+    const N = Math.round(stageN + laneN);
+    const flows = [
+      ...FLOWS.map((f) => ({ ...f, weight: (f.weight * stageN) / N })),
+      ...lanes.map((f) => ({ ...f, weight: laneN / Math.max(1, lanes.length) / N })),
+    ];
+    this.flows = flows;
     this.crossers = [];
     // A body that is placed inside a lamp post can never be resolved by the
     // solver: it just gets shoved back and forth. So the scatter already keeps
@@ -213,15 +231,28 @@ export class Crowd {
     };
     this._nearProp = nearProp;
 
+    // Largest-remainder allocation: with ~58 flows and ~80 walkers, plain
+    // `floor(N * weight)` leaves a third of the streets with nobody on them.
+    // Handing the leftover people to the largest fractional parts keeps every
+    // pavement occupied without changing the stage's density.
+    const wanted = flows.map((f) => N * f.weight);
+    const counts = wanted.map((w) => Math.floor(w));
+    let spare = N - counts.reduce((a, b) => a + b, 0);
+    const order = wanted
+      .map((w, i) => ({ i, frac: w - Math.floor(w) }))
+      .sort((a, b) => b.frac - a.frac);
+    for (let k = 0; k < spare && order.length; k++) counts[order[k % order.length].i]++;
+
     const specs = [];
-    for (const f of FLOWS) {
-      const count = Math.floor(N * f.weight);
-      const pts = poissonDisk(count, f.bounds, 0.92, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.52));
+    for (let fi = 0; fi < flows.length; fi++) {
+      const f = flows[fi];
+      if (!counts[fi]) continue;
+      const pts = poissonDisk(counts[fi], f.bounds, 0.92, rng, (x, z) => isOnSidewalk(x, z) && !nearProp(x, z, 0.52));
       for (const pt of pts) specs.push({ flow: f, start: pt });
     }
     let guard = 0;
     while (specs.length < N && guard++ < N * 6) {
-      const f = chooseFlow(rng);
+      const f = chooseFlow(rng, flows);
       const x = rng.range(f.bounds.x0, f.bounds.x1);
       const z = rng.range(f.bounds.z0, f.bounds.z1);
       if (isOnSidewalk(x, z) && !nearProp(x, z, 0.52)) specs.push({ flow: f, start: { x, z } });
@@ -273,7 +304,14 @@ export class Crowd {
         // plane: without it the bezier's bend and the walk-on drift carry
         // people into the furniture line, and the solver then has to steer them
         // out, which is the one job it does badly.
-        band: flow.kind === 'stroll' ? { z0: flow.bounds.z0 - 0.12, z1: flow.bounds.z1 + 0.12 } : null,
+        // A stroll keeps to its own pavement band for the whole walk. Bands are
+        // axis-aware: a lane running north-south keeps to an x band, one
+        // running east-west to a z band.
+        band: flow.kind === 'stroll'
+          ? (flow.band
+            ? { axis: flow.band.axis, a0: flow.band.a0, a1: flow.band.a1 }
+            : { axis: 'z', a0: flow.bounds.z0 - 0.12, a1: flow.bounds.z1 + 0.12 })
+          : null,
       }));
     }
 
@@ -460,6 +498,13 @@ export class Crowd {
     return this.items;
   }
 
+  // Keep a walker inside its pavement band, whichever axis that band runs on.
+  _inBand(x, z, band) {
+    if (!band) return { x, z };
+    if (band.axis === 'x') return { x: clamp(x, band.a0, band.a1), z };
+    return { x, z: clamp(z, band.a0, band.a1) };
+  }
+
   // The path, as a pure function of the loop phase. `u` is timeline.u.
   _crosserAt(ped, u, motionT) {
     const sway = (ph) => Math.sin((TAU * 2 * motionT) / LOOP + ph) * 0.055;
@@ -501,9 +546,10 @@ export class Crowd {
     if (s < 0.999) {
       const w = bezier2(ped.start, ped.ctrl, ped.end, s);
       const sw = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.04;
+      const kept = this._inBand(w.x + ped.side.x * sw, w.z + ped.side.z * sw, ped.band);
       return {
-        x: w.x + ped.side.x * sw,
-        z: clamp(w.z + ped.side.z * sw, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
+        x: kept.x,
+        z: kept.z,
         moving: true,
         distance: s * ped.pathLength,
         // Walk out into the far pavement, then dissolve before the wrap.
@@ -520,10 +566,10 @@ export class Crowd {
     const d0 = this.timeline.drainAt(Math.min(0.999, db));
     const d = Math.max(0, this.timeline.drainAt(u) - d0)
       * (ped.kind === 'stroll' ? 2.6 : 3.4);
-    const walkZ = ped.end.z + ped.dir.z * d;
+    const kept = this._inBand(ped.end.x + ped.dir.x * d, ped.end.z + ped.dir.z * d, ped.band);
     return {
-      x: ped.end.x + ped.dir.x * d,
-      z: clamp(walkZ, ped.band ? ped.band.z0 : -Infinity, ped.band ? ped.band.z1 : Infinity),
+      x: kept.x,
+      z: kept.z,
       moving: d > 0.001 && u < 0.82,
       distance: ped.pathLength + d,
       alpha: 1 - smoothstep(0.755, 0.815, u),
