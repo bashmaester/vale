@@ -5,6 +5,46 @@ anything. Read this, then `docs/CURRENT_STATE.md`, then `docs/ARCHITECTURE.md`.
 
 ---
 
+## Turn 19 — what changed (2026-10-28)
+
+The neighbourhood is alive end to end. Four user notes, all landed and checked
+against stills and numbers:
+
+1. **Traffic covers every street.** `world.js` derives the road network from the
+   built tiles: `roadLines()` (distinct street centre lines) and
+   `blockCircuits()` (one closed lane ring around every block, inset
+   `LANE_OFFSET = HALF_ROAD * 0.5` = 1.8 m so the lane sits in the right-hand
+   carriageway). 5×5 → 9 circuits; `?size=` scales it.
+2. **Cars run their own cyclical loops.** `traffic.js` `planCars()` gives each
+   car a seeded body, colour, whole-lap count, dwell, speed and start phase
+   (`carState()` maps loop time → arc length, with four holds per lap). 18 cars
+   at the default size. Whole laps per 20 s keeps the loop bit-exact.
+3. **People walk every block.** `pavementRuns()` emits one trimmed stretch per
+   block frontage; `crowd.js` puts a stroller on each, walking its own sub-span
+   out and back (`_strollerAt`). 36 strollers on 419 m of pavement. The crowd's
+   fade box is now the built world, not one tile — 78 of 132 walkers used to be
+   drawn at alpha 0 outside `TILE`.
+4. **Cars stop before the crossing.** The stop point is a real stop line:
+   `circuitStops(c, HALF_ROAD + 0.9 + half)` measured to the car's nose. Across
+   all 72 stop points of the default world the nose rests **6.30 m from the
+   junction centre / 2.70 m clear of the junction box** — before the zebra.
+
+**The trap that cost the most time — read this before touching the render
+order.** The set is baked into a cached layer (`this.static`) and blitted, then
+cars and people are painted on top. Nothing depth-tests them against buildings,
+so once traffic ran on every street, cars read as *parked on rooftops*. The fix
+is not clipping and not a depth buffer: collect the blocks that actually hide a
+moving thing (segment-vs-box from `camera.eye`, six samples per car, two per
+walker) and re-insert them into the **same depth sort** as the cars and people
+(`cells.js` `SET_LOTS` records every lot with the exact `spec`/`seed` the set
+paint used, so a repaint is pixel-identical). Anything painted before or after
+that sort is either covered wrongly or covers wrongly.
+
+**Still true from Turn 18:** the cinematic default must stay a pure function of
+loop time (`rig`); `npm run verify` catches it.
+
+---
+
 ## Turn 18 — what changed (2026-10-28)
 
 Four user notes, all landed and checked against stills:

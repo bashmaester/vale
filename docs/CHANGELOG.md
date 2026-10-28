@@ -2,6 +2,75 @@
 
 Dates use the user’s local timezone (America/New_York).
 
+## 2026-10-28 — Turn 19: the whole neighbourhood is alive
+
+**User brief (four notes):** people and vehicles should run in loops throughout
+the neighbourhood instead of only the centre tile; every random element should
+run on its own cyclical random loop; people should walk every block and cars
+drive every street; cars must stop **before** the crossing, not in the middle of
+the intersection.
+
+### Added
+
+- **A derived road network** (`world.js`): `roadLines()`, `blockCircuits()`,
+  `circuitStops()`, `circuitPoint()`, `pavementRuns()`. Streets live on tile
+  seams, so one closed circuit is derived around every block they enclose. Each
+  circuit carries its own geometry: `x0/x1/z0/z1`, `w`, `d`, `length`, and the
+  `ring` in travel order (east along the low-z edge, south, west, north).
+  The default 5×5 world yields **9 circuits** covering every street, and
+  `?size=` scales it (3→1, 5→9, 7→25, 9→49 circuits).
+- **Per-car cyclical random loops** (`traffic.js`). `planCars()` draws each car's
+  body, colour, lap count, dwell, speed and start phase from one seeded
+  generator. 18 cars (two or three per circuit) each drive their own lap: they
+  complete a whole number of laps per 20 s loop, so the frame at t=20 is the
+  frame at t=0 — bit-exactly — while no two cars share a rhythm.
+- **Pavement strollers** (`crowd.js`). `pavementRuns()` gives one trimmed
+  stretch of pavement per block frontage; a stroller patrols its own sub-span,
+  out and back, easing to a stop at each end, with its own start phase. At the
+  default size that is **36 strollers on 419 m of pavement** — one per frontage,
+  on every block, in every direction.
+- **Repaint-by-occlusion** (`scene.js`). See Fixed.
+
+### Fixed
+
+- **Cars stopped in the middle of the intersection.** The old model hard-coded a
+  single street and a stop ±3.0 m from one crosswalk. A circuit now stops at a
+  *stop line*: `gap = HALF_ROAD + 0.9 + half` before each ring corner, measured
+  to the car's own nose. Verified across all 72 stop points of the default
+  world: every nose comes to rest **6.30 m from the junction centre, 2.70 m
+  clear of the 3.6 m junction box** — before the zebra, every time.
+- **The neighbourhood was empty because it was faded out.** The crowd's wrap box
+  was one tile, so every walker outside `TILE` was drawn at alpha 0 (78 of 132
+  were invisible). The box now follows the built set.
+- **Cars and people painted over buildings.** The set is baked to a cached
+  layer, so the dynamic layer had nothing to depth-test against: once traffic
+  ran on every street, cars read as though they were parked on rooftops. The
+  blocks that actually hide a moving thing are now collected per frame (segment
+  vs. box, six samples per car, two per walker) and re-inserted into the same
+  depth sort as the cars and people. Exact occlusion — no clipping, ghosting or
+  popping — at the cost of a handful of block repaints a frame.
+- **Left-bound vehicles mirrored on the wrong axis.** The body mirror assumed
+  x-travel, so a car heading -z would have been reflected across x. The mirror
+  now follows `spec.axis`.
+
+### Verified
+
+- `npm run verify`: finite check clean; determinism `t=0 / t=20`, `t=4.5 /
+  t=24.5`, `t=11 / t=31` all **bit-exact**.
+- Still frames at 2560×1440 (`/home/user/shots/t19/t0.png`, `t11.png`).
+
+### Known follow-ups
+
+- Cars stop at every junction for a fixed dwell; they are **not** signal-coupled
+  to the stage crossing any more. A car can therefore pass through the zebra
+  while the crowd is crossing it; the crowd solver keeps people off the body, so
+  they part around it rather than overlapping. Worth deciding whether the stage
+  crossing should stop traffic outright for its ~9 s.
+- Strollers walk their own frontage out and back rather than rounding the block
+  corner. A full lap of a 95 m block in a 20 s loop would need ~4.7 m/s, which
+  reads as running; the turnaround is the honest way to keep a human pace
+  inside the loop.
+
 ## 2026-10-28 — Turn 18: architect view, corner fillets, walkable streets
 
 **User feedback (four notes):** the default view is missing from the style

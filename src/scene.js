@@ -5,6 +5,8 @@ import { CameraDirector } from './camera-director.js';
 import { Timeline } from './timeline.js';
 import { Crowd } from './crowd.js';
 import { Traffic, drawVehicle } from './traffic.js';
+import { SET_LOTS } from './cells.js';
+import { drawLot } from './buildings.js';
 import { Weather } from './weather.js';
 import {
   lodForScreenHeight, makeDetail, tileScreenHeight, clampLevel, TILE,
@@ -133,6 +135,9 @@ export class Scene {
     // it was born into. Guarded because the first call happens before the
     // crowd exists.
     if (this.crowd) this.crowd.rebuild();
+    // Traffic is planned against the street network, so a new grid means new
+    // circuits for the cars to drive.
+    if (this.traffic && this.traffic.rebuild) this.traffic.rebuild();
     this._staticKey = '';
     return this.world;
   }
@@ -290,6 +295,69 @@ export class Scene {
     });
   }
 
+  // Which blocks sit between the camera and a moving thing.
+  _hiddenLots(camera) {
+    const eye = camera.eye;
+    if (!eye || !SET_LOTS.length) return;
+    const hit = new Set();
+    const test = (x, y, z) => {
+      // Vector from the eye to the sample, and the distance to beat.
+      const dx = x - eye.x, dy = y - eye.y, dz = z - eye.z;
+      const len2 = dx * dx + dy * dy + dz * dz;
+      if (len2 < 1e-6) return;
+      const len = Math.sqrt(len2);
+      for (let i = 0; i < SET_LOTS.length; i++) {
+        const L = SET_LOTS[i];
+        const b = L.b;
+        // Cheap reject: a box whose centre is further away than the sample
+        // plus its own radius can still be in front, so only skip the ones that
+        // are hopelessly far.
+        const ox = b.x - eye.x, oy = b.h * 0.5 - eye.y, oz = b.z - eye.z;
+        const far = Math.sqrt(ox * ox + oy * oy + oz * oz) - b.h;
+        if (far > len) continue;
+        if (this._rayHitsBox(eye, dx, dy, dz, len, b)) { hit.add(L); }
+      }
+    };
+    for (const it of this.traffic.activeItems()) {
+      const w = it.world;
+      const h = it.half || 1.4, a = it.across || 0.9;
+      test(w.x, 0.55, w.z);
+      test(w.x, 1.35, w.z);
+      // The body's own corners, so a wing poking out past a wall is covered too.
+      test(w.x - h, 0.7, w.z - a);
+      test(w.x + h, 0.7, w.z + a);
+      test(w.x - h, 0.7, w.z + a);
+      test(w.x + h, 0.7, w.z - a);
+    }
+    for (const it of this.crowd.items) {
+      if (it.alpha < 0.02) continue;
+      const w = it.world;
+      test(w.x, 0.9, w.z);
+      test(w.x, 0.2, w.z);
+    }
+    return [...hit];
+  }
+
+  // Slab test of the segment eye -> eye + d against one block's box.
+  _rayHitsBox(eye, dx, dy, dz, len, b) {
+    const pad = 0.05;
+    const x0 = b.x - b.w * 0.5 - pad, x1 = b.x + b.w * 0.5 + pad;
+    const z0 = b.z - b.d * 0.5 - pad, z1 = b.z + b.d * 0.5 + pad;
+    const y0 = -pad, y1 = b.h + pad;
+    let t0 = 0, t1 = 1;
+    const slab = (o, d, lo, hi) => {
+      if (Math.abs(d) < 1e-9) return o >= lo && o <= hi;
+      let a = (lo - o) / d, c = (hi - o) / d;
+      if (a > c) { const t = a; a = c; c = t; }
+      t0 = Math.max(t0, a); t1 = Math.min(t1, c);
+      return t0 <= t1;
+    };
+    if (!slab(eye.x, dx, x0, x1)) return false;
+    if (!slab(eye.y, dy, y0, y1)) return false;
+    if (!slab(eye.z, dz, z0, z1)) return false;
+    return t1 > 0.02 && t0 < 0.98;
+  }
+
   _ensureStatic(camera, detail) {
     // `boil` is in the key on purpose: the hand-drawn jitter regenerates at
     // ~7.5 Hz, so a cached set must repaint when it ticks, or the artwork stops
@@ -443,6 +511,19 @@ export class Scene {
     for (const it of frameItems) {
       if (it.group !== 'near') continue;
       drawables.push({ depth: it.depth, draw: it.draw });
+    }
+    // 5b) The set is baked into a cached layer, so a car three streets back
+    //     would be painted on top of the building in front of it. The blocks
+    //     that actually hide something are put back into this same depth sort:
+    //     each one then covers what is behind it and is covered by what is in
+    //     front, which is exact — no clipping, no popping, no ghosting.
+    if (this.params.featOcclusion !== false) {
+      for (const L of this._hiddenLots(camera)) {
+        drawables.push({
+          depth: L.depth,
+          draw: (p) => drawLot(p, camera, L.b, L.spec, L.seed),
+        });
+      }
     }
     drawables.sort((a, b) => b.depth - a.depth);
     for (const d of drawables) d.draw(this.pp); tick('people+cars');

@@ -418,6 +418,12 @@ function drawPark(p, camera, t, d, detail) {
  * down first, then the block, then the furniture. Crossings come last in the
  * road pass so a zebra is never covered by a pavement.
  */
+// The building volumes the last set paint actually drew, with the exact spec and
+// seed it used. The dynamic layer (cars, people) is painted over the cached set,
+// so anything behind a block has to be covered again afterwards: repainting the
+// occluding lots from this record is pixel-identical to the original paint.
+export const SET_LOTS = [];
+
 export function drawWorld(p, camera, world, detail, opts = {}) {
   const list = world.tiles.map((t) => {
     const cx = (t.x0 + t.x1) / 2, cz = (t.z0 + t.z1) / 2;
@@ -442,6 +448,7 @@ export function drawWorld(p, camera, world, detail, opts = {}) {
   //    the foreground share the same screen space, so they have to be compared
   //    by depth, not by tile.
   const items = [];
+  SET_LOTS.length = 0;
   for (const it of list) {
     if (it.t.mid === 'square' && opts.diag) {
       items.push({ depth: it.depth + 0.4, draw: (pp) => drawDiagonal(pp, camera, it.t, it.t.seed + 60) });
@@ -473,6 +480,7 @@ export function drawWorld(p, camera, world, detail, opts = {}) {
           props: d > 0.4 ? (detail ? detail.props : 1) : 0,
           near: clamp((d - 0.2) / 0.8, 0, 1),
         };
+        SET_LOTS.push({ b, spec, seed, depth });
         items.push({ depth, draw: (pp) => drawLot(pp, camera, b, spec, seed) });
       }
     }

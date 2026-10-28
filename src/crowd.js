@@ -23,7 +23,7 @@ import { LOOP, boundaryAlpha } from './loop.js';
 const CROWD_BOX = { x0: TILE.x0, x1: TILE.x1, z0: TILE.z0, z1: TILE.z1 + 3.0 };
 import {
   FLOWS, isOnSidewalk, clampToWorld, weightedWaitZone, STREET_PROPS,
-  laneFlows, getWorld,
+  laneFlows, getWorld, pavementRuns,
 } from './world.js';
 
 // Walking pace for the flows that turn a corner, in m/s. A little under the
@@ -199,6 +199,18 @@ export class Crowd {
 
   rebuild() {
     const rng = makeRng(918273);
+    // The crowd is no longer a single tile's crowd. Everything outside the
+    // centre tile used to be faded to nothing by the wrap box, which is exactly
+    // why the neighbourhood looked empty. The fade now follows the built set.
+    const w = getWorld();
+    this.box = w && w.tiles && w.tiles.length
+      ? {
+        x0: Math.min(...w.tiles.map((t) => t.x0)),
+        x1: Math.max(...w.tiles.map((t) => t.x1)),
+        z0: Math.min(...w.tiles.map((t) => t.z0)),
+        z1: Math.max(...w.tiles.map((t) => t.z1)) + 3.0,
+      }
+      : CROWD_BOX;
     // The stage flows carry the crossings and the corner, and they are what the
     // hero shot reads. Every other pavement in the set is walked too, derived
     // from the built tiles, so the crowd is not pinned to one street when the
@@ -315,6 +327,40 @@ export class Crowd {
       }));
     }
 
+    // Strollers: one per pavement frontage, walking its own stretch back and
+    // forth. Each keeps its own phase, pace and turnaround, and every one
+    // completes whole cycles per loop, so the picture is identical at 0 and 20 s
+    // while no two people move together.
+    const runs = pavementRuns(getWorld());
+    const perRun = 1 + Math.round((this.density - 1) * 0.8);
+    this.strollers = [];
+    for (const run of runs) {
+      for (let k = 0; k < perRun; k++) {
+        // A sub-stretch of this frontage, so two people on the same pavement
+        // are not shadowing each other.
+        const share = run.len >= 12 ? 0.62 : 0.98;
+        const mid = 0.3 + rng.range(0.1, 0.4);
+        const half = (share * run.len) / 2;
+        const ux = (run.b.x - run.a.x) / run.len, uz = (run.b.z - run.a.z) / run.len;
+        const c = { x: run.a.x + ux * run.len * mid, z: run.a.z + uz * run.len * mid };
+        const a = { x: c.x - ux * half, z: c.z - uz * half };
+        const b = { x: c.x + ux * half, z: c.z + uz * half };
+        // Whole round trips per 20 s loop, chosen so the walk stays near a
+        // human pace instead of sprinting a whole block.
+        const len = Math.hypot(b.x - a.x, b.z - a.z);
+        this.strollers.push(makePerson(rng, 20000 + this.strollers.length, {
+          kind: 'stroll', flow: run.id,
+          span: { a, b, len, axis: run.ax },
+          cycles: 1,
+          // Phase is a free start point along the round trip: this is the
+          // "own cyclical loop" of the walker.
+          phase2: rng.range(0, 1),
+          dir: { x: ux, z: uz }, side: { x: -uz, z: ux },
+          lane: rng.range(-0.12, 0.12),
+        }));
+      }
+    }
+
     const M = Math.round(18 * this.density);
     this.waiters = [];
     for (let i = 0; i < M; i++) {
@@ -352,7 +398,7 @@ export class Crowd {
     const TURN = 0.02;
     const raw = [];
 
-    for (const ped of this.crossers) {
+    for (const ped of [...this.crossers, ...(this.strollers || [])]) {
       // Wherever this person is, they are somewhere on one continuous walk.
       // Sampling the path a fraction of a second either side of now gives a
       // heading that turns BEFORE the corner instead of snapping to a new
@@ -381,7 +427,7 @@ export class Crowd {
       const world = { x: now.x, z: now.z };
       const moving = now.moving;
       const distance = now.distance;
-      const alpha = now.alpha * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade');
+      const alpha = now.alpha * boundaryAlpha(world.x, world.z, this.box || CROWD_BOX, buffer, 'fade');
       const stridePhase = ped.phase + (moving
         ? distance / (ped.strideLen * ped.scale * ped.gait) * TAU * tempo
         : osc(2, ped.phase) * 0.10);
@@ -399,7 +445,7 @@ export class Crowd {
         z: w.base.z + Math.sin((TAU * 2 * motionT) / LOOP + w.phase + 1.57) * 0.065,
       };
       raw.push({
-        ped: w, world, alpha: 0.92 * boundaryAlpha(world.x, world.z, CROWD_BOX, buffer, 'fade'),
+        ped: w, world, alpha: 0.92 * boundaryAlpha(world.x, world.z, this.box || CROWD_BOX, buffer, 'fade'),
         dir: w.dir, side: w.side, scale: w.scale,
         stridePhase: w.phase + osc(2, w.phase) * 0.08,
         moving: false, waiter: true, radius: 0.30 * w.scale,
@@ -505,9 +551,42 @@ export class Crowd {
     return { x, z: clamp(z, band.a0, band.a1) };
   }
 
+  // A pavement stroller: back and forth along one frontage, forever.
+  //
+  // The motion is a scaled smoothstep on each leg, so a walker eases to a stop
+  // at the end of the stretch, turns, and strolls back — no snap, no teleport,
+  // and no fade, because they never leave the world. `cycles` round trips fit
+  // exactly inside one 20 s loop, and `phase2` decides where in that rhythm
+  // this particular person started, so everybody keeps their own clock.
+  _strollerAt(ped, u, motionT) {
+    const { a, b, len } = ped.span;
+    const t = ((u * ped.cycles + ped.phase2) % 1 + 1) % 1;
+    const legT = (t * 2) % 1;                    // 0..1 up the stretch, then back
+    const outbound = t < 0.5;
+    const f = outbound ? legT : 1 - legT;
+    const sm = smootherstep(0, 1, f);
+    const waddle = Math.sin((TAU * 4 * motionT) / LOOP + ped.phase) * 0.03;
+    const sx = ped.side ? ped.side.x * waddle : 0;
+    const sz = ped.side ? ped.side.z * waddle : 0;
+    // Speed falls to zero at both ends of the stretch: 30 f² (1-f)² is the
+    // derivative of smootherstep, scaled by the stretch length and the time it
+    // takes to cover one leg.
+    const speed = (30 * f * f * (1 - f) * (1 - f)) * (len / (LOOP / ped.cycles / 2));
+    return {
+      x: lerp(a.x, b.x, sm) + sx,
+      z: lerp(a.z, b.z, sm) + sz,
+      moving: speed > 0.12,
+      // Cumulative distance keeps the stride running forwards on both legs;
+      // rewinding it would walk the feet backwards on the way home.
+      distance: len * (Math.floor(t * 2) + sm),
+      alpha: 1,
+    };
+  }
+
   // The path, as a pure function of the loop phase. `u` is timeline.u.
   _crosserAt(ped, u, motionT) {
     const sway = (ph) => Math.sin((TAU * 2 * motionT) / LOOP + ph) * 0.055;
+    if (ped.span) return this._strollerAt(ped, u, motionT);
     if (u < 0.18) {
       // Walk in along the sidewalk from the cell seam. They start exactly on
       // the boundary, so the neighbour cell's people can continue the flow

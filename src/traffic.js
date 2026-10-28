@@ -10,8 +10,12 @@ import { PALETTE, glowAt } from './draw.js';
 import { v3, clamp, lerp, easeInOut, quadLerp, smoothstep, smootherstep } from './math.js';
 import { separate } from './collision.js';
 import { TILE } from './tile.js';
+import { HALF_ROAD } from './tiles.js';
 import { LOOP, loopFrac, wrapRange, boundaryAlpha } from './loop.js';
-import { ROAD, LANES, CROSSWALKS } from './world.js';
+import { makeRng } from './math.js';
+import {
+  ROAD, LANES, CROSSWALKS, getWorld, blockCircuits, circuitPoint, circuitStops,
+} from './world.js';
 
 const BONE = (a) => `rgba(239,233,216,${a})`;
 
@@ -137,8 +141,14 @@ export function drawVehicle(p, camera, item) {
   const nearLat = prof.d * 0.5;
   const farLat = -prof.d * 0.5;
   const near3 = profilePoints(prof, world, spec, nearLat);
-  // Mirror the profile along the travel axis for left-bound vehicles.
-  const mirror = (pts) => pts.map((q) => (fs > 0 ? q : v3(2 * world.x - q.x, q.y, q.z)));
+  // Mirror the profile along the travel axis for left-bound vehicles. The axis
+  // matters: a car heading -z mirrored about x would face the wrong way.
+  const mirror = (pts) => pts.map((q) => {
+    if (fs > 0) return q;
+    return spec.axis === 'z'
+      ? v3(q.x, q.y, 2 * world.z - q.z)
+      : v3(2 * world.x - q.x, q.y, q.z);
+  });
   const nearQ = projectRing(camera, mirror(near3));
   const farQ = projectRing(camera, mirror(profilePoints(prof, world, spec, farLat)));
   if (!nearQ || !farQ) return;
@@ -317,12 +327,20 @@ export function drawVehicle(p, camera, item) {
 
 export class Traffic {
   constructor(params = {}) {
-    this.specs = VEHICLE_SPECS().map((s) => ({ ...s }));
+    this.cars = [];
+    this.rebuild();
     this.trainX = -40;
     this.trainAlpha = 0;
     this.parkedItems = [];
     this.movingItems = [];
     this.items = [];
+  }
+
+  /** Re-plan the traffic against the current tile grid. */
+  rebuild() {
+    this.circuits = blockCircuits(getWorld());
+    this.cars = planCars(this.circuits);
+    return this.cars.length;
   }
 
   update(camera, timeline, params, detail = { props: 1 }) {
@@ -333,25 +351,26 @@ export class Traffic {
     // every moving vehicle room to pass without either of them swerving.
     this.parkedItems = [];
     this.movingItems = [];
-    const buffer = params.loopBuffer == null ? 1.1 : params.loopBuffer;
-    for (const spec of this.specs) {
-      const world = { x: movingCarX(spec, timeline.u), z: spec.lane };
-      // Vehicles fade only as they cross the set boundary on their way out.
-      const alpha = boundaryAlpha(world.x, world.z, TILE, buffer, 'fade');
+    const t = timeline.t;
+    for (const car of this.cars) {
+      const st = carState(car, t);
+      const at = circuitPoint(car.circuit, st.s);
+      const spec = {
+        id: car.id, type: car.type, color: car.color,
+        axis: at.axis, dir: at.dir,
+        braking: st.braking,
+      };
+      const world = { x: at.x, z: at.z };
       this.movingItems.push({
-        spec, world, alpha,
+        spec, world, alpha: 1,
         // `fixed: true` is the "people cannot push a car" rule: the crowd
         // solver treats the vehicle as immovable and yields to it.
-        radius: 2.6, group: 'vehicle', fixed: true, moving: true, depth: 0,
-        half: (PROFILES[spec.type] || PROFILES.car).w / 2 - 0.5,
-        across: (PROFILES[spec.type] || PROFILES.car).d / 2,
+        radius: 2.6, group: 'vehicle', fixed: true, moving: st.moving, depth: 0,
+        half: (PROFILES[car.type] || PROFILES.car).w / 2 - 0.5,
+        across: (PROFILES[car.type] || PROFILES.car).d / 2,
       });
     }
-    separate([...this.parkedItems, ...this.movingItems], {
-      iterations: 2, padding: 0.25,
-      bounds: { x0: TILE.x0 + 1, x1: TILE.x1 - 1, z0: ROAD.z0 + 0.1, z1: ROAD.z1 - 0.1 },
-    });
-    for (const it of [...this.parkedItems, ...this.movingItems]) {
+    for (const it of this.movingItems) {
       const q = camera.project(v3(it.world.x, 0.8, it.world.z));
       it.depth = q ? q.depth : 0;
     }
@@ -467,42 +486,89 @@ export class Traffic {
   }
 }
 
-// Where a moving vehicle is, as a pure function of the loop phase.
+// --- traffic planning -----------------------------------------------------
 //
-//   0.00 – 0.16  approach from off-set and pull up at the stop line
-//   0.16 – 0.72  wait at the line (pedestrians have the green)
-//   0.72 – 0.95  drive through the crossing and off the far end
-//   0.95 – 1.00  out of frame (the wrap happens where it cannot be seen)
-function movingCarX(spec, u) {
-  const cw = CROSSWALKS.main;
-  const span = 46;
-  const stop = spec.dir > 0 ? cw.x0 - 3.0 : cw.x1 + 3.0;
-  const from = spec.dir > 0 ? -span : span;
-  const to = spec.dir > 0 ? span : -span;
-  const d = spec.delay || 0;
-  const a0 = 0.02 + d, a1 = 0.17 + d, b = 0.72, c = 0.95;
-  if (u < a1) return lerp(from, stop, smootherstep(a0, a1, u));
-  if (u < b) return stop;
-  if (u < c) return lerp(stop, to, smootherstep(b + d, c + d, u));
-  return to;
+// Each car owns a closed circuit around one block and completes a whole number
+// of laps per 20 s loop. Everything that varies between cars — body, colour,
+// lap count, dwell, start phase — is drawn from a seeded generator once, at
+// plan time, so the picture is identical at t = 0 and t = 20 while still
+// looking irregular.
+
+const CAR_TYPES = ['car', 'car', 'car', 'taxi', 'van', 'bus'];
+
+function planCars(circuits, loop = LOOP) {
+  const rng = makeRng(77121);
+  const cars = [];
+  for (const c of circuits) {
+    // Two cars a circuit, half a lap apart, so a block is never empty and the
+    // two are never nose to tail.
+    const perCircuit = c.length > 120 ? 3 : 2;
+    for (let k = 0; k < perCircuit; k++) {
+      const type = rng.pick(CAR_TYPES);
+      const prof = PROFILES[type] || PROFILES.car;
+      const half = prof.w * 0.5;
+      // Stop with the nose `clear` of the junction box, plus the body's own
+      // half length so the *front bumper* is clear, not the centre.
+      const gap = HALF_ROAD + 0.9 + half;
+      // Whole laps per loop, so the wrap is invisible.
+      const laps = rng.pick([1, 1, 2]);
+      const lapTime = loop / laps;
+      const dwell = rng.range(0.32, 0.78);
+      const stops = circuitStops(c, gap);
+      const perim = c.length;
+      // Dwell at four junctions a lap, so the rest of the lap has to absorb it.
+      const travel = Math.max(lapTime * 0.45, lapTime - 4 * dwell);
+      const speed = perim / travel;
+      cars.push({
+        id: `car_${c.id}_${k}`,
+        circuit: c, type, color: type === 'taxi' ? PALETTE.red
+          : rng.pick([PALETTE.ink, PALETTE.ink, PALETTE.teal, PALETTE.ink]),
+        half, gap, laps, lapTime, dwell, stops, perim, speed,
+        // Own phase: where this car already is in its lap at t = 0.
+        phase: (k / perCircuit + rng.range(-0.03, 0.03) + 0.5) % 1,
+        // Own clock: a small wobble on dwell, so the four stops are not
+        // mechanically identical.
+        dwellJitter: rng.range(-0.14, 0.14),
+      });
+    }
+  }
+  return cars;
+}
+
+// Position along the lap at time `elapsed` (seconds into this lap).
+//
+// The lap is five straight runs separated by four holds. Each hold is at a stop
+// line, `gap` short of a junction, which is what keeps a waiting car *before*
+// the crossing instead of parked in the middle of the intersection.
+function carState(car, t) {
+  const { perim, speed, dwell, stops, lapTime, dwellJitter } = car;
+  const laps = t / lapTime + car.phase;
+  const elapsed = (laps - Math.floor(laps)) * lapTime;
+  const legs = [
+    stops[0],
+    stops[1] - stops[0],
+    stops[2] - stops[1],
+    stops[3] - stops[2],
+    perim - stops[3],
+  ];
+  let s = 0;
+  let time = elapsed;
+  for (let i = 0; i < 4; i++) {
+    const legT = legs[i] / speed;
+    if (time < legT) {
+      return { s: s + time * speed, moving: true, braking: false };
+    }
+    time -= legT;
+    s += legs[i];
+    const hold = Math.max(0.08, dwell + dwellJitter * (i % 2 ? 1 : -1));
+    if (time < hold) return { s, moving: false, braking: true };
+    time -= hold;
+  }
+  // Last run of the lap, back to the start point.
+  const legT = legs[4] / speed;
+  return { s: s + Math.min(time, legT) * speed, moving: time < legT, braking: false };
 }
 
 function VEHICLE_SPECS() {
-  return [
-    // Moving vehicles loop the block like a film set: one continuous lap of the
-    // road per loop (the taxi takes two), wrapping far outside the case where
-    // nobody can see it. `offset` staggers them against each other.
-    // Moving vehicles are choreographed against the signal, as a film set would
-    // be: they pull up to the stop line, wait out the pedestrian window, then
-    // drive through and off the far end. Everything is a pure function of the
-    // loop phase, so the manoeuvre repeats exactly every 20 s.
-    {
-      id: 'move_bus', type: 'bus', axis: 'x',
-      lane: LANES[0].offset, dir: LANES[0].dir, color: PALETTE.ink, delay: 0.0,
-    },
-    {
-      id: 'move_taxi', type: 'taxi', axis: 'x',
-      lane: LANES[1].offset, dir: LANES[1].dir, color: PALETTE.red, delay: 0.055,
-    },
-  ];
+  return [];
 }

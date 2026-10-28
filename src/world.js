@@ -338,6 +338,135 @@ export function laneFlows(world = WORLD) {
   return out;
 }
 
+// --- road network ---------------------------------------------------------
+//
+// Streets live on tile seams (see tiles.js), so the drivable network is derived
+// from the built world rather than authored: distinct street centre lines in x
+// and z, and one closed circuit around every block they enclose.
+//
+// A car drives a circuit repeatedly. Two properties matter:
+//
+//   1. the circuit is *closed*, and each car completes a whole number of laps
+//      per loop, so at t = 20 it is exactly where it was at t = 0 — continuous
+//      traffic with no teleport and no fade;
+//   2. the lane is offset to the RIGHT of travel (right-hand traffic), which is
+//      what keeps opposing cars on opposite sides of the centre line.
+//
+// z points toward the viewer, so for a travel direction d = (dx, dz) the
+// driver's right is r = (-dz, dx). A lane inset `o` into the block is therefore
+// correct for the traversal used below: +x along the low-z edge, +z along the
+// high-x edge, and so on.
+
+export const LANE_OFFSET = HALF_ROAD * 0.5;
+// 4.8 m: the middle of the 2.4 m pavement that sits outside the 3.6 m half
+// carriageway. Walkers keep to this line.
+export const PAVEMENT_OFFSET = HALF_ROAD + WALK * 0.5;
+
+/**
+ * Straight stretches of pavement, one per block frontage, trimmed at both ends
+ * so nobody stands in a corner fillet. Walkers patrol these back and forth, so
+ * every block and every street frontage has people on it.
+ */
+export function pavementRuns(world = WORLD, trim = 3.0) {
+  const out = [];
+  for (const c of blockCircuits(world, PAVEMENT_OFFSET)) {
+    const r = c.ring;
+    for (let i = 0; i < 4; i++) {
+      const a = r[i], b = r[(i + 1) % 4];
+      const len = Math.hypot(b.x - a.x, b.z - a.z);
+      const use = len - trim * 2;
+      if (use < 5) continue;
+      const ux = (b.x - a.x) / len, uz = (b.z - a.z) / len;
+      out.push({
+        id: `${c.id}_e${i}`,
+        ax: Math.abs(ux) > Math.abs(uz) ? 'x' : 'z',
+        a: { x: a.x + ux * trim, z: a.z + uz * trim },
+        b: { x: b.x - ux * trim, z: b.z - uz * trim },
+        len: use,
+      });
+    }
+  }
+  return out;
+}
+   // 1.8 m: centre of one 3.6 m lane
+
+/** Distinct street centre lines, sorted. `x` from west/east seams, `z` from n/s. */
+export function roadLines(world = WORLD) {
+  if (!world || !world.tiles) return { x: [], z: [] };
+  const xs = new Set();
+  const zs = new Set();
+  for (const t of world.tiles) {
+    if (t.bits.w) xs.add(Math.round(t.x0 * 100) / 100);
+    if (t.bits.n) zs.add(Math.round(t.z0 * 100) / 100);
+  }
+  return {
+    x: [...xs].sort((a, b) => a - b),
+    z: [...zs].sort((a, b) => a - b),
+  };
+}
+
+/**
+ * One closed, axis-aligned circuit per enclosed block.
+ *
+ * `ring` is the inset lane rectangle in travel order; `length` is its arc
+ * length. Every edge is axis-aligned, so a vehicle only ever needs one of four
+ * headings — which is exactly what the extruded-profile vehicle renderer
+ * supports.
+ */
+export function blockCircuits(world = WORLD, inset = LANE_OFFSET) {
+  const { x: xs, z: zs } = roadLines(world);
+  const out = [];
+  for (let i = 0; i < xs.length - 1; i++) {
+    for (let j = 0; j < zs.length - 1; j++) {
+      const x0 = xs[i] + inset;
+      const x1 = xs[i + 1] - inset;
+      const z0 = zs[j] + inset;
+      const z1 = zs[j + 1] - inset;
+      const w = x1 - x0;
+      const d = z1 - z0;
+      // A block needs room for a lane on each side plus a body between them.
+      if (w < 8 || d < 8) continue;
+      out.push({
+        id: `c${i}_${j}`,
+        // Street corners (not lane corners) delimit the intersections the car
+        // has to stop before entering.
+        corners: {
+          nx: xs[i], fx: xs[i + 1], nz: zs[j], fz: zs[j + 1],
+        },
+        x0, x1, z0, z1, w, d,
+        length: 2 * (w + d),
+        // Travel order: east along the low-z edge, then south, west, north.
+        ring: [
+          { x: x0, z: z0 }, { x: x1, z: z0 },
+          { x: x1, z: z1 }, { x: x0, z: z1 },
+        ],
+      });
+    }
+  }
+  return out;
+}
+
+/** Arc length at which each ring corner falls, in travel order. */
+export function circuitStops(c, gap) {
+  const { w, d } = c;
+  // The four corners sit at w, w+d, 2w+d and 2w+2d along the ring. Each stop is
+  // `gap` earlier: the vehicle's nose is clear of the junction box by then.
+  return [w - gap, w + d - gap, 2 * w + d - gap, 2 * w + 2 * d - gap];
+}
+
+/** World position + heading at arc length `s` around a ring. */
+export function circuitPoint(c, s) {
+  const { x0, x1, z0, z1, w, d, length } = c;
+  let u = ((s % length) + length) % length;
+  if (u < w) return { x: x0 + u, z: z0, axis: 'x', dir: 1, edge: 0 };
+  u -= w;
+  if (u < d) return { x: x1, z: z0 + u, axis: 'z', dir: 1, edge: 1 };
+  u -= d;
+  if (u < w) return { x: x1 - u, z: z1, axis: 'x', dir: -1, edge: 2 };
+  u -= w;
+  return { x: x0, z: z1 - u, axis: 'z', dir: -1, edge: 3 };
+}
+
 export function weightedWaitZone(rng) {
   let r = rng.next();
   for (const z of WAIT_ZONES) {
